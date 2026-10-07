@@ -123,6 +123,44 @@ export function pose(state, phase) {
 }
 
 // ---------------------------------------------------------------------------
+// POSE INTERP — fonde due pose (stateA,phaseA) e (stateB,phaseB) con peso k.
+// k=0 → A esatta, k=1 → B esatta (ritorno diretto: nessun drift in virgola
+// mobile), k∈(0,1) → interpolazione lineare di ogni giunto. k non finito o
+// fuori [0,1] viene limitato: mai NaN in uscita. Stessa forma di pose().
+// ---------------------------------------------------------------------------
+export function poseInterp(stateA, phaseA, stateB, phaseB, k) {
+  const A = pose(stateA, phaseA);
+  const B = pose(stateB, phaseB);
+  const kk = clamp(finiteOr(k, 0), 0, 1);
+  if (kk === 0) return A;
+  if (kk === 1) return B;
+  const mix = (a, b) => a + (b - a) * kk;
+  const mixPair = (a, b) => [mix(a[0], b[0]), mix(a[1], b[1])];
+  return {
+    lean: mix(A.lean, B.lean),
+    bob: mix(A.bob, B.bob),
+    aL: mixPair(A.aL, B.aL),
+    aR: mixPair(A.aR, B.aR),
+    lL: mixPair(A.lL, B.lL),
+    lR: mixPair(A.lR, B.lR),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// POSTURE SPRING — forza dell'"active ragdoll": 1 a t=0, decade linearmente a 0
+// per t>=decay. Usata per far IRRIGIDIRE le membra di una figura appena
+// lanciata (brace) invece di farla crollare subito floscia. Sempre finita:
+// t o decay degeneri ricadono su valori sicuri.
+// ---------------------------------------------------------------------------
+export function postureSpring(t, decay = 0.4) {
+  const d = (Number.isFinite(decay) && decay > 0) ? decay : 0.4;
+  const tt = finiteOr(t, 0);
+  if (tt <= 0) return 1;
+  if (tt >= d) return 0;
+  return 1 - tt / d;
+}
+
+// ---------------------------------------------------------------------------
 // IK A 2 SEGMENTI — dato l'attacco (sx,sy) e il bersaglio (tx,ty) con lunghezze
 // FISSE l1,l2, restituisce gomito e mano. La mano non supera MAI la portata:
 // così le braccia si PIEGANO invece di allungarsi come tentacoli.
@@ -259,23 +297,35 @@ export function drawRagdoll(ctx, fig, opts = {}) {
   const {
     h = 14, color = C.red, thickness = 1, alpha = 1,
     dust = null,   // opzionale: {x,y} punto d'impatto per un lampo di polvere
+    posture = 0,   // S-ANAT: età (s) della figura → molla di postura "active ragdoll"
   } = opts;
   const parts = fig && fig.parts;
   if (!parts || parts.length < 5) return;
   const [hip, sh, head, footL, footR] = parts;
   if (!Number.isFinite(hip.x) || !Number.isFinite(head.y)) return;
   const t = Math.max(1, Math.min(2, thickness));
+  // forza del brace: 0 = disattivato (default storico), >0 = irrigidisce le membra
+  const brace = posture > 0 ? postureSpring(posture) : 0;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
 
-  // gambe: bacino → piedi (una linea ciascuna, spessore pieno)
-  line(ctx, hip.x, hip.y, footL.x, footL.y, t);
-  line(ctx, hip.x, hip.y, footR.x, footR.y, t);
+  // gambe: bacino → piedi (una linea ciascuna, spessore pieno).
+  // Con brace>0 i piedi vengono RACCOLTI sotto il bacino (posa di appoggio),
+  // invece di restare divaricati: la figura "si prepara" prima di cedere.
+  let fLx = footL.x, fLy = footL.y, fRx = footR.x, fRy = footR.y;
+  if (brace > 0) {
+    fLx = footL.x + (hip.x + (footL.x - hip.x) * 0.55 - footL.x) * brace;
+    fLy = footL.y + (hip.y + (footL.y - hip.y) * 0.75 - footL.y) * brace;
+    fRx = footR.x + (hip.x + (footR.x - hip.x) * 0.55 - footR.x) * brace;
+    fRy = footR.y + (hip.y + (footR.y - hip.y) * 0.75 - footR.y) * brace;
+  }
+  line(ctx, hip.x, hip.y, fLx, fLy, t);
+  line(ctx, hip.x, hip.y, fRx, fRy, t);
   // piedi: tacca di 2px sotto ogni caviglia
-  ctx.fillRect(Math.round(footL.x) - 1, Math.round(footL.y), 2, 1);
-  ctx.fillRect(Math.round(footR.x) - 1, Math.round(footR.y), 2, 1);
+  ctx.fillRect(Math.round(fLx) - 1, Math.round(fLy), 2, 1);
+  ctx.fillRect(Math.round(fRx) - 1, Math.round(fRy), 2, 1);
 
   // tronco bacino → spalle (spessore +1: il corpo)
   line(ctx, hip.x, hip.y, sh.x, sh.y, t + 1);
@@ -298,8 +348,17 @@ export function drawRagdoll(ctx, fig, opts = {}) {
   for (const side of [-1, 1]) {
     const wob = Math.sin((hip.x + hip.y) * 1.7 + side) * 0.35 * (1 - swing);
     const a = baseA + side * (0.5 + swing * 1.1) + wob;
-    const hx = sh.x + Math.cos(a) * armLen;
-    const hy = sh.y + Math.sin(a) * armLen;
+    let hx = sh.x + Math.cos(a) * armLen;
+    let hy = sh.y + Math.sin(a) * armLen;
+    if (brace > 0) {
+      // brace: braccia raccolte verso l'alto/avanti (guardia), meno aperte
+      const ba = baseA + side * 0.4 - 1.0;
+      const bl = armLen * 0.85;
+      const bhx = sh.x + Math.cos(ba) * bl;
+      const bhy = sh.y + Math.sin(ba) * bl;
+      hx += (bhx - hx) * brace;
+      hy += (bhy - hy) * brace;
+    }
     line(ctx, sh.x, sh.y, hx, hy, t);
     ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 1, 1);
   }
@@ -324,15 +383,19 @@ export function drawFigure(ctx, x, y, opts = {}) {
     h = 16, color = C.red, state = 'idle', phase = 0, facing = 1,
     thickness = 1, alpha = 1, shadow = false,
     detail = false, stretch = 0, rim = false,
+    breathe = 0,   // S-ANAT: 0..1 respiro sottile (testa/petto), 0 = storico
   } = opts;
   const P = pose(state, phase);
   const f = facing;
   // squash&stretch: fattore verticale limitato in [-1,1]; 0 = neutro (default)
   const st = clamp(finiteOr(stretch, 0), -1, 1);
   const sy = 1 + st * 0.30;   // 0.7 (schiacciato) … 1.3 (allungato)
+  // respiro: offset verticale sottile su petto/testa, sfasato dal bob della posa
+  const br = clamp(finiteOr(breathe, 0), 0, 1);
+  const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br * 0.6 : 0;
   const hipY = y - h * 0.48 * sy + P.bob;
-  const shY = y - h * 0.80 * sy + P.bob;
-  const headY = y - h * 0.94 * sy + P.bob;
+  const shY = y - h * 0.80 * sy + P.bob + breatheOff;
+  const headY = y - h * 0.94 * sy + P.bob + breatheOff * 1.4;
   const lean = P.lean * f;
 
   const hipX = x + Math.sin(lean) * h * 0.4;

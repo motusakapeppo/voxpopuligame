@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pose, drawFigure, drawClimber, ik2 } from '../src/figure.js';
+import { pose, drawFigure, drawClimber, drawRagdoll, ik2, poseInterp, postureSpring } from '../src/figure.js';
 
 // Verifica che le pose siano articolate (angoli delle ossa) e che cambino
 // nel tempo: è ciò che rende il gioco animato e non statico.
@@ -125,7 +125,7 @@ test('drawClimber: default identico a detail/breathe/grip/rim espliciti a zero',
 });
 
 // ---------------------------------------------------------------------------
-// IK � le braccia NON sono tentacoli: la mano non supera mai la portata.
+// IK � le braccia NON sono tentacoli: la mano non supera mai la portata.
 // ---------------------------------------------------------------------------
 test('ik2: la distanza spalla?mano non supera mai la portata (anti-tentacolo)', () => {
   const l1 = 13, l2 = 13;
@@ -154,5 +154,141 @@ test('drawClimber: braccia piegate (gomito non collineare su presa ampia)', () =
   assert.ok(a.calls.length > 0);
   for (const [x, y, w, hh] of a.calls) {
     assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// S-ANAT — interpolazione di posa + molla di postura (active ragdoll).
+// ---------------------------------------------------------------------------
+const JOINTS = ['aL', 'aR', 'lL', 'lR'];
+
+function assertPoseFinite(p, label) {
+  assert.ok(Number.isFinite(p.lean), label + '.lean non finito');
+  assert.ok(Number.isFinite(p.bob), label + '.bob non finito');
+  for (const k of JOINTS) {
+    assert.ok(Array.isArray(p[k]) && p[k].length === 2, label + '.' + k + ' forma errata');
+    assert.ok(Number.isFinite(p[k][0]) && Number.isFinite(p[k][1]), label + '.' + k + ' non finito');
+  }
+}
+
+test('poseInterp: k=0 restituisce esattamente la posa A', () => {
+  for (const [sa, pa, sb, pb] of [
+    ['walk', 0.4, 'run', 1.1], ['idle', 0.0, 'scream', 2.2], ['climb', 1.3, 'fall', 0.7],
+  ]) {
+    const got = poseInterp(sa, pa, sb, pb, 0);
+    assert.deepEqual(got, pose(sa, pa), 'k=0 non è identico a pose(A)');
+  }
+});
+
+test('poseInterp: k=1 restituisce esattamente la posa B', () => {
+  for (const [sa, pa, sb, pb] of [
+    ['walk', 0.4, 'run', 1.1], ['idle', 0.0, 'scream', 2.2], ['climb', 1.3, 'fall', 0.7],
+  ]) {
+    const got = poseInterp(sa, pa, sb, pb, 1);
+    assert.deepEqual(got, pose(sb, pb), 'k=1 non è identico a pose(B)');
+  }
+});
+
+test('poseInterp: k=0.5 è finito e compreso fra A e B per ogni giunto', () => {
+  const A = pose('walk', 0.4), B = pose('run', 1.1);
+  const M = poseInterp('walk', 0.4, 'run', 1.1, 0.5);
+  assertPoseFinite(M, 'mid');
+  for (const k of JOINTS) {
+    for (const i of [0, 1]) {
+      const lo = Math.min(A[k][i], B[k][i]), hi = Math.max(A[k][i], B[k][i]);
+      assert.ok(M[k][i] >= lo - 1e-9 && M[k][i] <= hi + 1e-9,
+        k + '[' + i + '] fuori dall\'intervallo A..B');
+    }
+  }
+  for (const k of ['lean', 'bob']) {
+    const lo = Math.min(A[k], B[k]), hi = Math.max(A[k], B[k]);
+    assert.ok(M[k] >= lo - 1e-9 && M[k] <= hi + 1e-9, k + ' fuori dall\'intervallo A..B');
+  }
+});
+
+test('poseInterp: k NaN o fuori range viene limitato in modo sicuro', () => {
+  for (const k of [NaN, Infinity, -Infinity, -3, 5, undefined]) {
+    const got = poseInterp('walk', 0.4, 'run', 1.1, k);
+    assertPoseFinite(got, 'k=' + String(k));
+  }
+  // NaN/undefined → clamp a 0 (posa A); -3 → 0; 5 → 1
+  assert.deepEqual(poseInterp('walk', 0.4, 'run', 1.1, NaN), pose('walk', 0.4));
+  assert.deepEqual(poseInterp('walk', 0.4, 'run', 1.1, -3), pose('walk', 0.4));
+  assert.deepEqual(poseInterp('walk', 0.4, 'run', 1.1, 5), pose('run', 1.1));
+});
+
+test('postureSpring: 1 a t=0, 0 a t>=decay, monotona non crescente, finita', () => {
+  const decay = 0.4;
+  assert.equal(postureSpring(0, decay), 1, 't=0 deve valere 1');
+  assert.equal(postureSpring(decay, decay), 0, 't=decay deve valere 0');
+  assert.equal(postureSpring(decay + 1, decay), 0, 't>decay deve valere 0');
+  let prev = Infinity;
+  for (let t = 0; t <= decay + 0.001; t += decay / 20) {
+    const v = postureSpring(t, decay);
+    assert.ok(Number.isFinite(v), 'non finito a t=' + t);
+    assert.ok(v >= 0 && v <= 1, 'fuori [0,1] a t=' + t + ': ' + v);
+    assert.ok(v <= prev + 1e-9, 'non monotona a t=' + t);
+    prev = v;
+  }
+  for (const t of [-5, NaN, Infinity, -Infinity, 1e9]) {
+    assert.ok(Number.isFinite(postureSpring(t, decay)), 'non finito a t=' + String(t));
+  }
+  // decay degenere → fallback sicuro, mai NaN
+  for (const d of [0, -1, NaN, Infinity]) {
+    assert.ok(Number.isFinite(postureSpring(0.1, d)), 'decay=' + String(d) + ' non finito');
+  }
+});
+
+// figura ragdoll fittizia: 5 particelle {x,y,px,py}
+function stubFig() {
+  return {
+    parts: [
+      { x: 30, y: 40, px: 29, py: 39 },   // bacino
+      { x: 30, y: 34, px: 29, py: 33 },   // spalle
+      { x: 30, y: 31, px: 29, py: 30 },   // testa
+      { x: 27, y: 46, px: 26, py: 45 },   // piede L
+      { x: 33, y: 46, px: 32, py: 45 },   // piede R
+    ],
+  };
+}
+
+test('drawRagdoll: default identico a chiamata senza nuovo parametro (REGRESSIONE)', () => {
+  const a = stubCtx(), b = stubCtx();
+  drawRagdoll(a, stubFig(), { h: 14, color: '#f00', thickness: 1, alpha: 1 });
+  drawRagdoll(b, stubFig(), { h: 14, color: '#f00', thickness: 1, alpha: 1, posture: 0 });
+  assert.deepEqual(a.calls, b.calls, 'posture=0 altera il rendering storico');
+  assert.ok(a.calls.length > 0, 'nessun pixel disegnato');
+});
+
+test('drawRagdoll: posture>0 differisce dal default e resta finito', () => {
+  const base = stubCtx(), braced = stubCtx();
+  drawRagdoll(base, stubFig(), { h: 14 });
+  drawRagdoll(braced, stubFig(), { h: 14, posture: 0.05 });
+  assert.notDeepEqual(braced.calls, base.calls, 'posture>0 non ha effetto');
+  for (const [x, y, w, hh] of braced.calls) {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+      'posture ha prodotto coordinate non finite');
+  }
+  // posture degenere non deve mai lanciare né produrre NaN
+  for (const p of [NaN, Infinity, -Infinity, -1, 1e9]) {
+    const c = stubCtx();
+    drawRagdoll(c, stubFig(), { h: 14, posture: p });
+    for (const [x, y, w, hh] of c.calls) {
+      assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+        'posture=' + String(p) + ' non finito');
+    }
+  }
+});
+
+test('drawFigure: breathe default identico a zero (REGRESSIONE) e breathe>0 finito', () => {
+  const a = stubCtx(), b = stubCtx();
+  drawFigure(a, 25, 45, { h: 16, state: 'idle', phase: 0.9 });
+  drawFigure(b, 25, 45, { h: 16, state: 'idle', phase: 0.9, breathe: 0 });
+  assert.deepEqual(a.calls, b.calls, 'breathe=0 altera il rendering storico');
+  const c = stubCtx();
+  drawFigure(c, 25, 45, { h: 16, state: 'idle', phase: 0.9, breathe: 1 });
+  for (const [x, y, w, hh] of c.calls) {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+      'breathe ha prodotto coordinate non finite');
   }
 });
