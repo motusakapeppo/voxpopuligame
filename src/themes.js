@@ -34,20 +34,20 @@ export function themeHasWater(audioId) {
 
 // Piano di particelle ambientali per tema (tipi validi di fx.js).
 const THM_PLANS = {
-  '01-intro': { types: ['ember', 'dust'], rate: 2.5 },
-  '02-vento': { types: ['dust', 'ash'], rate: 6 },
-  '03-tuoni': { types: ['spark', 'dust'], rate: 1.5 },
-  '04-baghdad': { types: ['smoke', 'ember', 'ash'], rate: 4 },
-  '05-hosonno': { types: ['dust', 'smoke'], rate: 2 },
-  '06-primoposto': { types: ['dust', 'spark'], rate: 3 },
-  '07-tictac': { types: ['dust', 'spark'], rate: 2 },
-  '08-tuttofinto': { types: ['spark', 'ember'], rate: 3 },
-  '09-edera': { types: ['dust', 'ash'], rate: 2.5 },
-  '10-scendi': { types: ['drop', 'dust'], rate: 7 },
-  '11-lafinedelmondo': { types: ['drop', 'ash'], rate: 6 },
-  '12-maranatha': { types: ['ember', 'dust'], rate: 2 },
-  '13-outro': { types: ['ember', 'dust'], rate: 1.5 },
-  'default': { types: ['ember'], rate: 2 },
+  '01-intro': { types: ['ember', 'dust'], rate: 9 },
+  '02-vento': { types: ['dust', 'ash'], rate: 16 },
+  '03-tuoni': { types: ['spark', 'dust'], rate: 6 },
+  '04-baghdad': { types: ['smoke', 'ember', 'ash'], rate: 14 },
+  '05-hosonno': { types: ['dust', 'smoke'], rate: 7 },
+  '06-primoposto': { types: ['dust', 'spark'], rate: 10 },
+  '07-tictac': { types: ['dust', 'spark'], rate: 7 },
+  '08-tuttofinto': { types: ['spark', 'ember'], rate: 11 },
+  '09-edera': { types: ['dust', 'ash'], rate: 9 },
+  '10-scendi': { types: ['drop', 'dust'], rate: 18 },
+  '11-lafinedelmondo': { types: ['drop', 'ash'], rate: 15 },
+  '12-maranatha': { types: ['ember', 'dust'], rate: 8 },
+  '13-outro': { types: ['ember', 'dust'], rate: 7 },
+  'default': { types: ['ember'], rate: 8 },
 };
 
 // Pura: copia del piano di particelle.
