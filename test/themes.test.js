@@ -4,6 +4,9 @@ import {
   THEME_IDS, THEME_FALLBACK, themeFor, themeHasWater, themeParticlePlan,
   themeLayers, drawThemeBack, drawThemeFront,
 } from '../src/themes.js';
+// Namespace import: consente di leggere il contatore di debug S-REND senza
+// far fallire il link dell'intero file se non è ancora esposto (RED pulito).
+import * as THM from '../src/themes.js';
 import { C, depthRed } from '../src/palette.js';
 import { createFx } from '../src/fx.js';
 
@@ -178,4 +181,95 @@ test('gli strati di themeLayers sono davvero disegnati nello sfondo', () => {
       assert.ok(used.has(l.color), `strato ${l.color} non disegnato per ${id}`);
     }
   }
+});
+
+// --- S-REND: guardia "nessun cambio visivo" + riuso allocazioni --------------
+
+// Hash FNV-1a della sequenza registrata: impronta stabile e compatta.
+function hashSeq(seq) {
+  const s = JSON.stringify(seq);
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+
+// Impronta di riferimento catturata dall'implementazione PRE-refactor.
+// Se cambia anche un solo primitivo disegnato, questi hash cambiano → test rosso.
+const REF = {
+  '01-intro': [[1923016668, 303, 611673129, 6], [2563305001, 304, 1498893188, 7]],
+  '02-vento': [[609023432, 158, 2889890364, 68], [2439605109, 153, 4071402270, 68]],
+  '03-tuoni': [[789302161, 244, 1947613349, 0], [3422071046, 246, 1947613349, 0]],
+  '04-baghdad': [[477701795, 255, 1346374851, 5], [1419986094, 248, 3180536496, 6]],
+  '05-hosonno': [[1872535615, 292, 3096924092, 1], [3880851950, 291, 4023118249, 1]],
+  '06-primoposto': [[2635353345, 254, 284184351, 64], [2942455989, 256, 3319994151, 64]],
+  '07-tictac': [[1139837241, 238, 942003670, 61], [2305320034, 239, 1014982464, 58]],
+  '08-tuttofinto': [[3318349667, 293, 345691016, 66], [2153080482, 293, 345691016, 66]],
+  '09-edera': [[3599624201, 274, 1995386895, 14], [3582807303, 274, 478780436, 14]],
+  '10-scendi': [[1313391371, 327, 1514720364, 41], [608461687, 320, 2991681208, 42]],
+  '11-lafinedelmondo': [[2695498855, 167, 691758725, 10], [4117915797, 167, 519550647, 10]],
+  '12-maranatha': [[598866772, 252, 4035554001, 58], [3248413878, 251, 1209617664, 58]],
+  '13-outro': [[321774597, 324, 3901673499, 1], [2329750774, 284, 1013127396, 1]],
+  'default': [[1630884364, 105, 549137722, 4], [818402340, 105, 3379290323, 4]],
+};
+
+test('S-REND: drawThemeBack/Front producono la sequenza ESATTA di riferimento (nessun cambio visivo)', () => {
+  const params = [[120, 3.3], [157, 7.7]];
+  for (const id of ALL_IDS) {
+    for (let k = 0; k < params.length; k++) {
+      const [camY, time] = params[k];
+      const b = recCtx(); drawThemeBack(b, id, camY, time, 320, 180, undefined);
+      const f = recCtx(); drawThemeFront(f, id, camY, time, 320, 180, undefined);
+      assert.equal(hashSeq(b._seq), REF[id][k][0], `back hash cambiato per ${id} @${k}`);
+      assert.equal(b._seq.length, REF[id][k][1], `back lunghezza cambiata per ${id} @${k}`);
+      assert.equal(hashSeq(f._seq), REF[id][k][2], `front hash cambiato per ${id} @${k}`);
+      assert.equal(f._seq.length, REF[id][k][3], `front lunghezza cambiata per ${id} @${k}`);
+    }
+  }
+});
+
+test('S-REND: chiamare due volte lo stesso tema produce sequenze deepEqual', () => {
+  for (const id of ALL_IDS) {
+    const a = recCtx(), b = recCtx();
+    drawThemeBack(a, id, 120, 3.3, 320, 180, undefined);
+    drawThemeBack(b, id, 120, 3.3, 320, 180, undefined);
+    assert.deepEqual(a._seq, b._seq, 'back non ripetibile per ' + id);
+    const c = recCtx(), d = recCtx();
+    drawThemeFront(c, id, 120, 3.3, 320, 180, undefined);
+    drawThemeFront(d, id, 120, 3.3, 320, 180, undefined);
+    assert.deepEqual(c._seq, d._seq, 'front non ripetibile per ' + id);
+  }
+});
+
+test('S-REND: il painter è riusato per lo stesso ctx (nessuna ricreazione per frame)', () => {
+  assert.ok(THM.__thmDebug && typeof THM.__thmDebug.paintersCreated === 'number',
+    'contatore di debug __thmDebug.paintersCreated non esposto');
+  const ctx = recCtx();
+  const before = THM.__thmDebug.paintersCreated;
+  for (let i = 0; i < 50; i++) drawThemeBack(ctx, '04-baghdad', 120, i / 60, 320, 180, undefined);
+  const afterBack = THM.__thmDebug.paintersCreated;
+  assert.equal(afterBack - before, 1, 'il painter non è stato riusato per lo stesso ctx (back)');
+  for (let i = 0; i < 50; i++) drawThemeFront(ctx, '04-baghdad', 120, i / 60, 320, 180, undefined);
+  assert.equal(THM.__thmDebug.paintersCreated - afterBack, 0,
+    'il painter è stato ricreato per il front sullo stesso ctx');
+});
+
+test('S-REND: il painter è ricreato quando cambia il ctx', () => {
+  assert.ok(THM.__thmDebug && typeof THM.__thmDebug.paintersCreated === 'number',
+    'contatore di debug __thmDebug.paintersCreated non esposto');
+  const a = recCtx(), b = recCtx();
+  const before = THM.__thmDebug.paintersCreated;
+  drawThemeBack(a, '01-intro', 120, 3.3, 320, 180, undefined);
+  drawThemeBack(b, '01-intro', 120, 3.3, 320, 180, undefined);
+  assert.equal(THM.__thmDebug.paintersCreated - before, 2, 'ctx diversi devono avere painter distinti');
+});
+
+test('S-REND: le closure LCG per strato sono riusate (nessuna ricreazione per frame)', () => {
+  assert.ok(THM.__thmDebug && typeof THM.__thmDebug.lcgCreated === 'number',
+    'contatore di debug __thmDebug.lcgCreated non esposto');
+  const ctx = recCtx();
+  drawThemeBack(ctx, '04-baghdad', 120, 3.3, 320, 180, undefined); // riscalda la cache
+  const before = THM.__thmDebug.lcgCreated;
+  for (let i = 0; i < 50; i++) drawThemeBack(ctx, '04-baghdad', 120, 3.3 + i / 60, 320, 180, undefined);
+  assert.equal(THM.__thmDebug.lcgCreated - before, 0,
+    'le closure LCG degli strati sono state ricreate per frame');
 });

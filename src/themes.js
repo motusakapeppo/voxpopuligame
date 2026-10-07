@@ -22,6 +22,10 @@ export const THEME_FALLBACK = 'default';
 
 const THM_SET = new Set(THEME_IDS);
 
+// S-REND: contatori di debug (solo lettura) per verificare il riuso delle
+// allocazioni per-frame. Non influenzano il disegno.
+export const __thmDebug = { paintersCreated: 0, lcgCreated: 0 };
+
 // Pura: audioId noto → se stesso; altrimenti il tema di ripiego (braci).
 export function themeFor(audioId) {
   return THM_SET.has(audioId) ? audioId : THEME_FALLBACK;
@@ -71,6 +75,22 @@ function thmLcg(seed) {
   return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
 }
 
+// S-REND: LCG per strato riusato. Il seed è finito (hash tema ^ indice strato),
+// quindi la cache è limitata. Ad ogni uso lo stato è riportato al seed: la
+// sequenza di valori è IDENTICA a thmLcg(seed) appena creato.
+const THM_LCG_CACHE = new Map();
+function thmLayerLcg(seed) {
+  const key = seed >>> 0;
+  let e = THM_LCG_CACHE.get(key);
+  if (!e) {
+    e = { s: key, next() { return (e.s = (e.s * 1664525 + 1013904223) >>> 0) / 4294967296; } };
+    THM_LCG_CACHE.set(key, e);
+    __thmDebug.lcgCreated++;
+  }
+  e.s = key;
+  return e.next;
+}
+
 // Coordinata "a fisarmonica": ripete un elemento lungo la salita.
 function thmTile(y, camY, f, period) {
   const v = y - camY * f;
@@ -84,8 +104,13 @@ function thmPulse(time, period, dur) {
 }
 
 // Painter: ogni primitiva è clampata al viewport. Mai un pixel fuori.
+// S-REND: il painter è creato UNA volta per ctx (WeakMap) e riusato ad ogni
+// frame; W/H sono aggiornati sul posto. Output identico, zero alloc per frame.
+const THM_PAINTERS = new WeakMap();
 function thmMakePainter(ctx, W, H) {
-  const P = {
+  let P = THM_PAINTERS.get(ctx);
+  if (P) { P.W = W; P.H = H; return P; }
+  P = {
     ctx, W, H,
     rect(x, y, w, h, color, alpha) {
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
@@ -94,7 +119,7 @@ function thmMakePainter(ctx, W, H) {
       if (x1 < x0) { const t = x0; x0 = x1; x1 = t; }
       if (y1 < y0) { const t = y0; y0 = y1; y1 = t; }
       x0 = Math.max(0, x0); y0 = Math.max(0, y0);
-      x1 = Math.min(W, x1); y1 = Math.min(H, y1);
+      x1 = Math.min(P.W, x1); y1 = Math.min(P.H, y1);
       if (x1 <= x0 || y1 <= y0) return;
       ctx.globalAlpha = Number.isFinite(alpha) ? (alpha < 0 ? 0 : alpha > 1 ? 1 : alpha) : 1;
       ctx.fillStyle = color;
@@ -124,6 +149,8 @@ function thmMakePainter(ctx, W, H) {
       }
     },
   };
+  THM_PAINTERS.set(ctx, P);
+  __thmDebug.paintersCreated++;
   return P;
 }
 
@@ -197,7 +224,7 @@ function thmParallax(P, camY, time, W, H, layers, seed) {
     const period = 200 + i * 24;
     const raw = thmTile(20 + i * 50, cy, speed, period);
     const base = Math.round((raw / period) * (H * 0.55) + H * 0.15) + i * 12;
-    const r = thmLcg((sd ^ Math.imul(i + 1, 2654435761)) >>> 0);
+    const r = thmLayerLcg((sd ^ Math.imul(i + 1, 2654435761)) >>> 0);
     const step = 10;
     for (let x = 0; x < W; x += step) {
       const hh = Math.round(6 + r() * 26);
