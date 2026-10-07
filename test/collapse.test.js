@@ -225,6 +225,97 @@ test('keep/supported: supported diversi → keep e figure erette misurano divers
 });
 
 // ---------------------------------------------------------------------------
+// NO EXPLOSION — il crollo NON è un blast: dopo il settle la pila resta dentro
+// l'impronta della base (max |x-cx| <= ~1.3× la semi-ampiezza della base) e la
+// velocità orizzontale subito dopo il crack→collapse è piccola (< ~1.5 px/frame).
+// ---------------------------------------------------------------------------
+function baseHalfSpan(c) {
+  const base = c.figs.filter(f => f.row === 0).map(f => f.x);
+  return (Math.max(...base) - Math.min(...base)) / 2;
+}
+
+test('no explosion: la pila resta dentro l\'impronta della base', () => {
+  const c = createCollapse({ bodies: BODIES, viewW: 480, viewH: 320, supported: 4, seed: 9 });
+  const cx = 480 / 2;
+  const half = baseHalfSpan(c);
+  let steps = 0;
+  while (!collapseFinished(c) && steps < 10000) { stepCollapse(c, DT); steps++; }
+  let maxOut = 0;
+  for (const rf of c.world.figures) {
+    for (const p of rf.parts) maxOut = Math.max(maxOut, Math.abs(p.x - cx));
+  }
+  assert.ok(maxOut <= half * 1.3 + 2,
+    `spread ${maxOut.toFixed(1)} > ${(half * 1.3 + 2).toFixed(1)} (base half-span ${half})`);
+});
+
+test('no explosion: velocità orizzontale piccola subito dopo il crack→collapse', () => {
+  const c = createCollapse({ bodies: BODIES, viewW: 480, viewH: 320, supported: 4, seed: 9 });
+  let steps = 0;
+  while (c.phase !== 'collapse' && steps < 10000) { stepCollapse(c, DT); steps++; }
+  // primi 10 frame di crollo: cattura l'impulso di rilascio (buckle), non un blast
+  let maxVx = 0;
+  for (let k = 0; k < 10 && !collapseFinished(c); k++) {
+    stepCollapse(c, DT);
+    for (const rf of c.world.figures) {
+      for (const p of rf.parts) maxVx = Math.max(maxVx, Math.abs(p.x - p.px));
+    }
+  }
+  assert.ok(maxVx < 1.5, `velocità orizzontale ${maxVx.toFixed(2)} >= 1.5 (esplosione)`);
+});
+
+// ---------------------------------------------------------------------------
+// VERTICAL-DRIVEN — lo spostamento verticale medio domina l'orizzontale: le
+// figure cadono per gravità, non vengono lanciate di lato.
+// ---------------------------------------------------------------------------
+test('vertical-driven: lo spostamento verticale medio domina l\'orizzontale', () => {
+  const c = createCollapse({ bodies: BODIES, viewW: 480, viewH: 320, supported: 4, seed: 9 });
+  const start = c.world.figures.map(f => f.parts.map(p => ({ x: p.x, y: p.y })));
+  let steps = 0;
+  while (!collapseFinished(c) && steps < 10000) { stepCollapse(c, DT); steps++; }
+  let sumDy = 0, sumDx = 0, n = 0;
+  for (let i = 0; i < c.world.figures.length; i++) {
+    const rf = c.world.figures[i];
+    for (let k = 0; k < rf.parts.length; k++) {
+      sumDy += Math.abs(rf.parts[k].y - start[i][k].y);
+      sumDx += Math.abs(rf.parts[k].x - start[i][k].x);
+      n++;
+    }
+  }
+  assert.ok(sumDy / n > sumDx / n,
+    `avg|dy|=${(sumDy / n).toFixed(2)} <= avg|dx|=${(sumDx / n).toFixed(2)}`);
+});
+
+// ---------------------------------------------------------------------------
+// CASCADE — a inizio crollo la struttura cede dal basso: le file basse (non
+// fedeli) si sono mosse più di quelle alte, che sono ancora trattenute.
+// ---------------------------------------------------------------------------
+test('cascade: a inizio crollo le file basse si muovono più di quelle alte', () => {
+  const c = createCollapse({ bodies: BODIES, viewW: 480, viewH: 320, supported: 4, seed: 9 });
+  const start = c.world.figures.map(f => f.parts.map(p => ({ x: p.x, y: p.y })));
+  let steps = 0;
+  while (c.phase !== 'collapse' && steps < 10000) { stepCollapse(c, DT); steps++; }
+  const t0 = steps;
+  while (steps - t0 < 30 && !collapseFinished(c) && steps < 10000) { stepCollapse(c, DT); steps++; }
+  const byRow = new Map();
+  for (let i = 0; i < c.world.figures.length; i++) {
+    const rf = c.world.figures[i];
+    const row = c.figs[i].row;
+    let d = 0;
+    for (let k = 0; k < rf.parts.length; k++) {
+      d += Math.hypot(rf.parts[k].x - start[i][k].x, rf.parts[k].y - start[i][k].y);
+    }
+    d /= rf.parts.length;
+    if (!byRow.has(row)) byRow.set(row, []);
+    byRow.get(row).push(d);
+  }
+  const avg = (row) => { const a = byRow.get(row) || [0]; return a.reduce((s, v) => s + v, 0) / a.length; };
+  const baseAvg = (avg(1) + avg(2)) / 2;   // righe basse non-fedeli (la 0 è il nucleo fedele)
+  const topAvg = (avg(12) + avg(13)) / 2;  // righe alte, ancora trattenute
+  assert.ok(baseAvg > topAvg + 0.5,
+    `base ${baseAvg.toFixed(2)} non > top ${topAvg.toFixed(2)} (cascata non bottom-up)`);
+});
+
+// ---------------------------------------------------------------------------
 // DETERMINISMO + FINITEZZA — 10000 step di guardia con keep/supported attivi:
 // nessun NaN/Infinity e stesso seed → stesso stato finale (incl. erette).
 // ---------------------------------------------------------------------------
