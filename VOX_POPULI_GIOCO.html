@@ -394,6 +394,15 @@ const GIRONI = [
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true, final:true}],
     npcScenes:['theTop'], inscription:{ text:'OUTRO' } },
 ];
+
+// Firma meccanica di un girone: kind + parametri autoriali ordinati.
+// Serve a garantire che i 13 gironi siano meccanicamente distinguibili.
+function modifierSignature(g) {
+  return g.modifiers.map(m => {
+    const keys = Object.keys(m).filter(k => k !== 'kind').sort();
+    return m.kind + '(' + keys.map(k => k + '=' + m[k]).join(',') + ')';
+  }).join('+');
+}
 function validateGironi(list) {
   if (!Array.isArray(list) || list.length !== 13) throw new Error('malformed: expected 13 gironi');
   for (const g of list) {
@@ -784,7 +793,18 @@ const KARAOKE = {"01-intro":[[0.56,"E scopro ogni giorno che passa un pezzetto d
 
 
 // --- modifiers.js ---
-const EVENTS = ['quake','blade','dim','push','slip','fake'];
+const EVENTS = ['quake','blade','dim','push','slip','fake','gust','dust','wake','ivy','calm'];
+
+// Campi numerici/booleani di ctx.effects. Additivo: i consumatori esistenti
+// (main.js) leggono dim/flicker/water/elapsed/verlet; qui se ne aggiungono altri.
+function createEffects() {
+  return {
+    dim: 0, flicker: 0, water: 0, elapsed: 0, verlet: false,
+    shake: 0, quakeT: 0, dust: 0, wake: 0, pressure: 0,
+    fake: 0, slip: 0, hands: 0, calm: false,
+    bladeRate: 0, verletPhase: 0, elapsedNorm: 0, ivy: 0,
+  };
+}
 function createModState(mod) {
   const st = { t: 0, last: -999, elapsed: 0, phase: 0 };
   if (mod.kind === 'rivals') st.rivals = Array.from({ length: mod.count },
@@ -793,11 +813,11 @@ function createModState(mod) {
 }
 
 // Ritorna void. Aggiorna ctx.player / ctx.world / ctx.events. Deterministico.
-// Aggiorna ANCHE ctx.effects (T4): un oggetto osservabile con dim/flicker/water/
-// elapsed, così il rendering può consumare gli stati oggi solo calcolati.
+// Aggiorna ANCHE ctx.effects: un oggetto osservabile che il rendering consuma.
+// Ogni parametro autoriale dei modificatori produce un effetto osservabile.
 function applyModifier(mod, ctx, dt, st = createModState(mod)) {
   st.t += dt;
-  const fx = ctx.effects || (ctx.effects = { dim: 0, flicker: 0, water: 0, elapsed: 0, verlet: false });
+  const fx = ctx.effects || (ctx.effects = createEffects());
   switch (mod.kind) {
     case 'tutorial': break;
 
@@ -805,6 +825,14 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
       const force = Math.sin((st.t / mod.period) * Math.PI * 2) * mod.strength;
       ctx.player.x += force * dt;               // spinge orizzontalmente
       if (Math.abs(force) > mod.strength * 0.8) ctx.events.push('gust');
+      if (mod.dust) {
+        // cadenza deterministica legata alla forza: più vento -> più polvere.
+        const rate = Math.max(0.05, 1 / (1 + Math.abs(force))); // secondi tra raffiche
+        if (st.t - st.last >= rate) { st.last = st.t; ctx.events.push('dust'); }
+        fx.dust = Math.min(1, Math.abs(force) / Math.max(0.001, mod.strength));
+      } else {
+        fx.dust = 0;
+      }
       break;
     }
 
@@ -812,15 +840,23 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
       if (st.t - st.last >= mod.every) {
         st.last = st.t;
         ctx.events.push('quake');
+        st.shakeT = mod.shakeT;                 // durata della scossa autoriale
       }
+      // la scossa decade nel tempo; ampiezza e durata derivano dai valori autoriali
+      st.shakeT = Math.max(0, (st.shakeT || 0) - dt);
+      fx.shake = mod.shakeAmp * (st.shakeT / Math.max(0.001, mod.shakeT));
+      fx.quakeT = st.shakeT;
       break;
     }
 
     case 'fallingBlades': {
-      if (st.t - st.last >= mod.every) {
+      // speed controlla la cadenza: intervallo effettivo = every / speed.
+      const interval = mod.every / Math.max(0.001, mod.speed);
+      if (st.t - st.last >= interval) {
         st.last = st.t;
         ctx.events.push('blade');
       }
+      fx.bladeRate = 1 / interval;
       break;
     }
 
@@ -830,6 +866,11 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
         st.dim = Math.max(mod.dimTo, 1 - st.t * 0.05); // cala la luce col tempo
         fx.dim = 1 - st.dim;                            // esposizione osservabile
         ctx.events.push('dim');
+      }
+      if (mod.wakeTouchEvery !== undefined) {
+        // sveglia deterministica: un 'wake' ogni wakeTouchEvery secondi.
+        if (st.t - st.last >= mod.wakeTouchEvery) { st.last = st.t; ctx.events.push('wake'); }
+        fx.wake = st.t - st.last;
       }
       break;
     }
@@ -845,27 +886,57 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
 
     case 'timer': {
       st.elapsed += dt;
-      if (st.elapsed > mod.total) ctx.events.push('flood');
+      // pressure rampa verso 1 alla velocità collapseSpeed; oltre il totale -> 1.
+      const rate = mod.collapseSpeed !== undefined ? mod.collapseSpeed : 0.5;
+      st.pressure = Math.min(1, (st.pressure || 0) + rate * dt);
+      if (st.elapsed > mod.total) {
+        st.pressure = 1;
+        ctx.events.push('flood');
+      }
+      fx.pressure = st.pressure;
       break;
     }
 
     case 'illusion': {
-      st.flicker = Math.sin(st.t * 6) > 0.9;
+      // frequenza del flicker derivata da fakeRatio (deterministica).
+      const ratio = mod.fakeRatio !== undefined ? mod.fakeRatio : 0.5;
+      const freq = 4 + ratio * 12;
+      st.flicker = Math.sin(st.t * freq) > 1 - ratio;
       fx.flicker = st.flicker ? 1 : 0;
+      fx.fake = ratio;
       if (st.flicker) ctx.events.push('fake');
+      if (mod.flames && st.flicker) ctx.events.push('fake'); // fiamme -> più fake
       break;
     }
 
     case 'descent': {
       // direzione invertita: il progresso va "verso l'ade" (giù)
-      st.verletOn = st.t < mod.verletFor;
+      st.verletOn = mod.verlet ? st.t < mod.verletFor : false;
       fx.verlet = st.verletOn;
+      fx.verletPhase = mod.verletFor > 0 ? Math.min(1, st.t / mod.verletFor) : 0;
+      if (mod.ivy) {
+        if (st.t - st.last >= 1) { st.last = st.t; ctx.events.push('ivy'); }
+        fx.ivy = 1;
+      } else {
+        fx.ivy = 0;
+      }
       break;
     }
 
     case 'rain': {
-      ctx.player.vx *= 0.9;                        // scivola: meno controllo
+      if (mod.slip) {
+        ctx.player.vx *= 0.9;                        // scivola: meno controllo
+        ctx.player.vx += Math.sin(st.t * 13) * 0.5;  // jitter deterministico
+        fx.slip = 1;
+      } else {
+        fx.slip = 0;
+      }
       if (st.t % 1 < dt) ctx.events.push('slip');
+      // pushers: esattamente N spinte distribuite sul livello.
+      if (mod.pushers > 0) {
+        const interval = 7 / mod.pushers;
+        if (st.t - st.last >= interval) { st.last = st.t; ctx.events.push('push'); }
+      }
       break;
     }
 
@@ -874,12 +945,18 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
       break;
     }
 
-    case 'handhold': break;                        // corpi più stabili: nessuna penalità
+    case 'handhold': {
+      fx.hands = mod.hands ? 1 : 0;
+      fx.calm = !!mod.final;
+      if (mod.final && st.t - st.last >= 2) { st.last = st.t; ctx.events.push('calm'); }
+      break;
+    }
 
     default: break;
   }
   fx.water = st.water || 0;
   fx.elapsed = st.elapsed || 0;
+  fx.elapsedNorm = mod.total ? Math.min(1, (st.elapsed || 0) / mod.total) : 0;
 }
 
 
@@ -889,7 +966,18 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
 // Ogni brano ha un pericolo ricorrente (che colpisce la tua presa) e, spesso,
 // un aiuto che puoi raccogliere. Tutto legato ai versi del brano.
 // Determininistico e testabile: nessun Math.random.
+//
+// T5 — ogni pericolo ha una FIRMA MECCANICA DIVERSA (non tutti lo stesso
+// shiftHands(0,-1)): quake scuote, debris fa cadere un masso, rival duella,
+// ivy tira con una corda, time accelera, fake inganna, drowsy rallenta,
+// wind spinge, rain scivola, water sale. `slow` rallenta davvero la cadenza.
 // ============================================================================
+
+// LCG deterministico (Numerical Recipes): nessun Math.random, seme in state.rng.
+function lcgNext(state) {
+  state.rng = (Math.imul(1664525, state.rng >>> 0) + 1013904223) >>> 0;
+  return state.rng / 4294967296;
+}
 
 // effetti applicati all'arrampicata (mutano le mani del climb)
 function shiftHands(cl, dc, dr) {
@@ -929,52 +1017,88 @@ const THREATS = {
 // stesso shiftHands(0,-1)). Ritorna il messaggio mostrato a schermo.
 function applyThreat(kind, cl, state) {
   switch (kind) {
-    case 'wind':
-      shiftHands(cl, state.windDir || 1, 0);
-      state.windDir = -(state.windDir || 1);
+    case 'wind': {
+      // spinta costante: ti sposta di lato, sempre nella stessa direzione finché dura
+      const d = state.windDir || 1;
+      shiftHands(cl, d, 0);
+      state.windDir = -d;
       return 'vento ti sposta';
-    case 'quake':
-      state.stun = 0.6;                          // congela l'input
-      shiftHands(cl, 0, -1);
+    }
+    case 'quake': {
+      // stordimento pesante + scivolata GIÙ di 1 + scossa laterale deterministica
+      state.stun = 0.6;
+      state.shake = 0.5;
+      const dir = lcgNext(state) < 0.5 ? -1 : 1;
+      const amt = 1 + Math.floor(lcgNext(state) * 2);   // 1..2 colonne
+      shiftHands(cl, dir * amt, -1);
       return 'il tuono ti stordisce';
-    case 'debris':
+    }
+    case 'debris': {
       if (state.shield > 0) { state.shield--; return 'il detrito si infrange sul tuo scudo'; }
-      state.colliders = (state.colliders || 0) + 1;   // un masso cade
+      // un masso cade: crea un collider e atterra una fila sotto di te
+      state.colliders = (state.colliders || 0) + 1;
+      state.debrisRow = Math.max(0, climbRowOf(cl) - 1);
       shiftHands(cl, 0, -1);
       return 'un detrito ti colpisce';
-    case 'drowsy':
+    }
+    case 'drowsy': {
       state.lag = 0.8;                          // input in ritardo
       state.grip = (state.grip || 1) - 0.3;     // presa più debole
       return 'il sonno ti fa scivolare';
-    case 'rival':
-      state.duel = 1.2;                         // un rivale sale accanto
-      shiftHands(cl, 0, -1);
+    }
+    case 'rival': {
+      // duello: un rivale sale accanto e ti spinge GIÙ di 1 e di lato, via da lui
+      state.duel = 1.2;
+      const dir = lcgNext(state) < 0.5 ? -1 : 1;
+      state.rivalDir = dir;
+      shiftHands(cl, dir, -1);
       return 'un rivale ti spinge giù';
-    case 'time':
-      state.countdown = (state.countdown || 0) + 1;   // il tempo stringe
+    }
+    case 'time': {
+      // il tempo stringe: countdown + cadenza dei pericoli accelerata
+      state.countdown = (state.countdown || 0) + 1;
+      state.cadence = Math.max(0.4, (state.cadence == null ? 1 : state.cadence) - 0.15);
       return 'il tempo ti sfugge';
-    case 'fake':
-      state.decoy = 1.0;                        // un appiglio finto (nessuna perdita)
+    }
+    case 'fake': {
+      // appiglio finto: il prossimo passo automatico va a vuoto (decoy)
+      state.decoy = 1.0;
       return 'un appiglio era finto';
-    case 'ivy':
-      state.tether = { c: cl.lh.c, r: cl.lh.r + 2 };  // ti tira verso un punto
-      shiftHands(cl, 0, -1);
-      return 'l edera ti tira giù';
-    case 'rain':
-      state.grip = Math.max(0, (state.grip == null ? 1 : state.grip) - 0.4);  // scivoloso
-      shiftHands(cl, state.rainDir || 1, 0);
-      state.rainDir = -(state.rainDir || 1);
-      return 'la pioggia ti fa scivolare';
+    }
+    case 'ivy': {
+      // corda: ti tira verso un punto fisso (clamp laterale), non ti fa cadere
+      const anchor = { c: cl.lh.c, r: Math.max(0, climbRowOf(cl) - 2) };
+      state.tether = anchor;
+      const dc = Math.sign(anchor.c - cl.lh.c);
+      shiftHands(cl, dc, 0);
+      return 'l edera ti tira';
+    }
+    case 'rain': {
+      // scivoloso: presa debole + ogni tanto una raffica più forte
+      state.grip = Math.max(0, (state.grip == null ? 1 : state.grip) - 0.4);
+      const gust = lcgNext(state) < 0.35;
+      const d = state.rainDir || 1;
+      shiftHands(cl, gust ? d * 2 : d, 0);
+      state.rainDir = -d;
+      return gust ? 'una raffica di pioggia ti travolge' : 'la pioggia ti fa scivolare';
+    }
     default: return null;
   }
 }
 
 // Firma meccanica di ogni pericolo: tipo + campo di stato che muta. Serve a
-// garantire che i gironi non condividano lo stesso effetto.
+// garantire che i gironi non condividano lo stesso effetto. Ogni valore è UNICO.
 const THREAT_SIGNATURES = {
-  wind: 'shift-x:windDir', quake: 'stun:0.6', debris: 'collider:1',
-  drowsy: 'lag:0.8+grip', rival: 'duel:1.2', time: 'countdown:+1',
-  fake: 'decoy:1.0', ivy: 'tether:down', rain: 'grip-0.4+shift-x', water: 'waterRow:rise',
+  wind:   'shift-x:windDir',
+  quake:  'stun:0.6+shake:lcg',
+  debris: 'collider:+1+debrisRow',
+  drowsy: 'lag:0.8+grip-0.3',
+  rival:  'duel:1.2+rivalDir:lcg',
+  time:   'countdown:+1+cadence-0.15',
+  fake:   'decoy:1.0',
+  ivy:    'tether:lateral-clamp',
+  rain:   'grip-0.4+rainDir:gust',
+  water:  'waterRow:rise',
 };
 
 // Effetto di un aiuto raccolto.
@@ -995,8 +1119,10 @@ function applyPickup(kind, cl, state) {
 function createThreatState() {
   return { t: 0, last: {}, shield: 0, speed: 0, slow: 0, real: 0, breakFree: 0,
     windDir: 1, rainDir: 1, waterRow: -1, lastMsg: '', msgT: 0,
-    // campi distinti per i pericoli (T4): ognuno muta il proprio
-    stun: 0, lag: 0, grip: 1, duel: 0, countdown: 0, decoy: 0, colliders: 0, tether: null };
+    // campi distinti per i pericoli (T5): ognuno muta il proprio
+    stun: 0, lag: 0, grip: 1, duel: 0, countdown: 0, decoy: 0, colliders: 0, tether: null,
+    shake: 0, debrisRow: -1, rivalDir: 0, cadence: 1,
+    rng: 0x9e3779b9 };   // seme LCG deterministico
 }
 
 // Avanza: applica pericoli periodici e acqua che sale. Ritorna il messaggio attivo.
@@ -1012,9 +1138,22 @@ function stepThreats(girone, cl, state, dt, waterLevel) {
   if (state.lag > 0) state.lag -= dt;
   if (state.duel > 0) state.duel -= dt;
   if (state.decoy > 0) state.decoy -= dt;
+  if (state.shake > 0) state.shake -= dt;
+  if (state.cadence < 1) state.cadence = Math.min(1, state.cadence + dt * 0.05);  // recupera
   if (state.grip < 1) state.grip = Math.min(1, state.grip + dt * 0.15);   // recupera la presa
 
+  // DECOY: l'appiglio finto inghiotte il prossimo passo automatico (va a vuoto).
+  if (state.decoy > 0 && cl.reach > 0) {
+    cl.reach = 0; cl.which = null; cl.from = null; cl.to = null;
+    cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
+    cl.lhHold = 1; cl.rhHold = 1;
+    state.decoy = 0;
+  }
+
   const def = THREATS[girone.audioId] || { auto: [] };
+  // SLOW: mentre è attivo i pericoli scattano meno spesso (fattore 2x).
+  const slowFactor = state.slow > 0 ? 2 : 1;
+  const cadence = state.cadence == null ? 1 : state.cadence;   // <1 = più veloce
   for (const a of def.auto) {
     if (a.kind === 'water') {
       // l'acqua sale: se il corpo è sotto il livello, vieni sospinto su
@@ -1024,7 +1163,8 @@ function stepThreats(girone, cl, state, dt, waterLevel) {
       if (r < state.waterRow) { shiftHands(cl, 0, +1); }
       continue;
     }
-    if (a.every > 0 && state.t - (state.last[a.kind] || 0) >= a.every) {
+    const interval = a.every * slowFactor * cadence;
+    if (a.every > 0 && state.t - (state.last[a.kind] || 0) >= interval) {
       state.last[a.kind] = state.t;
       if (a.kind === 'ivy' && (state.breakFree > 0 || state.real > 0)) continue;   // l'aiuto ti protegge
       const msg = applyThreat(a.kind, cl, state);
@@ -1034,7 +1174,7 @@ function stepThreats(girone, cl, state, dt, waterLevel) {
   return state.msgT > 0 ? state.lastMsg : '';
 }
 
-// Effetti osservabili per il rendering (T4): il main legge questi per dim/water/glitch.
+// Effetti osservabili per il rendering (T5): il main legge questi per dim/water/glitch.
 function threatEffects(state) {
   return {
     dim: state.grip < 0.6 ? 0.25 : 0,      // presa debole = buio leggero
@@ -1046,6 +1186,12 @@ function threatEffects(state) {
     tether: state.tether,                   // edera
     water: state.waterRow >= 0 ? state.waterRow : 0,
     countdown: state.countdown || 0,
+    // T5: nuovi campi osservabili
+    shake: Math.max(0, state.shake),        // scossa del terremoto
+    debrisRow: state.debrisRow == null ? -1 : state.debrisRow,
+    rivalDir: state.rivalDir || 0,
+    cadence: state.cadence == null ? 1 : state.cadence,
+    slow: Math.max(0, state.slow),
   };
 }
 
