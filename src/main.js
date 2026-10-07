@@ -228,15 +228,16 @@ function updatePrompt() {
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
-  // lirica estetica in PIXEL ART (coerente col mondo)
-  const kl = KARAOKE[lv.girone.audioId];
-  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
+  // lirica PIXEL protagonista: in CIMA alla scena (dopo folla/giocatore/front),
+  // così resta leggibile in ogni tema pur restando pixel-art (attraversa il post).
+  const kl = KARAOKE[lv.girone.audioId];
+  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
   // T9: acqua che sale (girone 11) — copre la scena sotto il livello raggiunto.
   const wl = lv.fxState && lv.fxState.water;
   if (wl && wl > 0) {
@@ -262,10 +263,8 @@ function drawOverlay() {
   const pos = audio.position() + LYRIC_LEAD;
   // liriche NITIDE a risoluzione piena: solo dove hanno senso (playing/unlocked),
   // mai sopra title/cta/collapse. La scena pixel resta come sfondo tenue.
-  if (level && (state.phase === 'playing' || state.phase === 'unlocked')) {
-    const kl = KARAOKE[level.girone.audioId];
-    if (kl && !SKIP.has('lyrics')) drawLyricsOverlay(uctx, SCALE, kl, pos, VIEW_W, VIEW_H, time);
-  }
+  // Le liriche sono PIXEL (drawLyricsPixel, nella scena): qui niente testo nitido
+  // sovrapposto — evitava il doppio testo. Il resto dell'HUD resta a piena risoluzione.
   drawUIOverlay(uctx, SCALE, VIEW_W, VIEW_H, {
     inscription: level ? level.girone.inscription.text : '',
     threatMsg: level ? level.threatMsg : '',

@@ -1065,8 +1065,9 @@ export function drawUIOverlay(ctx, S, W, H, o) {
 }
 
 // Lirica di sfondo in PIXEL ART: SOLO backdrop atmosferico. La leggibilità è
-// dell'overlay full-res (drawLyricsOverlay): qui alpha bassissime, mai in gara.
-// Stesso guard overflow dell'overlay: shrink-to-fit + wrap, mai fuori schermo.
+// Lirica PIXEL — PROTAGONISTA: corpo bianco + outline nero a 4 direzioni + banda
+// scura con capelli rossi. Vive nella scena (attraversa il post: resta pixel-art),
+// leggibile e mai fuori schermo. La riga precedente resta come fantasma rosso.
 export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   if (!lines || !lines.length) return;
   const w = Number.isFinite(W) ? W : 320;
@@ -1081,30 +1082,34 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
 
   ctx.save();
   ctx.textAlign = 'center';
-  const y = h * 0.30 + Math.sin(t * 0.7) * 2;
+  const y = h * 0.30 + Math.sin(t * 0.7) * 1.5;
 
-  // fantasma riga precedente: ancora più tenue, shrink-to-fit (righe separate)
+  // fantasma riga precedente: rossa tenue, sopra
   if (prev) {
     const pl = lyricLayout(ctx, prev, w * 0.92, 1, 8, 6);
-    const pstep = pl.size * 1.15;
-    for (let li = 0; li < pl.lines.length; li++) {
-      drawVert(ctx, pl.lines[li], w / 2, y - 14 - (pl.lines.length - 1 - li) * pstep, t, 0.05, pl.size, 0);
-    }
+    drawVert(ctx, pl.lines[0], w / 2, y - pl.size - 6, t, 0.30, pl.size, 0);
   }
 
-  // riga attiva: backdrop tenue (alpha ~0.10), mai sopra la soglia di gara
-  const lay = lyricLayout(ctx, text, w * 0.92, 1, 14, 6);
+  // layout riga attiva (shrink-to-fit + wrap, mai fuori schermo)
+  const lay = lyricLayout(ctx, text, w * 0.92, 1, 14, 7);
   const size = lay.size;
   const n = lay.lines.length;
-  const step = size * 1.15;
-  const bandTop = y - ((n - 1) / 2) * step - size - 2;
-  const bandH = (n - 1) * step + size + 6;
-  ctx.globalAlpha = 0.10;
-  ctx.fillStyle = C.black;
-  ctx.fillRect(0, bandTop, w, bandH);
+  const step = size * 1.25;
+  const bandTop = y - ((n - 1) / 2) * step - size - 3;
+  const bandH = (n - 1) * step + size + 8;
 
-  ctx.font = size + 'px monospace';
-  const cw = size * 0.6;
+  // banda scura dietro la riga + capelli rossi sopra/sotto (inquadratura)
+  ctx.globalAlpha = 0.72;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, Math.round(bandTop), w, Math.round(bandH));
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = C.red;
+  ctx.fillRect(0, Math.round(bandTop), w, 1);
+  ctx.fillRect(0, Math.round(bandTop + bandH) - 1, w, 1);
+
+  // riga attiva: outline nero a 4 direzioni, poi corpo BIANCO
+  ctx.font = 'bold ' + size + 'px monospace';
+  const cw = size * 0.62;
   for (let li = 0; li < n; li++) {
     const ln = lay.lines[li];
     const ly = y + (li - (n - 1) / 2) * step;
@@ -1112,13 +1117,16 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
     if (x < 0) x = 0;
     for (let i = 0; i < ln.length; i++) {
       const ch = ln[i];
-      const wob = Math.sin(t * 1.1 + i * 0.35) * 0.8;
       if (ch !== ' ') {
-        ctx.globalAlpha = 0.08;
-        ctx.fillStyle = C.black; ctx.fillText(ch, x + 1, ly + wob + 1);
-        ctx.globalAlpha = 0.10;
-        ctx.fillStyle = i % 7 === 0 ? C.redHot : C.red;
-        ctx.fillText(ch, x, ly + wob);
+        const wob = Math.sin(t * 1.1 + i * 0.35) * 0.5;
+        const gx = x, gy = Math.round(ly + wob);
+        ctx.globalAlpha = 0.95; ctx.fillStyle = C.black;
+        ctx.fillText(ch, gx - 1, gy);
+        ctx.fillText(ch, gx + 1, gy);
+        ctx.fillText(ch, gx, gy - 1);
+        ctx.fillText(ch, gx, gy + 1);
+        ctx.globalAlpha = 1; ctx.fillStyle = C.white;
+        ctx.fillText(ch, gx, gy);
       }
       x += cw;
     }

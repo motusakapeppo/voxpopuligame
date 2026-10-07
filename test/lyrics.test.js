@@ -166,18 +166,29 @@ test('drawLyricsOverlay: riga attiva ben visibile (bianco alpha >= 0.9, banda >=
   assert.ok(band.length >= 1, 'banda scura sotto alpha 0.55');
 });
 
-test('drawLyricsPixel: solo backdrop (alpha <= 0.2) e mai fuori schermo', () => {
+test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + outline nero + banda)', () => {
   const W = 320, H = 180;
   const ctx = recCtx();
-  drawLyricsPixel(ctx, [[0, LONG]], 1, 2, W, H);
+  drawLyricsPixel(ctx, LINES, 6, 2, W, H);
   const texts = ctx.calls.filter(c => c.op === 'fillText');
   assert.ok(texts.length > 0, 'nessun testo disegnato');
   for (const c of texts) {
     assert.ok(c.x >= 0 && c.x <= W, 'x fuori schermo: ' + c.x);
   }
-  const body = texts.filter(c => c.fill === C.red || c.fill === C.redHot);
-  assert.ok(body.length > 0, 'nessun corpo attivo');
-  for (const c of body) {
-    assert.ok(c.alpha <= 0.2, 'corpo pixel troppo acceso: alpha ' + c.alpha);
-  }
+  const white = texts.filter(c => c.fill === C.white);
+  assert.ok(white.length >= 1, 'nessun corpo bianco (il pixel deve essere leggibile)');
+  assert.ok(white[white.length - 1].alpha >= 0.9, 'corpo troppo tenue: alpha ' + white[white.length - 1].alpha);
+  const black = texts.filter(c => c.fill === C.black);
+  assert.ok(black.length >= 3, 'outline nero insufficiente: ' + black.length);
+  const band = ctx.calls.filter(c => c.op === 'fillRect' && c.fill === C.black && c.alpha >= 0.5);
+  assert.ok(band.length >= 1, 'nessuna banda scura dietro la lirica');
+});
+
+test('drawLyricsPixel: riga lunghissima non sborda', () => {
+  const W = 320, H = 180;
+  const ctx = recCtx();
+  drawLyricsPixel(ctx, [[0, LONG]], 1, 2, W, H);
+  const texts = ctx.calls.filter(c => c.op === 'fillText');
+  assert.ok(texts.length > 0, 'nessun testo disegnato');
+  for (const c of texts) assert.ok(c.x >= 0 && c.x <= W, 'x fuori schermo: ' + c.x);
 });
