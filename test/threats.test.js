@@ -134,3 +134,96 @@ test('threatEffects espone gli stati osservabili', () => {
   assert.ok(fx.lag > 0 && fx.stun > 0);
   assert.equal(fx.water, 3);
 });
+
+// ---------------------------------------------------------------------------
+// T5 — pericoli GENUINAMENTE distinti: 9 firme di stato UNICHE, e slow/decoy
+// che contano davvero. Prima erano tutti lo stesso shiftHands(0,-1).
+// ---------------------------------------------------------------------------
+const HAZARDS9 = ['wind', 'quake', 'debris', 'drowsy', 'rival', 'time', 'fake', 'ivy', 'rain'];
+
+function raisedClimb() {
+  const cl = createClimb(GIRONI[1]);
+  for (let i = 0; i < 80; i++) stepClimb(cl, { left: false, right: false, up: true, down: false }, 0.016);
+  return cl;
+}
+
+// Firma = insieme dei campi di `state` che applyThreat muta (ordinati).
+function changedFields(kind) {
+  const cl = raisedClimb();
+  const st = createThreatState();
+  const before = JSON.parse(JSON.stringify(st));
+  applyThreat(kind, cl, st);
+  const keys = new Set([...Object.keys(before), ...Object.keys(st)]);
+  const changed = [];
+  for (const k of keys) {
+    if (k === 'rng') continue;   // seme interno, non è una firma osservabile
+    if (JSON.stringify(before[k]) !== JSON.stringify(st[k])) changed.push(k);
+  }
+  return changed.sort();
+}
+
+test('i 9 pericoli hanno 9 firme di stato UNICHE', () => {
+  const sigs = HAZARDS9.map(k => changedFields(k).join('+'));
+  const uniq = new Set(sigs);
+  assert.equal(uniq.size, HAZARDS9.length, 'firme duplicate: ' + sigs.join(' | '));
+  for (const s of sigs) assert.ok(s.length > 0, 'firma vuota');
+});
+
+test('quake/debris/rival/ivy mutano combo di campi DIVERSE', () => {
+  const q = changedFields('quake').join('+');
+  const d = changedFields('debris').join('+');
+  const r = changedFields('rival').join('+');
+  const i = changedFields('ivy').join('+');
+  assert.equal(new Set([q, d, r, i]).size, 4, `combo duplicate: ${q} | ${d} | ${r} | ${i}`);
+  assert.ok(changedFields('quake').includes('shake') && changedFields('quake').includes('stun'),
+    'quake deve stordire E scuotere');
+  assert.ok(changedFields('debris').includes('colliders'), 'debris deve creare un collider');
+  assert.ok(changedFields('rival').includes('duel') && changedFields('rival').includes('rivalDir'),
+    'rival deve impostare duello e direzione');
+  assert.ok(changedFields('ivy').includes('tether'), 'ivy deve usare un tether');
+});
+
+test('THREAT_SIGNATURES: una firma unica per ogni pericolo', () => {
+  const vals = Object.values(THREAT_SIGNATURES);
+  assert.equal(new Set(vals).size, vals.length, 'firme duplicate: ' + vals.join(' | '));
+  for (const k of HAZARDS9) assert.ok(THREAT_SIGNATURES[k], 'manca firma per ' + k);
+});
+
+test('slow>0 riduce davvero la frequenza dei pericoli', () => {
+  const countFires = (slow) => {
+    const cl = createClimb(GIRONI[1]);   // vento ogni 3.2s
+    const st = createThreatState();
+    st.slow = slow;
+    let fires = 0, prev = 0;
+    for (let i = 0; i < 1250; i++) {     // ~20s
+      stepThreats(GIRONI[1], cl, st, 0.016, 0);
+      const now = st.last.wind || 0;
+      if (now > prev) { fires++; prev = now; }
+    }
+    return fires;
+  };
+  const normal = countFires(0);
+  const slowed = countFires(100);
+  assert.ok(normal >= 4, 'pochi pericoli senza slow: ' + normal);
+  assert.ok(slowed < normal, `slow non rallenta: ${slowed} vs ${normal}`);
+});
+
+test('decoy inghiotte il prossimo passo automatico', () => {
+  const cl = createClimb(GIRONI[1]);
+  const st = createThreatState();
+  applyThreat('fake', cl, st);
+  assert.ok(st.decoy > 0, 'fake non imposta decoy');
+  stepClimb(cl, { left: false, right: false, up: true, down: false }, 0.016);
+  assert.ok(cl.reach > 0, 'nessun passo automatico avviato');
+  stepThreats(GIRONI[1], cl, st, 0.016, 0);
+  assert.equal(cl.reach, 0, 'il decoy non ha inghiottito il passo');
+  assert.equal(st.decoy, 0, 'il decoy non è stato consumato');
+});
+
+test('time accelera la cadenza dei pericoli', () => {
+  const cl = raisedClimb();
+  const st = createThreatState();
+  applyThreat('time', cl, st);
+  assert.ok(st.countdown > 0, 'time non imposta countdown');
+  assert.ok(st.cadence < 1, 'time non accelera la cadenza');
+});
