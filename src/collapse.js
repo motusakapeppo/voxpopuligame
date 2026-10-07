@@ -37,11 +37,12 @@ function collapseLcg(seed) {
 export function buildFigureGrid(W, H) {
   const rng = collapseLcg(913);
   const figs = [];
-  const cx = W / 2, baseY = H - 16, rows = 11;
+  const cx = W / 2, baseY = H - 14, rows = 14;
   for (let row = 0; row < rows; row++) {
-    const y = baseY - row * 11;
-    const span = 140 - row * 11;
-    const count = Math.max(1, Math.round(span / 16));
+    const y = baseY - row * 9;
+    const span = 150 - row * 9.5;
+    if (span < 6) break;
+    const count = Math.max(1, Math.round(span / 10));
     for (let i = 0; i < count; i++) {
       const depth = Math.min(0.95, 0.4 + (row / rows) * 0.5 + rng() * 0.05);
       // posa distinta per figura: ciclo sui 6 stati con offset deterministico
@@ -71,14 +72,20 @@ export function buildFigureGrid(W, H) {
 export function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }) {
   const figs = buildFigureGrid(viewW, viewH);
   const keep = Math.max(3, Math.min(figs.length, 6 + Math.round(supported) * 2));
+  const boxes = (Array.isArray(bodies) ? bodies : []).map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
+  // muri laterali invisibili: contengono la pila dentro lo schermo
+  boxes.push({ x: -60, y: -200, w: 62, h: viewH + 400 });
+  boxes.push({ x: viewW - 2, y: -200, w: 62, h: viewH + 400 });
   const world = ragCreateWorld({
     gravity: 80,
     groundY: viewH,
     seed: (seed >>> 0) || 1,
-    boxes: (Array.isArray(bodies) ? bodies : []).map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h })),
+    pair: true,   // collisioni fra figure: la pila si accumula invece di scivolare
+    boxes,
   });
   for (const f of figs) {
-    const rf = ragAddFigure(world, { x: f.x, y: f.y, scale: 0.8 + f.depth * 0.3 });
+    const rf = ragAddFigure(world, { x: f.x, y: f.y, scale: 0.55 + f.depth * 0.35 });
+    rf.spin = f.spin;   // usato per la rotazione del tumble all'impulso
     f.rag = rf;   // aggancio figura ↔ ragfigure (disegno + impulsi)
   }
   return { bodies, viewW, viewH, supported, figs, keep, world,
@@ -92,18 +99,32 @@ export function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }
 // ---------------------------------------------------------------------------
 function collapseImpulse(c) {
   const world = c.world;
+  const cxAll = c.viewW / 2, baseY = c.viewH - 14;
   for (let i = 0; i < world.figures.length; i++) {
     const rf = world.figures[i];
     const g = c.figs[i];
+    // 1) INSTABILITA' GLOBALE: ogni omino riceve un calcio verso l'esterno e
+    //    in basso, scalato dall'altezza (le file alte partono con più spinta:
+    //    il "crollo" è totale, non solo vicino al trigger). Deterministico.
+    const hx = rf.parts[0].x - cxAll;
+    const hd = Math.abs(hx) + 1;
+    const outward = (hx / hd) * (0.8 + g.launch * 0.8);
+    const down = 1.4 + g.launch * 1.0 + (g.depth * 0.8);
+    const spin = (g.spin || 0);
+    // 2) SPINTA LOCALE dal trigger: chi è vicino al punto di rottura è sparato.
     const dx = rf.parts[0].x - c.trigger.x, dy = rf.parts[0].y - c.trigger.y;
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const falloff = Math.max(0, 1 - d / 150);
-    if (falloff <= 0) continue;
-    const k = falloff * g.launch * 2.2;
+    const near = Math.max(0, 1 - d / 150) * g.launch * 2.4;
+    const ix = outward + (dx / d) * near - (dy / d) * spin * 0.8;
+    const iy = down + (dy / d) * near * 0.4;
     for (const p of rf.parts) {
-      p.px -= (dx / d) * k;                 // spinta via dal trigger
-      p.py -= (dy / d) * k * 0.5 - k * 0.4; // + un filo di sollevamento
+      p.px -= ix;
+      p.py -= iy;
     }
+    // rotazione del tumble: i piedi divergono → la figura ruota cadendo
+    rf.parts[3].px -= spin * 2.2;
+    rf.parts[4].px += spin * 2.2;
+    rf.parts[3].py += 0.8; rf.parts[4].py += 0.8;
   }
 }
 
@@ -138,6 +159,12 @@ export function stepCollapse(c, dt) {
       const foot = rf.parts[3];
       if (foot.y >= c.viewH - 1) {
         rf.landed = true;
+        // TOPPLE: all'atterraggio la figura riceve un momento che la fa giacere
+        // (una spinta orizzontale sui piedi = radice del "crollo" credibile).
+        const g = c.figs[i];
+        const dir = (g.spin || 0) >= 0 ? 1 : -1;
+        const k = 2.2 + g.launch * 1.2;
+        for (const p of rf.parts) { p.px -= dir * k; }
         c.dust.push({ x: rf.parts[0].x, y: c.viewH - 1, t: 0, life: 0.5 + (i % 3) * 0.1 });
         if (c.dust.length > 24) c.dust.shift();
       }

@@ -128,8 +128,8 @@ test('createCollapse accetta bodies e costruisce figure + mondo ragdoll', () => 
     { x: 230, y: 286, w: 60, h: 12 },
   ];
   const c = createCollapse({ bodies, viewW: 480, viewH: 320, supported: 4 });
-  assert.ok(Array.isArray(c.figs) && c.figs.length >= 56 && c.figs.length <= 64,
-    `figure=${c.figs.length}, attese 56-64`);
+  assert.ok(Array.isArray(c.figs) && c.figs.length >= 100 && c.figs.length <= 170,
+    `figure=${c.figs.length}, attese 100-170`);
   assert.ok(c.world, 'mondo ragdoll mancante');
   assert.equal(c.world.figures.length, c.figs.length,
     'una ragfigure per figura della griglia');

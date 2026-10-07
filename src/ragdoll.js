@@ -16,6 +16,9 @@ export const RAG_SLEEP_FRAMES = 60;     // frame consecutivi sotto soglia prima 
 export const RAG_DAMP = 0.999;          // damping gentile, un pelo sotto 1
 export const RAG_ITER = 4;              // iterazioni di rilassamento dei vincoli
 export const RAG_MAX_DT = 1 / 30;       // dt più grande è un freeze, non un salto fisico
+export const RAG_PAIR_R = 3.0;          // raggio di contatto fra particelle di figure diverse
+export const RAG_PAIR_IT = 2;           // iterazioni di push inter-figura (pila)
+export const RAG_PAIR_MAX = 10;         // max vicini controllati per figura (costo)
 
 function ragNum(v, d) { return Number.isFinite(v) ? v : d; }
 
@@ -247,16 +250,57 @@ function ragSleepWake(world) {
 }
 
 // ---------------------------------------------------------------------------
-// STEP — ordine fisso: hash → integrate → bones → collide → sleep/wake.
+// COLLISIONI FRA FIGURE (opzionale: world.pair) — ogni particella respinge le
+// particelle vicine di ALTRE figure entro RAG_PAIR_R. Serve a far ACCUMULARE le
+// figure in una pila densa invece di scivolare tutte sul fondo. Costo limitato:
+// si controllano solo RAG_PAIR_MAX vicini per figura via spatial hash. Solo le
+// figure sveglie spingono (le addormentate sono immobili): così la pila si
+// assesta e dorme. Deterministico: ordine di scansione fisso.
+// ---------------------------------------------------------------------------
+function ragCollidePairs(world) {
+  if (!world.pair) return;
+  const R = RAG_PAIR_R, R2 = R * R;
+  const n = world.figures.length;
+  for (let i = 0; i < n; i++) {
+    const a = world.figures[i];
+    if (a.sleeping) continue;
+    const near = ragNeighbors(world, i);
+    let checked = 0;
+    for (let k = 0; k < near.length && checked < RAG_PAIR_MAX; k++) {
+      const b = world.figures[near[k]];
+      if (!b) continue;
+      checked++;
+      for (const pa of a.parts) {
+        for (const pb of b.parts) {
+          let dx = pb.x - pa.x, dy = pb.y - pa.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= R2 || d2 < 1e-6) continue;
+          const d = Math.sqrt(d2);
+          const push = (R - d) / d * 0.5;   // metà per parte
+          if (!b.sleeping) { dx *= push; dy *= push; }
+          else { dx *= push * 2; dy *= push * 2; }   // quella ferma assorbe tutto
+          pa.x -= dx; pa.y -= dy;
+          if (!b.sleeping) { pb.x += dx; pb.y += dy; }
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// STEP — ordine fisso: hash → integrate → bones → collide → pair → sleep/wake.
 // ---------------------------------------------------------------------------
 export function ragStep(world, dt) {
   if (!world || !Array.isArray(world.figures)) return;
   dt = Number.isFinite(dt) ? Math.max(0, Math.min(RAG_MAX_DT, dt)) : 0;
   ragRebuildHash(world);
   ragIntegrate(world, dt);
-  for (const f of world.figures) {
-    if (f.sleeping) continue;
-    ragSolveBones(f);
+  for (let it = 0; it < RAG_ITER; it++) {
+    for (const f of world.figures) {
+      if (f.sleeping) continue;
+      ragSolveBones(f);
+    }
+    if (world.pair && it < RAG_PAIR_IT) ragCollidePairs(world);
   }
   ragCollide(world);
   ragSleepWake(world);
