@@ -71,6 +71,8 @@ export function buildFigureGrid(W, H) {
 // ---------------------------------------------------------------------------
 export function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }) {
   const figs = buildFigureGrid(viewW, viewH);
+  // keep = i "fedeli": figure che restano in piedi sul nucleo della piramide.
+  // supported (consenso) allarga il nucleo → più superstiti eretti.
   const keep = Math.max(3, Math.min(figs.length, 6 + Math.round(supported) * 2));
   const boxes = (Array.isArray(bodies) ? bodies : []).map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
   // muri laterali invisibili: contengono la pila dentro lo schermo
@@ -83,14 +85,24 @@ export function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }
     pair: true,   // collisioni fra figure: la pila si accumula invece di scivolare
     boxes,
   });
-  for (const f of figs) {
+  for (let i = 0; i < figs.length; i++) {
+    const f = figs[i];
     const rf = ragAddFigure(world, { x: f.x, y: f.y, scale: 0.55 + f.depth * 0.35 });
     rf.spin = f.spin;   // usato per la rotazione del tumble all'impulso
+    // LOYALTY: i primi `keep` (ordine di scansione fisso → deterministico) sono
+    // i fedeli. Ancorati alla posa eretta iniziale: non crollano, restano in
+    // piedi. `keep` non è più un valore morto: guida il nucleo superstite.
+    rf.loyal = i < keep;
+    rf.home = rf.parts.map(p => ({ x: p.x, y: p.y }));
+    rf.dustCd = 0;      // cooldown polvere per figura (costo limitato)
     f.rag = rf;   // aggancio figura ↔ ragfigure (disegno + impulsi)
   }
   return { bodies, viewW, viewH, supported, figs, keep, world,
     phase: 'zoomOut', t: 0, phaseIndex: 0, done: false, angle: 0,
-    trigger: { x: viewW / 2, y: viewH - 16 }, dust: [] };
+    // supported modula anche la forza del trigger: più consenso → scossa più
+    // ampia (deterministico, nessun RNG).
+    triggerStrength: 1 + Math.max(0, supported) * 0.06,
+    trigger: { x: viewW / 2, y: viewH - 16 }, dust: [], dustTick: 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -100,21 +112,24 @@ export function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }
 function collapseImpulse(c) {
   const world = c.world;
   const cxAll = c.viewW / 2, baseY = c.viewH - 14;
+  const strength = c.triggerStrength || 1;
   for (let i = 0; i < world.figures.length; i++) {
     const rf = world.figures[i];
     const g = c.figs[i];
+    // LOYALTY: i fedeli non ricevono l'impulso → restano eretti (keep vivo).
+    if (rf.loyal) continue;
     // 1) INSTABILITA' GLOBALE: ogni omino riceve un calcio verso l'esterno e
     //    in basso, scalato dall'altezza (le file alte partono con più spinta:
     //    il "crollo" è totale, non solo vicino al trigger). Deterministico.
     const hx = rf.parts[0].x - cxAll;
     const hd = Math.abs(hx) + 1;
-    const outward = (hx / hd) * (0.8 + g.launch * 0.8);
-    const down = 1.4 + g.launch * 1.0 + (g.depth * 0.8);
+    const outward = (hx / hd) * (0.8 + g.launch * 0.8) * strength;
+    const down = (1.4 + g.launch * 1.0 + (g.depth * 0.8)) * strength;
     const spin = (g.spin || 0);
     // 2) SPINTA LOCALE dal trigger: chi è vicino al punto di rottura è sparato.
     const dx = rf.parts[0].x - c.trigger.x, dy = rf.parts[0].y - c.trigger.y;
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const near = Math.max(0, 1 - d / 150) * g.launch * 2.4;
+    const near = Math.max(0, 1 - d / 150) * g.launch * 2.4 * strength;
     const ix = outward + (dx / d) * near - (dy / d) * spin * 0.8;
     const iy = down + (dy / d) * near * 0.4;
     for (const p of rf.parts) {
@@ -129,9 +144,19 @@ function collapseImpulse(c) {
 }
 
 // ---------------------------------------------------------------------------
+// POLVERE — burst breve, cap fisso (costo costante). Un solo punto d'ingresso
+// così ogni sorgente (piede, corpo, box) resta limitata.
+// ---------------------------------------------------------------------------
+const DUST_MAX = 32;
+function emitDust(c, x, y, life) {
+  c.dust.push({ x, y, t: 0, life });
+  if (c.dust.length > DUST_MAX) c.dust.shift();
+}
+
+// ---------------------------------------------------------------------------
 // STEP — zoomOut/revealBodies come prima (griglia + sweep), crack: brivido
-// deterministico, collapse/settle: ragStep a dt fisso, polvere al primo
-// contatto col fondo, done quando il mondo dorme (o fine fase).
+// deterministico, collapse/settle: ragStep a dt fisso, TORQUE all'atterraggio,
+// polvere su ogni impatto (piedi + corpi/box), fedeli ancorati eretti.
 // ---------------------------------------------------------------------------
 export function stepCollapse(c, dt) {
   if (c.done) return;
@@ -152,21 +177,55 @@ export function stepCollapse(c, dt) {
     c.shake = 0;
     const step = Math.min(RAG_MAX_DT, Math.max(0, Math.min(dt, COLLAPSE_DT)));
     ragStep(c.world, step);
-    // polvere: al primo contatto di un piede col fondo, un burst breve
+
+    // LOYALTY: i fedeli restano eretti. Li ri-ancoro alla posa iniziale (il
+    // wake per prossimità di ragdoll.js potrebbe averli svegliati): così `keep`
+    // è vivo e il nucleo superstite non crolla. Deterministico.
+    for (const rf of c.world.figures) {
+      if (!rf.loyal) continue;
+      for (let k = 0; k < rf.parts.length; k++) {
+        const p = rf.parts[k], h = rf.home[k];
+        p.x = h.x; p.y = h.y; p.px = h.x; p.py = h.y;
+      }
+      rf.sleeping = true;
+    }
+
     for (let i = 0; i < c.world.figures.length; i++) {
       const rf = c.world.figures[i];
-      if (rf.landed) continue;
-      const foot = rf.parts[3];
-      if (foot.y >= c.viewH - 1) {
-        rf.landed = true;
-        // TOPPLE: all'atterraggio la figura riceve un momento che la fa giacere
-        // (una spinta orizzontale sui piedi = radice del "crollo" credibile).
-        const g = c.figs[i];
-        const dir = (g.spin || 0) >= 0 ? 1 : -1;
-        const k = 2.2 + g.launch * 1.2;
-        for (const p of rf.parts) { p.px -= dir * k; }
-        c.dust.push({ x: rf.parts[0].x, y: c.viewH - 1, t: 0, life: 0.5 + (i % 3) * 0.1 });
-        if (c.dust.length > 24) c.dust.shift();
+      if (rf.loyal) continue;   // i fedeli non atterrano: restano in piedi
+      if (!rf.landed) {
+        const foot = rf.parts[3];
+        if (foot.y >= c.viewH - 1) {
+          rf.landed = true;
+          // TORQUE: all'atterraggio la figura RUOTA a terra. Impulsi orizzontali
+          // di SEGNO OPPOSTO su testa/spalle vs piedi (momento, non traslazione):
+          // il bacino fa da perno, il corpo ruota invece di scivolare. Il verso
+          // è deterministico (dir dallo spin memorizzato della figura).
+          const g = c.figs[i];
+          const dir = (g.spin || 0) >= 0 ? 1 : -1;
+          const k = 2.2 + g.launch * 1.2;
+          rf.parts[1].px += dir * k;   // spalle
+          rf.parts[2].px += dir * k;   // testa
+          rf.parts[3].px -= dir * k;   // piede sx
+          rf.parts[4].px -= dir * k;   // piede dx
+          emitDust(c, rf.parts[0].x, c.viewH - 1, 0.5 + (i % 3) * 0.1);
+        }
+      }
+      // POLVERE su impatto con box/mensole (non solo il primo contatto del
+      // piede): una particella che scende e tocca il top di un box. Cooldown
+      // per figura → costo limitato e cap globale.
+      if (rf.dustCd > 0) { rf.dustCd--; continue; }
+      for (const p of rf.parts) {
+        if (p.y - p.py <= 0.4) continue;   // non sta scendendo
+        for (const box of c.world.boxes) {
+          if (p.x < box.x || p.x > box.x + box.w) continue;
+          if (p.y >= box.y - 1.5 && p.y <= box.y + 1.5) {
+            emitDust(c, p.x, box.y, 0.4 + (i % 3) * 0.1);
+            rf.dustCd = 6;
+            break;
+          }
+        }
+        if (rf.dustCd > 0) break;
       }
     }
     for (let i = c.dust.length - 1; i >= 0; i--) {
@@ -180,6 +239,20 @@ export function stepCollapse(c, dt) {
 }
 
 export function collapseFinished(c) { return c.done === true; }
+
+// ---------------------------------------------------------------------------
+// UPRIGHT — quante figure sono ancora in piedi (testa sopra il bacino, quasi
+// verticale). Espone l'effetto di keep/supported: più consenso → più eretti.
+// ---------------------------------------------------------------------------
+export function collapseUpright(c) {
+  let n = 0;
+  for (const rf of c.world.figures) {
+    const hip = rf.parts[0], head = rf.parts[2];
+    const dx = head.x - hip.x, dy = head.y - hip.y;
+    if (dy < 0 && Math.abs(dx) < Math.abs(dy) * 0.6) n++;
+  }
+  return n;
+}
 
 // ---------------------------------------------------------------------------
 // DRAW — fasi statiche: griglia con drawFigure (tinta di profondità, sway).
