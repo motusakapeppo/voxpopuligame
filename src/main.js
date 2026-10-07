@@ -25,6 +25,14 @@ let ctx = canvas.getContext('2d');   // riassegnato al contesto offscreen del re
 const VIEW_W = 320, VIEW_H = 180;
 let SCALE = 3;
 
+// LYRIC_LEAD: anticipo (secondi) applicato al tempo audio quando si sceglie la
+// riga di testo da mostrare. Nel karaoke di produzione la riga appare appena
+// PRIMA che la parola venga cantata; un valore negativo anticipa, positivo
+// ritarda. Gli start in KARAOKE sono gia' ancorati all'onset della parola
+// (tools/align-karaoke.mjs), quindi il default e' 0: alzare a -0.08 se si vuole
+// un piccolo anticipo percettivo.
+const LYRIC_LEAD = 0.0;
+
 function resize() {
   const s = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
   SCALE = Math.max(1, Math.floor(s));
@@ -222,7 +230,7 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
   // lirica estetica in PIXEL ART (coerente col mondo)
   const kl = KARAOKE[lv.girone.audioId];
-  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position(), time, VIEW_W, VIEW_H);
+  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
@@ -251,7 +259,7 @@ function drawWorld(lv, camY) {
 // Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
 const uctx = canvas.getContext('2d');
 function drawOverlay() {
-  const pos = audio.position();
+  const pos = audio.position() + LYRIC_LEAD;
   // liriche NITIDE a risoluzione piena: solo dove hanno senso (playing/unlocked),
   // mai sopra title/cta/collapse. La scena pixel resta come sfondo tenue.
   if (level && (state.phase === 'playing' || state.phase === 'unlocked')) {
