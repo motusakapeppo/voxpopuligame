@@ -16,6 +16,7 @@ import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone } from '.
 import { createJuice, impact, addFlow, breakFlow, setBpm, stepJuice, shakeOffsetJ, punchZoom, flowRatio, bpmFor } from './juice.js';
 import { KARAOKE } from './karaoke.js';
 import { createRenderer } from './renderer.js';
+import { createStepper } from './timestep.js';
 import { drawThemeBack, drawThemeFront } from './themes.js';
 import { createFx, emitFx, stepFx, drawFx } from './fx.js';
 
@@ -63,6 +64,8 @@ let action = 'idle';
 let actionT = 0;
 let mash = createMash();
 let juice = createJuice();
+// stepper fisso 1/120 per il crollo ragdoll (stabilità + determinismo indipendente dal refresh)
+const collapseStepper = createStepper({ step: 1 / 120, maxFrame: 0.05, maxSteps: 6 });
 
 const trackLabel = document.getElementById('track-label');
 const btnAudio = document.getElementById('btn-audio');
@@ -310,9 +313,14 @@ function applyPost(kind) {
   return post;
 }
 
-function loop() {
+function loop(now) {
   requestAnimationFrame(loop);
-  const dt = 0.016;
+  // FIX frame-rate: dt REALE misurato dal timestamp rAF (clampato), non più
+  // 0.016 fisso. Così la simulazione non accelera a 120/144Hz.
+  const prev = loop._last || now || 0;
+  const rawDt = now ? (now - prev) / 1000 : 1 / 60;
+  loop._last = now || 0;
+  const dt = Math.max(0, Math.min(0.05, rawDt));
   stepJuice(juice, dt);
   const sdt = juice.hitstop > 0 ? 0 : dt;   // hit-stop: congela la simulazione
   time += dt;
@@ -343,7 +351,9 @@ function loop() {
         collapse.phase = ['zoomOut','revealBodies','crack','collapse','settle'][collapse.phaseIndex]; }
       audio.stop();
     }
-    stepCollapse(collapse, 0.016);
+    // crollo a SUBSTEP FISSI: la fisica ragdoll è stabile solo a passo fisso.
+    const cr = collapseStepper.step(dt);
+    for (let i = 0; i < cr.steps; i++) stepCollapse(collapse, cr.dt);
     renderer.render(() => drawCollapse(ctx, collapse, time), { post: applyPost('collapse') });
     if (collapseFinished(collapse)) state = advance(state, 'collapseDone');
     return;
@@ -358,8 +368,8 @@ function loop() {
       audio.markUnlocked(g.audioId);   // completato: riascoltabile in tracklist
       audio.stop();
     }
-    stepTransition(level.transition, 0.016);
-    stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
+    stepTransition(level.transition, dt);
+    stepFx(level.pfx, dt, cameraY, { H: VIEW_H });
     // burst di glitch + flash rosso all'inizio della transizione, poi si spegne
     const k = Math.min(1, level.transition.t / 1.2);
     const burst = (1 - k) * (1 - k);
@@ -435,7 +445,7 @@ function loop() {
     const kind = level.active.kind;
     if (kind === 'helper') {
       // risolvi dopo un attimo (l'animazione del tiro su)
-      level.autoHelpT = (level.autoHelpT || 0) + 0.016;
+      level.autoHelpT = (level.autoHelpT || 0) + dt;
       if (level.autoHelpT > 0.5) {
         level.active.resolved = true; level.active.verb = 'tendi';
         moveHands(cl, +2); loyalty += 1;
