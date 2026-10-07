@@ -14,6 +14,7 @@ import { C } from './palette.js';
 const RD_POST = {
   bloom: 0.55, bloomThreshold: 0.45, chroma: 0.6,
   scan: 0.35, grain: 0.12, vignette: 0.5, glitch: 0, flash: 0,
+  lights: 0, lut: 0,
 };
 
 export function createPostDefaults() { return { ...RD_POST }; }
@@ -39,6 +40,45 @@ export function bloomPassOn(r, g, b, thr) {
   if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return false;
   const m = Math.max(r, g, b) / 255;
   return m >= rdrClamp01(thr);
+}
+
+// ---------------------------------------------------------------------------
+// W2-C: TONEMAP + LUT ROSSA (puri) + LIGHTMAP (feature-flagged).
+// ---------------------------------------------------------------------------
+
+// Reinhard: comprime le alte luci (evita il blow-out quando si sommano le luci).
+export function tonemap(x) {
+  const v = rdrNum(x, 0);
+  if (v <= 0) return 0;
+  return v / (1 + v);
+}
+
+// LUT della rampa rossa: da un valore scalare 0..255 alla terna RGB della rampa
+// nero -> rosso scuro -> ... -> rosso acceso -> bianco-caldo. Sempre rosso-dominante.
+export const RED_LUT = (() => {
+  const stops = [
+    [0, 0, 0], [40, 2, 6], [85, 7, 12], [128, 9, 8],
+    [168, 10, 6], [192, 15, 10], [224, 16, 16], [245, 245, 245],
+  ];
+  const out = [];
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255 * (stops.length - 1);
+    const a = Math.min(stops.length - 2, Math.floor(t));
+    const f = t - a;
+    const c0 = stops[a], c1 = stops[a + 1];
+    out.push([Math.round(c0[0] + (c1[0] - c0[0]) * f),
+              Math.round(c0[1] + (c1[1] - c0[1]) * f),
+              Math.round(c0[2] + (c1[2] - c0[2]) * f)]);
+  }
+  return out;
+})();
+
+// Applica la LUT rossa a un colore: prima tonemap percettiva (max canale), poi LUT.
+export function applyRedLut(r, g, b) {
+  const m = Math.max(rdrNum(r, 0), rdrNum(g, 0), rdrNum(b, 0));
+  const v = Math.min(1, tonemap(m / 255) * 1.6);   // tonemap + guadagno
+  const idx = Math.max(0, Math.min(255, Math.round(v * 255)));
+  return RED_LUT[idx].slice();
 }
 
 function rdrSupportsOp(ctx, op) {
@@ -86,6 +126,25 @@ export function createRenderer(canvas, W, H) {
   }
   let scanPattern = null;
   try { scanPattern = outCtx.createPattern(scan, 'repeat'); } catch { scanPattern = null; }
+
+  // W2-C: buffer LUCI (a bassa risoluzione, metà: basta e avanza per una luce
+  // soffusa) + sprite radiale pre-renderizzato (niente createRadialGradient per
+  // frame: si scala lo sprite). Zero allocazioni per frame.
+  const lw = Math.max(1, w >> 1), lh = Math.max(1, h >> 1);
+  const light = mk(lw, lh);
+  const lightCtx = light.getContext('2d');
+  const lightSprite = mk(64, 64);
+  (function fillLightSprite() {
+    const lc = lightSprite.getContext('2d');
+    try {
+      const g = lc.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.35, 'rgba(255,255,255,0.6)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      lc.fillStyle = g;
+    } catch { lc.fillStyle = 'rgba(255,255,255,0.8)'; }
+    lc.fillRect(0, 0, 64, 64);
+  })();
 
   // pattern grana (64×64) precomputato una volta
   const noise = mk(64, 64);
@@ -137,6 +196,7 @@ export function createRenderer(canvas, W, H) {
   const api = {
     W: w, H: h, scene, glow, out,
     post: createPostDefaults(),
+    lights: [],          // W2-C: luci del frame {x,y,r,alpha}; ripopolate dal chiamante
 
     resize() {
       const nw = rdrNum(canvas.width, 0), nh = rdrNum(canvas.height, 0);
@@ -203,6 +263,34 @@ export function createRenderer(canvas, W, H) {
         outCtx.drawImage(glow, 0, 0, gw, gh, 0, 0, w, h);
         outCtx.imageSmoothingEnabled = false;
       }
+
+      // 3.5 LIGHTMAP (W2-C): raccoglie le luci in un buffer a metà risoluzione e
+      // lo somma in modo additivo ('lighter'). Sprite radiale pre-renderizzato:
+      // nessun createRadialGradient per frame. Cap del numero di luci per perf.
+      const lights = rdrClamp01(postVal(o, 'lights'));
+      if (lights > 0.001 && api.lights.length) {
+        lightCtx.globalCompositeOperation = 'source-over';
+        lightCtx.globalAlpha = 1;
+        lightCtx.clearRect(0, 0, lw, lh);
+        lightCtx.globalCompositeOperation = 'lighter';
+        const nL = Math.min(24, api.lights.length);
+        for (let i = 0; i < nL; i++) {
+          const L = api.lights[i];
+          if (!L || !Number.isFinite(L.x) || !Number.isFinite(L.y)) continue;
+          const lr = Math.max(2, (rdrNum(L.r, 32)) * 0.5);           // metà res
+          const a = Math.max(0, Math.min(1, rdrNum(L.alpha, 1))) * lights;
+          if (a <= 0.01) continue;
+          lightCtx.globalAlpha = a;
+          try { lightCtx.drawImage(lightSprite, (L.x * 0.5) - lr, (L.y * 0.5) - lr, lr * 2, lr * 2); } catch { /* niente */ }
+        }
+        // somma additiva sulla scena
+        outCtx.globalCompositeOperation = 'lighter';
+        outCtx.globalAlpha = 1;
+        outCtx.imageSmoothingEnabled = true;
+        outCtx.drawImage(light, 0, 0, lw, lh, 0, 0, w, h);
+        outCtx.imageSmoothingEnabled = false;
+      }
+      api.lights.length = 0;   // consumate: il chiamante le ripopola ogni frame
 
       // 4. aberrazione cromatica: fantasma rosso a destra, ciano a sinistra
       const chroma = rdrClamp01(postVal(o, 'chroma'));

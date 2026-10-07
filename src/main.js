@@ -292,6 +292,10 @@ function playingPost(dt, glitch) {
   post.vignette = 0.40 - beat * 0.06;
   post.flash = juflash();
   post.glitch = Math.max(glitch || 0, juice.shake > 3 ? 0.5 : 0) * 0.9;
+  // W2-C: lightmap additiva (il giocatore come fonte di luce calda) + LUT rossa.
+  // Modulate dal battito/flow: pulsano con la musica. Sottili per non stravolgere.
+  post.lights = 0.55 + beat * 0.25;
+  post.lut = 0.35 + flow * 0.25;
   // T9: gli effetti dei pericoli modulano il post (varietà visiva per girone).
   const st9 = level && level.fxState;
   if (st9) {
@@ -555,6 +559,13 @@ function loop(now) {
   const sh = shakeOffset(level.fx, time);
   const jsh = shakeOffsetJ(juice, time);
   const z = punchZoom(juice);
+  // W2-C: luci del frame (coordinate scena). Il giocatore emana una luce calda
+  // che pulsa col battito; gli appigli vicini brillano piano.
+  renderer.lights.length = 0;
+  {
+    const pp = climbPos(cl);
+    renderer.lights.push({ x: pp.tx, y: pp.ty - cameraY, r: 40 + juice.beat * 14, alpha: 0.5 + juice.beat * 0.3 });
+  }
   renderer.render(() => {
     ctx.save();
     ctx.translate(VIEW_W / 2, VIEW_H / 2); ctx.scale(z, z); ctx.translate(-VIEW_W / 2, -VIEW_H / 2);

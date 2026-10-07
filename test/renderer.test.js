@@ -215,3 +215,42 @@ test('bloomPassOn: il rosso acceso fiorisce, lo scuro no (palette rossa)', () =>
   assert.equal(bloomPassOn(0, 0, 0, 0.5), false);
   assert.equal(bloomPassOn(NaN, 0, 0, 0.5), false);    // non finito → false
 });
+
+// ---------------------------------------------------------------------------
+// W2-C: tonemap + LUT rossa (puri) e lightmap (feature-flagged).
+// ---------------------------------------------------------------------------
+import { tonemap, applyRedLut, RED_LUT } from '../src/renderer.js';
+
+test('tonemap: Reinhard x/(1+x), finito, limitato, monotono', () => {
+  assert.equal(tonemap(0), 0);
+  assert.ok(tonemap(1) < 1 && tonemap(1) > 0.4, 'tonemap(1)=' + tonemap(1));
+  let prev = -1;
+  for (let i = 0; i <= 20; i++) {
+    const v = tonemap(i / 10);
+    assert.ok(Number.isFinite(v) && v >= 0 && v < 1, 'fuori range: ' + v);
+    assert.ok(v >= prev, 'non monotono');
+    prev = v;
+  }
+  assert.equal(tonemap(NaN), 0);
+  assert.equal(tonemap(-1), 0);
+});
+
+test('applyRedLut: nero->nero, mappa nella rampa, tutti rosso-dominanti', () => {
+  const black = applyRedLut(0, 0, 0);
+  assert.deepEqual(black, [0, 0, 0]);
+  const white = applyRedLut(255, 255, 255);
+  assert.ok(white[0] >= white[1] && white[0] >= white[2], 'non rosso-dominante: ' + white);
+  for (let v = 0; v <= 255; v += 17) {
+    const [r, g, b] = applyRedLut(v, v, v);
+    assert.ok(r >= g && r >= b, 'non rosso-dominante a ' + v + ': ' + [r, g, b]);
+    assert.ok(r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255, 'fuori byte');
+  }
+  assert.ok(RED_LUT && RED_LUT.length >= 2, 'RED_LUT assente');
+});
+
+test('lightmap: default disattivata (nessun cambio alla sequenza base)', () => {
+  const s = makeStub();
+  const api = createRenderer(s.visible, 320, 180);
+  assert.equal(api.post.lights | 0, 0, 'lights deve essere 0 di default');
+  assert.equal(api.post.lut | 0, 0, 'lut deve essere 0 di default');
+});
