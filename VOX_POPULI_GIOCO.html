@@ -3173,7 +3173,9 @@ function buildWallCanvas(ctx, g, climb, W, H) {
     for (let c = 0; c < climb.cols.length; c++) {
       if (!climb.has(c, r)) continue;
       const hx = Math.round(climb.xOf(c));
-      const hy = Math.round(y) + 1;
+      // la presa è centrata ESATTAMENTE sul punto che la mano afferra (yOf = riga),
+      // così il palmo del giocatore coincide col pixel della presa (guida §2).
+      const hy = Math.round(y);
       const ph = time * 1.6 + (hx + r * 13) * 0.1;
       const bob = Math.round(Math.sin(ph) * 0.6);
       if (near) {

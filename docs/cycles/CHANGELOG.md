@@ -52,6 +52,25 @@ perdeva. (Segnalato dall'utente.)
 
 ---
 
+## Ciclo 3 — Mani ancorate alle prese
+**Data:** 2026-10-07 · **Commit:** *(vedi git)*
+
+**Problema:** la presa era disegnata 1px sotto il punto afferrato → la mano del
+giocatore sembrava "sfiorare" e non afferrare.
+
+**Regole applicate** (guida §2 "il gomito/giunto si disegna sulla piega", §5 "IK
+raggiunge il target senza scatti"):
+- La presa è ora centrata **esattamente** su `yOf(r)` (era `yOf(r)+1`), così il palmo
+  del giocatore coincide col pixel della presa.
+
+**Verifica:** 118/118 test · FPS 60 · zero errori.
+
+**Esito:** KEEP.
+
+**File:** `src/art.js` (`drawWall`, appigli live).
+
+---
+
 ## Prossimi cicli (backlog prioritizzato dalla ricerca)
 
 1. **Parete che respira** — la folla dietro è caotica; ridurre densità/scurire per far
