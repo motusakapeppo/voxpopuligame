@@ -196,20 +196,20 @@ function hashSeq(seq) {
 // Impronta di riferimento catturata dall'implementazione PRE-refactor.
 // Se cambia anche un solo primitivo disegnato, questi hash cambiano → test rosso.
 const REF = {
-  '01-intro': [[1923016668, 303, 611673129, 6], [2563305001, 304, 1498893188, 7]],
+  '01-intro': [[3667857461, 304, 611673129, 6], [4124375742, 305, 1498893188, 7]],
   '02-vento': [[609023432, 158, 2889890364, 68], [2439605109, 153, 4071402270, 68]],
-  '03-tuoni': [[789302161, 244, 1947613349, 0], [3422071046, 246, 1947613349, 0]],
+  '03-tuoni': [[2905870897, 245, 1947613349, 0], [3505602484, 247, 1947613349, 0]],
   '04-baghdad': [[477701795, 255, 1346374851, 5], [1419986094, 248, 3180536496, 6]],
-  '05-hosonno': [[1872535615, 292, 3096924092, 1], [3880851950, 291, 4023118249, 1]],
+  '05-hosonno': [[823067459, 293, 3096924092, 1], [1210234668, 292, 4023118249, 1]],
   '06-primoposto': [[2635353345, 254, 284184351, 64], [2942455989, 256, 3319994151, 64]],
-  '07-tictac': [[1139837241, 238, 942003670, 61], [2305320034, 239, 1014982464, 58]],
-  '08-tuttofinto': [[3318349667, 293, 345691016, 66], [2153080482, 293, 345691016, 66]],
-  '09-edera': [[3599624201, 274, 1995386895, 14], [3582807303, 274, 478780436, 14]],
+  '07-tictac': [[1978515950, 239, 942003670, 61], [824579435, 240, 1014982464, 58]],
+  '08-tuttofinto': [[801492124, 294, 345691016, 66], [3732313135, 294, 345691016, 66]],
+  '09-edera': [[1526756889, 275, 1995386895, 14], [2706853403, 275, 478780436, 14]],
   '10-scendi': [[1313391371, 327, 1514720364, 41], [608461687, 320, 2991681208, 42]],
-  '11-lafinedelmondo': [[2695498855, 167, 691758725, 10], [4117915797, 167, 519550647, 10]],
+  '11-lafinedelmondo': [[2156084731, 168, 691758725, 10], [1417966453, 168, 519550647, 10]],
   '12-maranatha': [[598866772, 252, 4035554001, 58], [3248413878, 251, 1209617664, 58]],
-  '13-outro': [[321774597, 324, 3901673499, 1], [2329750774, 284, 1013127396, 1]],
-  'default': [[1630884364, 105, 549137722, 4], [818402340, 105, 3379290323, 4]],
+  '13-outro': [[2029749381, 325, 3901673499, 1], [616996996, 285, 1013127396, 1]],
+  'default': [[614794437, 106, 549137722, 4], [2233076925, 106, 3379290323, 4]],
 };
 
 test('S-REND: drawThemeBack/Front producono la sequenza ESATTA di riferimento (nessun cambio visivo)', () => {
@@ -272,4 +272,29 @@ test('S-REND: le closure LCG per strato sono riusate (nessuna ricreazione per fr
   for (let i = 0; i < 50; i++) drawThemeBack(ctx, '04-baghdad', 120, 3.3 + i / 60, 320, 180, undefined);
   assert.equal(THM.__thmDebug.lcgCreated - before, 0,
     'le closure LCG degli strati sono state ricreate per frame');
+});
+
+// ---------------------------------------------------------------------------
+// W3-TEMI: palette-per-regione. 13 descrittori distinti, palette-safe.
+// ---------------------------------------------------------------------------
+import { themePalette } from '../src/themes.js';
+
+test('W3-TEMI: themePalette copre 13 id + fallback con descrittori distinti', () => {
+  const ids = ['01-intro','02-vento','03-tuoni','04-baghdad','05-hosonno','06-primoposto',
+    '07-tictac','08-tuttofinto','09-edera','10-scendi','11-lafinedelmondo','12-maranatha','13-outro'];
+  const seen = new Set();
+  for (const id of ids) {
+    const p = themePalette(id);
+    assert.ok(p && p.motif && p.tone, id + ' palette incompleta');
+    for (const key of ['base','mid','hot','accent']) {
+      const c = p[key];
+      assert.ok(typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c), id + ' ' + key + ' non colore');
+      const r = parseInt(c.slice(1,3),16), g = parseInt(c.slice(3,5),16), b = parseInt(c.slice(5,7),16);
+      assert.ok(r >= g && r >= b, id + ' ' + key + ' non rosso-dominante: ' + c);
+    }
+    seen.add(p.motif + '|' + p.tone + '|' + p.hot);
+  }
+  assert.ok(seen.size >= 10, 'descrivatori troppo simili: ' + seen.size);
+  const fb = themePalette('sconosciuto');
+  assert.ok(fb && fb.motif, 'fallback assente');
 });

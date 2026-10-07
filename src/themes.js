@@ -208,6 +208,31 @@ export function themeLayers(audioId) {
   return src.map((l) => ({ depth: l.depth, speed: l.speed, color: l.color }));
 }
 
+// W3-TEMI: palette-per-regione. Ogni tema ha un proprio bilanciamento di valore/
+// saturazione entro la rampa rossa + un motivo distintivo. Palette-safe.
+const THM_PALETTES = {
+  '01-intro':        { tone: 'balanced', base: C.redDeep, mid: C.redDark, hot: C.redMid,    accent: C.red,     motif: 'sea' },
+  '02-vento':        { tone: 'bright',   base: C.redDark, mid: C.redMid,  hot: C.red,       accent: C.redBright, motif: 'domes' },
+  '03-tuoni':        { tone: 'dark',     base: C.redDeep, mid: C.redDark, hot: C.redMid,    accent: C.redHot,  motif: 'lightning' },
+  '04-baghdad':      { tone: 'bright',   base: C.redMid,  mid: C.red,     hot: C.redBright, accent: C.redHot,  motif: 'ruins' },
+  '05-hosonno':      { tone: 'dark',     base: C.redDeep, mid: C.redDeep, hot: C.redDark,   accent: C.redMid,  motif: 'clocks' },
+  '06-primoposto':   { tone: 'bright',   base: C.redDark, mid: C.red,     hot: C.redHot,    accent: C.white,   motif: 'track' },
+  '07-tictac':       { tone: 'balanced', base: C.redDeep, mid: C.redMid,  hot: C.redBright, accent: C.redHot,  motif: 'gears' },
+  '08-tuttofinto':   { tone: 'balanced', base: C.redDark, mid: C.redMid,  hot: C.red,       accent: C.white,   motif: 'curtain' },
+  '09-edera':        { tone: 'dark',     base: C.redDeep, mid: C.redDark, hot: C.red,       accent: C.redHot,  motif: 'ivy' },
+  '10-scendi':       { tone: 'bright',   base: C.redMid,  mid: C.redBright, hot: C.redHot,  accent: C.white,   motif: 'crowd' },
+  '11-lafinedelmondo':{ tone: 'dark',    base: C.redDeep, mid: C.redMid,  hot: C.redHot,    accent: C.white,   motif: 'flood' },
+  '12-maranatha':    { tone: 'bright',   base: C.redDark, mid: C.red,     hot: C.redHot,    accent: C.white,   motif: 'chorus' },
+  '13-outro':        { tone: 'dark',     base: C.redDeep, mid: C.redDark, hot: C.redMid,    accent: C.redHot,  motif: 'summit' },
+  'default':         { tone: 'balanced', base: C.redDeep, mid: C.redDark, hot: C.red,       accent: C.redHot,  motif: 'plain' },
+};
+
+// Pura: palette-per-regione del tema (ignoti → fallback). Copia, mai rif. interno.
+export function themePalette(audioId) {
+  const p = THM_PALETTES[themeFor(audioId)] || THM_PALETTES[THEME_FALLBACK];
+  return { tone: p.tone, base: p.base, mid: p.mid, hot: p.hot, accent: p.accent, motif: p.motif };
+}
+
 // Disegna gli strati come creste silhouette. Ogni strato: posizione verticale
 // scorsa dalla camera alla sua velocità, forma da LCG(seed ^ indice), coordinate
 // intere. Lo strato vicino copre i lontani (occlusione naturale).
@@ -646,6 +671,15 @@ export function drawThemeBack(ctx, audioId, camY, time, W, H, fx) {
     const t = thmNum(time, 0), cy = thmNum(camY, 0);
     P.rect(0, 0, P.W, P.H, C.black, 1);
     fn(P, cy, t, P.W, P.H, fx);
+    // W3-TEMI: velo di TONO per-regione (palette-per-regione). dark = piu' cupo,
+    // bright = piu' arioso. Leggero, deterministico: unifica la scena del tema.
+    const pal = THM_PALETTES[id] || THM_PALETTES[THEME_FALLBACK];
+    const toneA = pal.tone === 'dark' ? 0.16 : pal.tone === 'bright' ? 0.0 : 0.08;
+    if (toneA > 0.001) {
+      ctx.globalAlpha = toneA;
+      ctx.fillStyle = pal.base;
+      ctx.fillRect(0, 0, P.W, P.H);
+    }
     thmAmbient(fx, THM_PLANS[id] || THM_PLANS[THEME_FALLBACK], t, cy, P.W, P.H, thmHash(id));
     ctx.globalAlpha = 1;
   } catch { /* mai bloccare il frame */ }
