@@ -3107,6 +3107,7 @@ function createRenderer(canvas, W, H) {
   // scala a ogni frame) e stringa rgb della soglia bloom (evita di allocarla).
   let cw = -1, ch = -1;
   let lastGv = -1, lastGvStr = '';
+  let lutImg = null;   // ImageData riusato per il color grading (LUT rossa)
   // Legge un parametro post SENZA allocare un oggetto per frame: opts.post
   // vince se la chiave è propria, altrimenti fallback su api.post (stessa
   // semantica di Object.assign({}, api.post, opts.post), zero allocazioni).
@@ -3293,6 +3294,33 @@ function createRenderer(canvas, W, H) {
         outCtx.globalAlpha = flash * 0.30;
         outCtx.fillStyle = C.white;
         outCtx.fillRect(w * 0.3, h * 0.3, w * 0.4, h * 0.4);
+      }
+
+      // 8.5 COLOR GRADING (W3-RENDER): LUT rossa + tonemap. Feature-flagged
+      // (post.lut). Applicata al buffer `out` a 320x180 (57.600 px, costo basso).
+      // Riusa l'ImageData del buffer (nessuna alloc se le dimensioni non cambiano).
+      const lutAmt = rdrClamp01(postVal(o, 'lut'));
+      if (lutAmt > 0.001) {
+        try {
+          if (!lutImg || lutImg.width !== w || lutImg.height !== h) {
+            lutImg = outCtx.createImageData(w, h);
+          }
+          const img = outCtx.getImageData(0, 0, w, h);
+          const d = img.data;
+          for (let i = 0; i < d.length; i += 4) {
+            const rr = d[i], gg = d[i + 1], bb = d[i + 2];
+            const m = rr > gg ? (rr > bb ? rr : bb) : (gg > bb ? gg : bb);
+            const v = m / 255;
+            const toned = v <= 0 ? 0 : v / (1 + v);
+            const idx = Math.max(0, Math.min(255, Math.round(toned * 1.6 * 255)));
+            const c = RED_LUT[idx];
+            // miscela con l'originale secondo l'intensità del grade
+            d[i]     = Math.round(rr + (c[0] - rr) * lutAmt);
+            d[i + 1] = Math.round(gg + (c[1] - gg) * lutAmt);
+            d[i + 2] = Math.round(bb + (c[2] - bb) * lutAmt);
+          }
+          outCtx.putImageData(img, 0, 0);
+        } catch { /* niente grading */ }
       }
 
       // 9. blit scalato sul canvas visibile (usa la cache di resize: qui non
@@ -3797,49 +3825,138 @@ function drawCollapse(ctx, c, time = 0) {
 // ⚠️ PLACEHOLDER: sostituire con l'URL reale (pre-save / streaming) prima della distribuzione.
 const CTA_URL = '#';
 const CTA_LABEL = 'Ascolta tutto · Pre-salva';
+
+// ---------------------------------------------------------------------------
+// HIT-RECT del bottone. Deve combaciare ESATTAMENTE con il rettangolo disegnato
+// da drawCta (main.js usa questo rect per il click). Responsive: non sborda mai.
+// ---------------------------------------------------------------------------
 function ctaButtonRect(viewW, viewH) {
-  const w = 200, h = 24;
-  return { x: Math.round((viewW - w) / 2), y: Math.round(viewH / 2 + 34), w, h };
+  const w0 = Number.isFinite(viewW) ? viewW : 320;
+  const h0 = Number.isFinite(viewH) ? viewH : 180;
+  const w = Math.min(200, Math.max(80, Math.round(w0 - 40)));
+  const h = 24;
+  return { x: Math.round((w0 - w) / 2), y: Math.round(h0 / 2 + 34), w, h };
 }
 
-// La schermata finale: la piramide crollata resta come sfondo (maceria), sopra uno
-// scrim scuro per far leggere il testo, il titolo, il sottotitolo e il bottone.
-// Deterministico, solo palette nero+rosso+bianco.
-function drawCta(ctx, viewW, viewH, time) {
-  const r = ctaButtonRect(viewW, viewH);
-  const cx = viewW / 2;
+// ---------------------------------------------------------------------------
+// SHRINK-TO-FIT (puro): la size più grande (intera) con cui `text` entra in
+// `maxW` al font monospace bold. Misura col font REALE del disegno. Mai NaN.
+// ---------------------------------------------------------------------------
+function ctaFitFont(ctx, text, maxW, startSize) {
+  const t = text == null ? '' : String(text);
+  const limit = Number.isFinite(maxW) ? maxW : 320;
+  let size = Number.isFinite(startSize) ? startSize : 20;
+  const widthAt = (sz) => {
+    const px = Math.max(1, Math.round(sz));
+    ctx.font = 'bold ' + px + 'px monospace';
+    const m = ctx.measureText(t);
+    return (m && Number.isFinite(m.width) && m.width > 0) ? m.width : t.length * px * 0.62;
+  };
+  let guard = 0;
+  while (size > 1 && widthAt(size) > limit && guard++ < 400) size -= 1;
+  return size;
+}
 
-  // scrim: banda scura al centro così il testo stacca dalla maceria
-  ctx.fillStyle = C.black;
-  ctx.globalAlpha = 0.62;
-  ctx.fillRect(0, viewH / 2 - 34, viewW, 96);
+// ---------------------------------------------------------------------------
+// TESTO con contrasto "che abbraccia il glifo": ombra morbida offset + alone
+// nero a 8 direzioni + corpo colorato. Stessa tecnica delle liriche pixel:
+// NIENTE banda full-width, il testo resta amalgamato alla maceria ma leggibile.
+// ---------------------------------------------------------------------------
+function haloText(ctx, text, x, y, size, color, alpha) {
+  const px = Math.max(1, Math.round(size));
+  ctx.font = 'bold ' + px + 'px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  // ombra morbida: copia nera offset (1,2), alpha ridotta → profondità
+  ctx.globalAlpha = 0.45; ctx.fillStyle = C.black;
+  ctx.fillText(text, x + 1, y + 2);
+  // alone solido: 4 ortogonali + 4 diagonali a 1px
+  ctx.globalAlpha = 0.95; ctx.fillStyle = C.black;
+  ctx.fillText(text, x - 1, y);
+  ctx.fillText(text, x + 1, y);
+  ctx.fillText(text, x, y - 1);
+  ctx.fillText(text, x, y + 1);
+  ctx.fillText(text, x - 1, y - 1);
+  ctx.fillText(text, x + 1, y - 1);
+  ctx.fillText(text, x - 1, y + 1);
+  ctx.fillText(text, x + 1, y + 1);
+  // corpo: colore pieno, il tono più leggibile
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
   ctx.globalAlpha = 1;
-  // due capelli rossi sopra/sotto lo scrim: incorniciano la schermata
-  ctx.fillStyle = C.redDark;
-  ctx.fillRect(0, viewH / 2 - 34, viewW, 1);
-  ctx.fillRect(0, viewH / 2 + 61, viewW, 1);
+}
 
-  // titolo con ombra netta
-  ctx.font = '20px monospace';
-  ctx.fillStyle = C.black;  ctx.fillText('VOX POPULI', cx - 67, viewH / 2 - 19);
-  ctx.fillStyle = C.redHot; ctx.fillText('VOX POPULI', cx - 68, viewH / 2 - 20);
+// ---------------------------------------------------------------------------
+// LA SCHERMATA FINALE — end-card composta sopra la maceria (piramide crollata).
+// Layout ancorato: cornice ad angoli (hairline rosse, eco della piramide),
+// titolo + divisore a piramide + credito, poi il bottone pulsante. Contrasto
+// per alone (non stripe). Deterministico, solo palette nero+rosso+bianco.
+// ---------------------------------------------------------------------------
+function drawCta(ctx, viewW, viewH, time, opts) {
+  const w = Number.isFinite(viewW) ? viewW : 320;
+  const h = Number.isFinite(viewH) ? viewH : 180;
+  const t = Number.isFinite(time) ? time : 0;
+  const o = opts || {};
+  const title = o.title != null ? String(o.title) : 'VOX POPULI';
+  const sub = o.sub != null ? String(o.sub) : 'MOTUS — concept album · 13 tracce';
+  const cx = Math.round(w / 2);
+  const MARGIN = 12;
+  const maxW = Math.max(40, w - MARGIN * 2);
 
-  ctx.font = '7px monospace';
-  ctx.fillStyle = C.red;
-  const sub = 'MOTUS — concept album · 13 tracce';
-  ctx.fillText(sub, Math.round(cx - sub.length * 2.1), viewH / 2 - 6);
+  const hair = (x, y, ww, hh, col) => {
+    ctx.fillStyle = col;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(ww), Math.round(hh));
+  };
 
-  // bottone pulsante
-  const pulse = 0.5 + 0.5 * Math.sin(time * 3);
-  ctx.fillStyle = C.black;   ctx.fillRect(r.x + 1, r.y + 1, r.w, r.h);
+  // --- CORNICE: motivo ad angoli (L-bracket) in rosso, eco della piramide ----
+  const inset = 8, len = 22;
+  const red = C.red, redD = C.redDark;
+  // alto-sinistra
+  hair(inset, inset, len, 1, red);            hair(inset, inset, 1, len, red);
+  // alto-destra
+  hair(w - inset - len, inset, len, 1, red); hair(w - inset - 1, inset, 1, len, red);
+  // basso-sinistra
+  hair(inset, h - inset - 1, len, 1, red);   hair(inset, h - inset - len, 1, len, red);
+  // basso-destra
+  hair(w - inset - len, h - inset - 1, len, 1, red); hair(w - inset - 1, h - inset - len, 1, len, red);
+
+  // --- BLOCCO TITOLO (ancorato in alto, centrato) ----------------------------
+  const titleY = Math.round(h * 0.30);
+  const titleSize = ctaFitFont(ctx, title, maxW, 20);
+  haloText(ctx, title, cx, titleY, titleSize, C.white, 1);
+
+  // divisore a PIRAMIDE (3 hairline decrescenti) — motivo della cover
+  const divY = titleY + 8;
+  for (let i = 0; i < 3; i++) {
+    const ww = 18 - i * 6;
+    hair(cx - ww / 2, divY + i * 2, ww, 1, i === 0 ? red : redD);
+  }
+
+  // credito / sottotitolo
+  const subY = titleY + 24;
+  const subSize = ctaFitFont(ctx, sub, maxW, 8);
+  haloText(ctx, sub, cx, subY, subSize, C.red, 0.95);
+
+  // --- BOTTONE (pulsante, deterministico) ------------------------------------
+  const r = ctaButtonRect(w, h);
+  // ombra netta offset (non coincide col rect: l'hit-rect resta pulito)
+  ctx.fillStyle = C.black; ctx.globalAlpha = 0.5;
+  ctx.fillRect(r.x + 2, r.y + 2, r.w, r.h);
+  ctx.globalAlpha = 1;
+  // base: alpha pulsante time-based (0.6..1.0)
+  const pulse = 0.5 + 0.5 * Math.sin(t * 3);
   ctx.fillStyle = C.redBright;
-  ctx.globalAlpha = 0.7 + 0.3 * pulse;
+  ctx.globalAlpha = 0.6 + 0.4 * pulse;
   ctx.fillRect(r.x, r.y, r.w, r.h);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = C.white;
-  ctx.font = '9px monospace';
-  const label = CTA_LABEL;
-  ctx.fillText(label, Math.round(cx - label.length * 2.7), r.y + 16);
+  // filo superiore acceso + filo inferiore scuro: volume
+  hair(r.x, r.y, r.w, 1, C.redHot);
+  hair(r.x, r.y + r.h - 1, r.w, 1, C.redDeep);
+  // etichetta centrata col rect, con alone
+  const labelSize = ctaFitFont(ctx, CTA_LABEL, r.w - 12, 9);
+  haloText(ctx, CTA_LABEL, Math.round(r.x + r.w / 2), Math.round(r.y + r.h / 2 + labelSize * 0.35), labelSize, C.white, 1);
+
+  ctx.textAlign = 'left';
 }
 
 
@@ -4004,6 +4121,76 @@ function postureSpring(t, decay = 0.4) {
   if (tt <= 0) return 1;
   if (tt >= d) return 0;
   return 1 - tt / d;
+}
+
+// ---------------------------------------------------------------------------
+// W3-ANIM — GESTURE PHASE — curva a 4 tempi per i gesti (Z=tendi / X=spingi):
+//   anticipazione (carica, moto opposto) → strike (veloce) → tenuta all'impatto
+//   (~150-200ms) → recover. Tutti gli output sono limitati in [0,1] e finiti.
+//   opts: { hold = 0.18 (s), strikeAt = 0.45, rise = 0.15 } (frazioni di dur).
+//   `actK` = intensità complessiva: picco allo strike, tenuta durante l'impatto.
+// ---------------------------------------------------------------------------
+function gesturePhase(t, dur, opts = {}) {
+  const d = (Number.isFinite(dur) && dur > 0) ? dur : 1;
+  const u = clamp(finiteOr(t, 0) / d, 0, 1);
+  const strikeAt = clamp(finiteOr(opts.strikeAt, 0.45), 0.05, 0.95);
+  const rise = clamp(finiteOr(opts.rise, 0.15), 0.01, strikeAt);
+  const holdN = clamp(finiteOr(opts.hold, 0.18) / d, 0, 1 - strikeAt);
+  const holdEnd = strikeAt + holdN;
+  const recoverN = Math.max(1e-6, 1 - holdEnd);
+
+  // anticipazione: campana sul wind-up, si spegne allo strike
+  const anticipation = u < strikeAt ? Math.sin(PI * (u / strikeAt)) : 0;
+  // strike: sale rapido verso l'impatto, resta 1 durante la tenuta, poi cala
+  let strike;
+  if (u < strikeAt) strike = clamp((u - (strikeAt - rise)) / rise, 0, 1);
+  else if (u <= holdEnd) strike = 1;
+  else strike = 1 - clamp((u - holdEnd) / recoverN, 0, 1);
+  // recover: parte solo dopo la tenuta
+  const recover = u <= holdEnd ? 0 : clamp((u - holdEnd) / recoverN, 0, 1);
+  // actK: intensità complessiva, picco allo strike e tenuta durante l'impatto
+  let actK;
+  if (u < strikeAt) actK = clamp(u / strikeAt, 0, 1);
+  else if (u <= holdEnd) actK = 1;
+  else actK = 1 - recover;
+
+  return { phase: u, anticipation, strike, recover, actK };
+}
+
+// distanza fra due pose (somma delle differenze assolute dei giunti), finita
+function poseDist(A, B) {
+  if (!A || !B) return 0;
+  const num = (v) => (Number.isFinite(v) ? v : 0);
+  let d = Math.abs(num(A.lean) - num(B.lean)) + Math.abs(num(A.bob) - num(B.bob));
+  for (const k of ['aL', 'aR', 'lL', 'lR']) {
+    const a = A[k], b = B[k];
+    if (Array.isArray(a) && Array.isArray(b)) {
+      d += Math.abs(num(a[0]) - num(b[0])) + Math.abs(num(a[1]) - num(b[1]));
+    }
+  }
+  return d;
+}
+
+// ---------------------------------------------------------------------------
+// W3-ANIM — SMEAR — quanto "strisciare" fra due pose al blend k. 0 agli estremi
+// (k=0, k=1), massimo a metà transizione (bump 4k(1-k)) scalato dalla distanza
+// fra le pose. Ritorna uno scalare in [0,1], sempre finito e deterministico.
+// ---------------------------------------------------------------------------
+function smearAmount(prevPose, nextPose, k) {
+  const kk = clamp(finiteOr(k, 0), 0, 1);
+  const bump = 4 * kk * (1 - kk);          // 0 agli estremi, 1 al centro
+  const d = poseDist(prevPose, nextPose);
+  const sat = d / (d + 3);                // saturazione 0..1
+  return clamp(bump * sat, 0, 1);
+}
+
+// ---------------------------------------------------------------------------
+// W3-ANIM — SQUASH & STRETCH — fattore verticale per atterraggi/impatto.
+// 1 a velocità 0, limitato in [0.8, 1.2] (tanh: mai oltre, mai NaN).
+// ---------------------------------------------------------------------------
+function squashStretch(vel) {
+  const v = finiteOr(vel, 0);
+  return clamp(1 + 0.2 * Math.tanh(v), 0.8, 1.2);
 }
 
 // ---------------------------------------------------------------------------
@@ -4242,12 +4429,19 @@ function drawFigure(ctx, x, y, opts = {}) {
     thickness = 1, alpha = 1, shadow = false,
     detail = false, stretch = 0, rim = false,
     breathe = 0,   // S-ANAT: 0..1 respiro sottile (testa/petto), 0 = storico
+    impact = undefined,   // W3-ANIM: secondi dall'impatto (>=0) → squash; default OFF
   } = opts;
   const P = pose(state, phase);
   const f = facing;
   // squash&stretch: fattore verticale limitato in [-1,1]; 0 = neutro (default)
   const st = clamp(finiteOr(stretch, 0), -1, 1);
-  const sy = 1 + st * 0.30;   // 0.7 (schiacciato) … 1.3 (allungato)
+  let sy = 1 + st * 0.30;   // 0.7 (schiacciato) … 1.3 (allungato)
+  // W3-ANIM: impatto — solo se `impact` è un numero finito >= 0 (default OFF).
+  // Squash che decade in ~0.2s: la figura "si siede" per un attimo sull'urto.
+  if (Number.isFinite(impact) && impact >= 0) {
+    const ik = 1 - clamp(impact / 0.2, 0, 1);   // 1 subito dopo l'urto → 0 a 0.2s
+    sy *= squashStretch(-ik * 3);              // tanh(-3) ≈ -0.995 → ~0.8 schiacciato
+  }
   // respiro: offset verticale sottile su petto/testa, sfasato dal bob della posa
   const br = clamp(finiteOr(breathe, 0), 0, 1);
   const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br * 0.6 : 0;
