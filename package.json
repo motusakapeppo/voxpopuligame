@@ -1,0 +1,11 @@
+{
+  "name": "vox-populi-gioco",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "serve": "node tools/serve.mjs",
+    "slice-audio": "node tools/slice-audio.mjs",
+    "build": "node tools/build.mjs"
+  }
+}

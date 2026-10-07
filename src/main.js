@@ -1,0 +1,323 @@
+import { C } from './palette.js';
+import { createInput } from './input.js';
+import { GIRONI } from './gironi.js';
+import { createModState, applyModifier } from './modifiers.js';
+import { createState, advance } from './state.js';
+import { createTransition, stepTransition, drawTransition } from './transition.js';
+import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effects.js';
+import { createAudio } from './audio.js';
+import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
+import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
+import { drawWall, drawPlayer, drawEncounter, drawBackground, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawVignette } from './art.js';
+import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter } from './encounters.js';
+import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol } from './climb.js';
+import { createThreatState, stepThreats, pickupPositions, applyPickup } from './threats.js';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const VIEW_W = 320, VIEW_H = 180;
+let SCALE = 3;
+
+function resize() {
+  const s = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
+  SCALE = Math.max(1, Math.floor(s));
+  canvas.width = VIEW_W * SCALE; canvas.height = VIEW_H * SCALE;
+  canvas.style.width = (VIEW_W * SCALE) + 'px'; canvas.style.height = (VIEW_H * SCALE) + 'px';
+  ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', resize); resize();
+
+const input = createInput();
+input.attach(window);
+input.attachTouch(document);
+
+const loadClip = id =>
+  (typeof AUDIO_DATA !== 'undefined' && AUDIO_DATA[id])
+    ? Promise.resolve(AUDIO_DATA[id])
+    : Promise.resolve(`assets/audio/${id}.m4a`);
+const storage = (typeof localStorage !== 'undefined') ? localStorage : { getItem: () => null, setItem: () => {} };
+const audio = createAudio({ storage, loadClip });
+
+let state = createState();
+let level = null;
+let collapse = null;
+let cameraY = 0;
+let time = 0;
+let loyalty = 0;
+let action = 'idle';
+let actionT = 0;
+
+const trackLabel = document.getElementById('track-label');
+const btnAudio = document.getElementById('btn-audio');
+const btnTracklist = document.getElementById('btn-tracklist');
+const tracklist = document.getElementById('tracklist');
+const btnCta = document.getElementById('btn-cta');
+const btnTendi = document.getElementById('btn-tendi');
+const btnSpingi = document.getElementById('btn-spingi');
+const promptEl = document.getElementById('prompt');
+
+// incontri piazzati su file della parete. Attivazione per FILA: il tipo dipende
+// da CHI incontri, e il posto è sempre sulla colonna centrale (dove passa il corpo).
+function makeEncounters(g, climb) {
+  const kinds = GIRONE_ENCOUNTERS[g.id] || ['hand'];
+  const out = [];
+  const n = kinds.length;
+  for (let i = 0; i < n; i++) {
+    // distribuiti dal basso verso l'alto, mai sulla fila 0 (partenza) né sull'ultima
+    const row = Math.max(2, Math.min(climb.nRows - 2,
+      Math.round((climb.nRows - 1) * ((i + 1) / (n + 1))) + 1));
+    const c = centerCol(climb, row);
+    out.push({ id: 'enc' + i, kind: kinds[i], row, c,
+      x: climb.xOf(c), y: climb.yOf(row) + 4, w: 8, h: 12,
+      resolved: false, verb: null });
+  }
+  return out;
+}
+
+function loadGirone(index) {
+  const g = GIRONI[index];
+  const modStates = g.modifiers.map(m => createModState(m));
+  if (trackLabel) trackLabel.textContent = g.title;
+  const bodies = g.bodies.map(b => ({ ...b, stress: 0, state: 'stable' }));
+  const climb = createClimb(g);
+  // potenziamenti/aiuti da raccogliere: sulla colonna centrale, così il corpo
+  // del giocatore ci passa sopra salendo (raccolta per fila, impossibile mancarli)
+  const pickups = pickupPositions(g).map((p, i) => {
+    const r = Math.max(2, Math.round((climb.nRows - 3) * p.at) + 1);
+    return { kind: p.kind, taken: false, phase: i, r, c: centerCol(climb, r) };
+  });
+  audio.play(g.audioId);   // la traccia del girone suona mentre lo giochi
+  return {
+    girone: g, modStates, climb,
+    bodies,
+    encounters: makeEncounters(g, climb),
+    pickups,
+    threats: createThreatState(),
+    events: [], fx: createEffects(), transition: null, active: null, threatMsg: '',
+  };
+}
+
+// --- tracklist ---
+function refreshTracklist() {
+  if (!tracklist) return;
+  tracklist.innerHTML = GIRONI.map(g =>
+    `<button data-id="${g.audioId}" ${audio.isUnlocked(g.audioId) ? '' : 'disabled'}>${g.id} ${g.title}</button>`
+  ).join('');
+}
+if (btnTracklist && tracklist) {
+  btnTracklist.addEventListener('click', () => { tracklist.classList.toggle('open'); refreshTracklist(); });
+  tracklist.addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]');
+    if (b && !b.disabled) audio.play(b.dataset.id);
+  });
+}
+if (btnAudio) btnAudio.addEventListener('click', () => {
+  const on = audio.toggle(); btnAudio.textContent = 'audio: ' + (on ? 'on' : 'off');
+});
+
+function goToCta() {
+  // su file:// aprendo una nuova scheda Chrome blocca l'accesso: usiamo
+  // location.href solo per URL reali; col placeholder non navighiamo affatto.
+  if (!CTA_URL || CTA_URL === '#') {
+    setPrompt('URL di pre-save non ancora impostato');
+    return;
+  }
+  try { window.open(CTA_URL, '_blank', 'noopener'); }
+  catch { location.href = CTA_URL; }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (state.phase !== 'cta') return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width * VIEW_W;
+  const y = (e.clientY - rect.top) / rect.height * VIEW_H;
+  const r = ctaButtonRect(VIEW_W, VIEW_H);
+  if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) goToCta();
+});
+
+function showCtaButton(show) {
+  if (!btnCta) return;
+  btnCta.classList.toggle('show', show);
+}
+function setPrompt(txt) {
+  if (!promptEl) return;
+  if (txt) { promptEl.textContent = txt; promptEl.classList.add('show'); }
+  else promptEl.classList.remove('show');
+}
+function doVerb(verb) {
+  if (state.phase !== 'playing' || !level || !level.active) return;
+  const eff = resolveEncounter(level.active, verb);
+  const cl = level.climb;
+  // l'esito sposta la scalata su/giù di una fila
+  const dr = Math.round(-eff.dy / 24);
+  if (dr !== 0) {
+    const nr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r + dr));
+    if (cl.has(cl.lh.c, nr)) cl.lh = { c: cl.lh.c, r: nr };
+    if (cl.has(cl.rh.c, nr)) cl.rh = { c: cl.rh.c, r: nr };
+    cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
+  }
+  loyalty += eff.loyal;
+  action = verb === 'tendi' ? 'tendi' : 'spingi';
+  actionT = 0.6;
+}
+if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); doVerb('tendi'); });
+if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); doVerb('spingi'); });
+if (btnCta) btnCta.addEventListener('pointerdown', ev => { ev.preventDefault(); goToCta(); });
+window.addEventListener('keydown', ev => {
+  if (ev.code === 'KeyZ') doVerb('tendi');
+  else if (ev.code === 'KeyX') doVerb('spingi');
+});
+
+function drawWorld(lv, camY) {
+  drawBackground(ctx, lv.girone, camY, time, VIEW_W, VIEW_H);
+  drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
+  drawWall(ctx, lv.girone, camY, time, VIEW_W, VIEW_H);
+  for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
+  for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
+  drawPlayer(ctx, lv.climb, camY, time, action);
+  drawInscription(ctx, lv.girone.inscription.text, VIEW_W);
+  drawThreatMsg(ctx, lv.threatMsg, VIEW_W, VIEW_H);
+}
+
+function loop() {
+  requestAnimationFrame(loop);
+  time += 0.016;
+  if (actionT > 0) { actionT -= 0.016; if (actionT <= 0) action = 'idle'; }
+  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+
+  if (state.phase === 'title') {
+    showCtaButton(false); setPrompt('');
+    drawTitle(ctx, VIEW_W, VIEW_H, time);
+    if (input.consumeJump()) { state = advance(state, 'start'); level = loadGirone(state.gironeIndex); }
+    return;
+  }
+  if (state.phase === 'cta') {
+    showCtaButton(true); setPrompt('');
+    if (!collapse) collapse = createCollapse({ bodies: level ? level.bodies : [], viewW: VIEW_W, viewH: VIEW_H, supported: Math.max(0, loyalty + 4) });
+    drawCollapse(ctx, collapse, time); drawCta(ctx, VIEW_W, VIEW_H, time);
+    return;
+  }
+  if (state.phase === 'collapse') {
+    showCtaButton(false); setPrompt('');
+    if (!collapse) {
+      collapse = createCollapse({ bodies: level ? level.bodies : [], viewW: VIEW_W, viewH: VIEW_H,
+        supported: Math.max(0, loyalty + 4) });
+      const jp = new URLSearchParams(location.search).get('collapse');
+      if (jp && +jp >= 0) { collapse.phaseIndex = Math.min(4, +jp); collapse.t = 0;
+        collapse.phase = ['zoomOut','revealBodies','flip','fall','circle'][collapse.phaseIndex]; }
+      audio.stop();
+    }
+    stepCollapse(collapse, 0.016); drawCollapse(ctx, collapse, time);
+    if (collapseFinished(collapse)) state = advance(state, 'collapseDone');
+    return;
+  }
+
+  const cl = level.climb, g = level.girone;
+
+  if (state.phase === 'unlocked') {
+    setPrompt('');
+    if (!level.transition) {
+      level.transition = createTransition(state.gironeIndex, state.gironeIndex + 1);
+      audio.markUnlocked(g.audioId);   // completato: riascoltabile in tracklist
+      audio.stop();
+    }
+    stepTransition(level.transition, 0.016);
+    drawWorld(level, cameraY);
+    drawTransition(ctx, level.transition, VIEW_W, VIEW_H);
+    if (level.transition.done) {
+      state = advance(state, 'audioDone');
+      if (state.phase === 'playing') level = loadGirone(state.gironeIndex);
+      else level.transition = null;
+    }
+    return;
+  }
+
+  // --- playing: arrampicata ---
+  level.events.length = 0;
+  const NONE = { left: false, right: false, up: false, down: false };
+  // L'incontro attivo FERMA il corpo: finché non scegli (tendi/spingi) non sali.
+  // Così ogni incontro è un momento vero, non un lampo che si oltrepassa.
+  level.active = encounterAt(cl, level.encounters);
+  const acts = level.active ? NONE : input.climbActions();
+  // caffè: un mezzo passo in più
+  if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, 0.016);
+  stepClimb(cl, acts, 0.016);
+
+  // ostacoli/aiuti legati alla canzone
+  const msg = stepThreats(g, cl, level.threats, 0.016, 0);
+  if (msg && msg !== level.threatMsg) {
+    // impatto visivo coerente col tipo di evento
+    const m = msg.toLowerCase();
+    if (/vento|pioggia|scivol/.test(m)) level.events.push('slip');
+    else if (/tuono|tempo/.test(m)) level.events.push('quake');
+    else if (/detrito|cranio|edera|sonno/.test(m)) level.events.push('blade');
+    else level.events.push('fake');
+  }
+  level.threatMsg = msg;
+
+  // raccolta potenziamenti: scatta quando il giocatore raggiunge quella fila
+  const curRow = Math.max(cl.lh.r, cl.rh.r);
+  for (const pk of level.pickups) {
+    if (pk.taken) continue;
+    if (Math.abs(pk.r - curRow) <= 1) {
+      pk.taken = true;
+      const m = applyPickup(pk.kind, cl, level.threats);
+      if (m) { level.threats.lastMsg = m; level.threats.msgT = 2; level.events.push('warm'); }
+    }
+  }
+
+  // moduli tematici (vento, tuoni, dim, ecc.) emettono eventi visivi
+  const pos = climbPos(cl);
+  const fakeP = { x: pos.tx - 4, y: pos.ty, w: 8, h: 12, vx: 0, vy: 0, onGround: true };
+  const mctx = { player: fakeP, world: { bodies: level.bodies, gravity: 0 }, time, events: level.events };
+  for (let i = 0; i < g.modifiers.length; i++)
+    applyModifier(g.modifiers[i], mctx, 0.016, level.modStates[i]);
+
+  spawnFromEvents(level.fx, level.events, cameraY, pos.tx);
+  stepEffects(level.fx, 0.016, cameraY, VIEW_H);
+  const sh = shakeOffset(level.fx, time);
+
+  // camera: segue il corpo del climber. rows[0] è la BASE (in basso),
+  // rows[nRows-1] è la CIMA. Il limite massimo tiene la base visibile.
+  const maxCam = Math.max(0, cl.rows[0] - VIEW_H + 40);
+  cameraY = Math.max(0, Math.min(maxCam, pos.ty - VIEW_H * 0.55));
+
+  level.active = encounterAt(cl, level.encounters);
+  if (level.active) setPrompt('◀ ' + KINDS[level.active.kind].prompt + ' ▶   [Z] tendi   [X] spingi');
+  else setPrompt('');
+
+  if (cl.reached && state.phase === 'playing') state = advance(state, 'reachedTop');
+
+  ctx.save(); ctx.translate(sh.x, sh.y);
+  drawWorld(level, cameraY);
+  ctx.restore();
+
+  drawVignette(ctx, VIEW_W, VIEW_H);
+
+  if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+
+  // HUD verticale di scalata
+  const prog = climbProgress(cl);
+  ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
+  ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
+}
+
+// --- debug: ?g=NN ---
+const _gParam = new URLSearchParams(location.search).get('g');
+const _colParam = new URLSearchParams(location.search).get('collapse');
+if (_colParam) {
+  state = advance(createState(), 'start'); state.gironeIndex = 12;
+  level = loadGirone(12);
+  state = advance(state, 'reachedTop'); state = advance(state, 'audioDone');
+} else if (_gParam) {
+  const idx = Math.max(0, Math.min(12, parseInt(_gParam, 10) - 1 || 0));
+  state = advance(createState(), 'start'); state.gironeIndex = idx;
+  level = loadGirone(idx);
+}
+window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, doVerb };
+
+loop();
+
+
+
