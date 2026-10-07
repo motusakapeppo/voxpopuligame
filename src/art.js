@@ -84,6 +84,56 @@ function rng(seed) {
 }
 
 // ---------------------------------------------------------------------------
+// HELPER PURI — profondità atmosferica. Deterministici e testabili.
+// Prefisso `art` per non collidere nel bundle (una sola IIFE).
+// ---------------------------------------------------------------------------
+function artNum(v, d) { return Number.isFinite(v) ? v : d; }
+
+// Tono della folla in base alla profondità (0 = vicino, 1 = lontano):
+// più lontano = più scuro. Sempre un colore della rampa rossa.
+export function artDepthTone(depth) {
+  return depthRed(Number.isFinite(depth) ? depth : 0);
+}
+
+// Strato di skyline: parallasse, tono, altezza e passo crescenti col vicino.
+// i = indice (0 = più lontano), n = numero di strati.
+export function artSkylineLayer(i, n) {
+  const N = Math.max(2, Math.min(6, Math.round(artNum(n, 3))));
+  const k = Math.max(0, Math.min(N - 1, Math.round(artNum(i, 0))));
+  const t = k / (N - 1);                       // 0 = lontano, 1 = vicino
+  return {
+    f: 0.10 + t * 0.48,                        // velocità di parallasse
+    col: artDepthTone(0.05 + t * 0.55),        // tono distinto per strato
+    base: 0.86 + t * 0.19,                     // quota della base
+    h: 20 + t * 36,                            // altezza dei palazzi
+    step: 24 + t * 30,                         // passo orizzontale
+    al: 0.5 - t * 0.28,                        // opacità (il vicino è più discreto)
+  };
+}
+
+// Foschia verticale: massima in alto (topDown) o in basso, svanisce verso
+// l'altro capo. Sempre in [0,1]; input non finiti → 0.
+export function artFogAlpha(y, H, max, topDown = true) {
+  if (!Number.isFinite(y) || !Number.isFinite(H) || H <= 0) return 0;
+  const m = Number.isFinite(max) ? Math.max(0, Math.min(1, max)) : 0;
+  const k = Math.max(0, Math.min(1, y / H));
+  return m * (topDown ? 1 - k : k);
+}
+
+// Hash deterministico (FNV-1a) per seminare le variazioni per brano.
+export function artSeed(str) {
+  const s = typeof str === 'string' ? str : '';
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+
+function artLcg(seed) {
+  let s = seed >>> 0;
+  return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+}
+
+// ---------------------------------------------------------------------------
 // SFONDO
 // ---------------------------------------------------------------------------
 export function drawBackground(ctx, g, cameraY, time, W, H) {
@@ -151,79 +201,108 @@ function buildWallCanvas(ctx, g, climb, W, H) {
 
   // massa organica di persone: non una griglia, ma corpi stipati con
   // variazione di taglia, quota e posa (come una folla che si arrampica).
-  let seed = 0;
-  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  // LCG seminato dal girone: la stessa parete è sempre identica (determinismo).
+  const rnd = artLcg((artSeed(g && g.id) ^ 0x9e3779b9) >>> 0);
   for (let r = 0; r < nRows; r++) {
     let lo = null, hi = null;
     for (let cc = 0; cc < climb.cols.length; cc++) if (climb.has(cc, r)) { if (lo === null) lo = cc; hi = cc; }
     if (lo === null) continue;
     const x0 = climb.xOf(lo) - 16, x1 = climb.xOf(hi) + 16;
     const span = x1 - x0;
-    // densità: corpi RADI (più buio tra loro), così la massa "respira" e il
-    // giocatore (rosso acceso) resta il soggetto dominante. Guida §4.6 + §1.4.
+    // profondità atmosferica: la base è vicina (più chiara), la punta recede
+    // nel buio. La folla resta comunque nella metà bassa della rampa rossa,
+    // così il giocatore (rosso acceso) resta il soggetto dominante.
+    const depth = r / Math.max(1, nRows - 1);
+    // densità: corpi RADI (più buio tra loro), così la massa "respira".
     const n = Math.max(2, Math.round(span / (13 + rnd() * 8)));
     for (let i = 0; i < n; i++) {
       const jitter = (rnd() - 0.5) * 6;
       const fx = x0 + (i + 0.5) * (span / n) + jitter;
       const layers = rnd() > 0.65 ? 2 : 1;      // dietro, raro
       for (let layer = 0; layer < layers; layer++) {
-        const baseWorld = rows[r] - topY + stepY * (0.7 + rnd() * 0.25) + layer * 4;
-        const depth = r / Math.max(1, nRows - 1);
-        const hh = 11 + rnd() * 4;
-        // VALORI SCURI: la folla resta nella metà bassa della rampa rossa, così
-        // solo gli appigli vicini e il giocatore usano i rossi accesi.
-        const colr = depthRed((0.04 + depth * 0.26 + (layer ? 0 : 0.08) + rnd() * 0.10));
+        const baseWorld = rows[r] - topY + stepY * (0.7 + rnd() * 0.25) + layer * 3;
+        const hh = 9 + rnd() * 8;               // taglie più varie (9..17)
+        // più lontano = più scuro: la punta della piramide svanisce nel nero,
+        // lo strato dietro è ancora più profondo.
+        const colr = artDepthTone(0.34 - depth * 0.30 - (layer ? 0.10 : 0) + rnd() * 0.06);
         const ph = r * 1.5 + i * 1.2 + layer * 2.1;
         const roll = rnd();
-        const st = roll < 0.4 ? 'climb' : roll < 0.7 ? 'reach' : roll < 0.9 ? 'idle' : 'push';
+        const st = roll < 0.34 ? 'climb' : roll < 0.58 ? 'reach' : roll < 0.74 ? 'idle'
+          : roll < 0.86 ? 'push' : roll < 0.94 ? 'tendi' : 'scream';
         drawFigure(c, fx, baseWorld, {
           h: hh, color: colr, state: st, phase: ph,
-          facing: rnd() > 0.5 ? 1 : -1, alpha: layer ? 0.5 : 0.82,
+          facing: rnd() > 0.5 ? 1 : -1, alpha: layer ? 0.45 : 0.85,
+          stretch: (rnd() - 0.5) * 0.5,
         });
       }
     }
   }
+
+  // FOSCHIA verticale: la parete recede verso l'alto nel nero (la punta è la
+  // parte più lontana). Sottile: la folla resta leggibile.
+  try {
+    const fog = c.createLinearGradient(0, 0, 0, ch);
+    fog.addColorStop(0, 'rgba(0,0,0,0.45)');
+    fog.addColorStop(0.5, 'rgba(0,0,0,0.14)');
+    fog.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = fog;
+    c.fillRect(0, 0, W, ch);
+  } catch { /* niente foschia: la parete resta */ }
+
   return { canvas: cv, topY };
 }
 
 export function drawWall(ctx, g, climb, cameraY, time, W, H, beat) {
   const bt = Number.isFinite(beat) ? beat : 0;
+  // input sanificati: mai un NaN a schermo (guardia anti-freeze)
+  const cy = artNum(cameraY, 0), tm = artNum(time, 0);
+  const ww = artNum(W, 320), hh = artNum(H, 180);
   // cache su climb (ricreato a ogni girone)
-  if (!climb._wall) climb._wall = buildWallCanvas(ctx, g, climb, W, H);
+  if (!climb._wall) climb._wall = buildWallCanvas(ctx, g, climb, ww, hh);
   const wall = climb._wall;
 
   if (wall) {
     ctx.save();
     // la parete si ATTENUA: la folla è sfondo, non soggetto (guida §4.6).
     ctx.globalAlpha = 0.80 + 0.06 * bt;
-    ctx.drawImage(wall.canvas, 0, Math.round(cameraY - wall.topY), W, H, 0, 0, W, H);
+    ctx.drawImage(wall.canvas, 0, Math.round(cy - wall.topY), ww, hh, 0, 0, ww, hh);
     ctx.restore();
   } else {
-    // ripiego (senza DOM): massa scura + qualche figura, per non rompere nulla
+    // ripiego (senza DOM): massa scura + qualche figura, per non rompere nulla.
+    // Stessa idea di profondità: più in alto = più scuro.
     const rows = climb.rows, nRows = climb.nRows;
     const stepY = Math.abs(rows[1] - rows[0]) || 24;
     for (let r = 0; r < nRows; r++) {
-      const y = rows[r] - cameraY;
-      if (y < -stepY * 2 || y > H + stepY * 2) continue;
+      const y = rows[r] - cy;
+      if (y < -stepY * 2 || y > hh + stepY * 2) continue;
       let lo = null, hi = null;
       for (let cc = 0; cc < climb.cols.length; cc++) if (climb.has(cc, r)) { if (lo === null) lo = cc; hi = cc; }
       if (lo === null) continue;
       const x0 = climb.xOf(lo) - 14, x1 = climb.xOf(hi) + 14;
-      ctx.globalAlpha = 0.5 + 0.1 * bt; ctx.fillStyle = C.redDeep;
+      const depth = r / Math.max(1, nRows - 1);
+      ctx.globalAlpha = 0.5 + 0.1 * bt; ctx.fillStyle = artDepthTone(0.30 - depth * 0.26);
       ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), Math.round(stepY + 4));
       ctx.globalAlpha = 1;
       for (let i = 0; i < 4; i++)
         drawFigure(ctx, x0 + (i + 0.5) * ((x1 - x0) / 4), y + stepY * 0.75,
-          { h: 14, color: C.redDark, state: 'climb', phase: time + i, alpha: 0.7 });
+          { h: 12 + (i % 3) * 2, color: artDepthTone(0.26 - depth * 0.22), state: i % 2 ? 'climb' : 'reach', phase: tm + i, alpha: 0.7 });
     }
+    // foschia: la parete recede verso l'alto
+    try {
+      const fog = ctx.createLinearGradient(0, 0, 0, hh);
+      fog.addColorStop(0, 'rgba(0,0,0,0.40)');
+      fog.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = fog;
+      ctx.fillRect(0, 0, ww, hh);
+    } catch { /* niente */ }
   }
 
   // APPIGLI live: piccole mani che si protendono verso di te (non quadrati).
   // Solo quelli vicino al giocatore si accendono; gli altri restano discreti.
   const gRow = Math.max(climb.lh.r, climb.rh.r);
   for (let r = 0; r < climb.nRows; r++) {
-    const y = climb.rows[r] - cameraY;
-    if (y < -30 || y > H + 30) continue;
+    const y = climb.rows[r] - cy;
+    if (y < -30 || y > hh + 30) continue;
     const near = Math.abs(r - gRow) <= 1;
     for (let c = 0; c < climb.cols.length; c++) {
       if (!climb.has(c, r)) continue;
@@ -231,7 +310,7 @@ export function drawWall(ctx, g, climb, cameraY, time, W, H, beat) {
       // la presa è centrata ESATTAMENTE sul punto che la mano afferra (yOf = riga),
       // così il palmo del giocatore coincide col pixel della presa (guida §2).
       const hy = Math.round(y);
-      const ph = time * 1.6 + (hx + r * 13) * 0.1;
+      const ph = tm * 1.6 + (hx + r * 13) * 0.1;
       const bob = Math.round(Math.sin(ph) * 0.6);
       if (near) {
         // mano tesa: dita + palmo
@@ -256,19 +335,23 @@ export function drawWall(ctx, g, climb, cameraY, time, W, H, beat) {
 // GIOCATORE — appeso alla parete (arrampicata).
 // ---------------------------------------------------------------------------
 export function drawPlayer(ctx, cl, cameraY, time, action) {
+  const camY = artNum(cameraY, 0), tm = artNum(time, 0);
   const p = climbPos(cl);
-  const ly = p.ly - cameraY, ry = p.ry - cameraY;
-  const byc = p.by - cameraY;
-  const ph = time;
+  const ly = p.ly - camY, ry = p.ry - camY;
+  const byc = p.by - camY;
+  const ph = tm;
   const reachK = cl.reach > 0 && cl.reachDur ? Math.max(0, cl.reach / cl.reachDur) : 0;
-  const breathe = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(time * 2));
+  const breathe = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(tm * 2));
   // pendolo: il corpo oscilla in base alla velocità del bacino (fisica)
-  const swing = Math.max(-1, Math.min(1, (cl.vby || 0) * 0.03 + Math.sin(time * 2.2) * 0.12));
+  const swing = Math.max(-1, Math.min(1, (cl.vby || 0) * 0.03 + Math.sin(tm * 2.2) * 0.12));
 
   // Animazioni di INTERAZIONE (Z = tendi, X = spingi): gesture multi-fase.
   // Ogni gesto ha ANTICIPAZIONE → COLPO → RITORNO, così si legge chiaramente.
+  // `actionT` vive in main.js (bundle): in ESM/test non esiste → guardia.
   const dur = action === 'tendi' ? 0.72 : 0.62;
-  const t = (action === 'tendi' || action === 'spingi') ? Math.max(0, actionT) : 0;
+  const t = (action === 'tendi' || action === 'spingi')
+    ? Math.max(0, typeof actionT === 'undefined' ? 0 : actionT)
+    : 0;
   const prog = t > 0 ? Math.min(1, (dur - t) / dur) : 0;       // 0→1 nello svolgersi
   // curva: 0 → 1 → 0 con un picco rapido a metà
   const bell = prog <= 0 ? 0 : prog < 0.5 ? Math.sin(prog * Math.PI) : Math.sin((1 - prog) * Math.PI);
@@ -290,6 +373,14 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
+  // AURA: alone scuro-caldo dietro il corpo, così il giocatore stacca dalla
+  // folla anche quando la parete è densa. Pulsa piano (deterministico).
+  const aura = 0.10 + 0.05 * Math.sin(tm * 2.6) + 0.10 * actK;
+  ctx.save();
+  ctx.globalAlpha = aura;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.redDeep, phase: ph, thickness: 7, h: 22, bx: hipX, by: byc + hipYOff, swing });
+  ctx.restore();
+
   // corpo: contorno CHIARO sottile (bianco tenue) → silhouette scura piena
   // (ritaglia il giocatore dalla folla rossa) → corpo acceso. Il bianco stacca,
   // il nero fa da "ritaglio", il rosso resta il soggetto.
@@ -301,6 +392,17 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
   drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 3, h: 22, bx: hipX, by: byc + hipYOff, swing });
   drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 22,
     bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
+
+  // RIM: un pixel bianco sulla testa (già in drawClimber) + un accento caldo
+  // sulla mano che sta raggiungendo: la presa "brilla" mentre si muove.
+  if (reachK > 0.05) {
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.5 * reachK;
+    ctx.fillStyle = C.redHot;
+    const hx = cl.which === 'r' ? rx : lx, hy = cl.which === 'r' ? ryy : lyy;
+    ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 2, 2);
+    ctx.restore();
+  }
 
   // scie del gesto
   if (trail.length) {
@@ -321,7 +423,7 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
     ctx.fillStyle = C.redHot;
     const ox = action === 'tendi' ? rx : rx, oy = action === 'tendi' ? ryy - 4 : ryy;
     for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + time;
+      const a = (i / 6) * Math.PI * 2 + tm;
       ctx.fillRect(Math.round(ox + Math.cos(a) * (4 + 5 * k)), Math.round(oy + Math.sin(a) * (4 + 5 * k)), 1, 1);
     }
     ctx.restore();
@@ -542,33 +644,46 @@ export function drawMash(ctx, m, W, H) {
 
 // ---------------------------------------------------------------------------
 // SKYLINE — strati di silhouette in parallasse: danno profondità e scala alla
-// salita. Un palazzo/pendio alla volta, dal più lontano al più vicino.
+// salita. Ogni strato ha tono, altezza e velocità distinti (il vicino è più
+// scuro e più grande); una foschia in alto fa recedere i piani lontani.
 // ---------------------------------------------------------------------------
 export function drawSkyline(ctx, audioId, camY, time, W, H, beat) {
   const bt = Number.isFinite(beat) ? beat : 0;
-  const seed = String(audioId || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 97, 7);
-  const layers = [
-    { f: 0.12, col: C.redDeep, base: 0.86, h: 22, step: 26, al: 0.5 + 0.08 * bt },
-    { f: 0.25, col: C.redDeep, base: 0.95, h: 34, step: 34, al: 0.34 + 0.06 * bt },
-    { f: 0.42, col: C.redDark, base: 1.05, h: 46, step: 44, al: 0.2 + 0.05 * bt },
-  ];
+  const cy = artNum(camY, 0), ww = artNum(W, 320), hh = artNum(H, 180);
+  const seed = artSeed(audioId) % 97;
+  const N = 4;
   ctx.save();
-  for (let li = 0; li < layers.length; li++) {
-    const L = layers[li];
-    const baseY = H * L.base - ((camY * L.f) % (H + 80)) + 40;
-    ctx.globalAlpha = L.al;
+  for (let li = 0; li < N; li++) {
+    const L = artSkylineLayer(li, N);
+    const baseY = hh * L.base - ((cy * L.f) % (hh + 80)) + 40;
+    ctx.globalAlpha = L.al + 0.06 * bt;
     ctx.fillStyle = L.col;
-    // profilo a denti di sega / tetti
+    // profilo a denti di sega / tetti, con variazioni deterministiche
     let i = 0;
-    for (let x = -10; x < W + 10; x += L.step, i++) {
-      const hh = L.h + ((seed + i * 7) % 5) * 3;
-      const ww = L.step - 2;
-      ctx.fillRect(Math.round(x), Math.round(baseY - hh), ww, Math.round(hh + 30));
+    for (let x = -10; x < ww + 10; x += L.step, i++) {
+      const hh2 = L.h + ((seed + i * 7 + li * 13) % 5) * 3;
+      const ww2 = L.step - 2;
+      ctx.fillRect(Math.round(x), Math.round(baseY - hh2), ww2, Math.round(hh2 + 30));
       // antenna/cippo
-      if ((seed + i) % 3 === 0) ctx.fillRect(Math.round(x + ww / 2), Math.round(baseY - hh - 5), 1, 6);
+      if ((seed + i + li) % 3 === 0) ctx.fillRect(Math.round(x + ww2 / 2), Math.round(baseY - hh2 - 5), 1, 6);
+      // finestre accese (solo strati vicini, rade)
+      if (li >= N - 2 && (seed + i * 3 + li) % 4 === 0) {
+        ctx.fillRect(Math.round(x + 2), Math.round(baseY - hh2 + 4), 1, 1);
+        ctx.fillRect(Math.round(x + 5), Math.round(baseY - hh2 + 8), 1, 1);
+      }
     }
-    ctx.fillRect(0, Math.round(baseY), W, Math.round(H - baseY + 30));
+    ctx.fillRect(0, Math.round(baseY), ww, Math.round(hh - baseY + 30));
   }
+  // FOSCHIA: i piani alti (lontani) svaniscono nel nero.
+  try {
+    const fog = ctx.createLinearGradient(0, 0, 0, hh);
+    fog.addColorStop(0, 'rgba(0,0,0,0.55)');
+    fog.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+    fog.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, 0, ww, hh);
+  } catch { /* niente foschia */ }
   ctx.restore();
 }
 
@@ -885,11 +1000,14 @@ export function drawInscription(ctx, text, W) {
 // TITOLO — la cover animata: piramide di figure che si arrampicano.
 // ---------------------------------------------------------------------------
 export function drawTitle(ctx, W, H, time) {
-  ctx.fillStyle = C.black; ctx.fillRect(0, 0, W, H);
+  const ww = artNum(W, 320), hh = artNum(H, 180), tm = artNum(time, 0);
+  ctx.fillStyle = C.black; ctx.fillRect(0, 0, ww, hh);
 
   // PIRAMIDE COMPLETA — dalla base larga alla PUNTA di un solo corpo.
-  const cx = W / 2, rows = 11, baseY = H - 6, stepY = 10;
+  // Deterministica: LCG fisso, così la cover è sempre la stessa.
+  const cx = ww / 2, rows = 11, baseY = hh - 6, stepY = 10;
   const baseSpan = 150;
+  const rnd = artLcg(0x5eed);
   for (let row = 0; row < rows; row++) {
     const y = baseY - row * stepY;
     const t = row / (rows - 1);                 // 0 base → 1 punta
@@ -901,14 +1019,29 @@ export function drawTitle(ctx, W, H, time) {
       const st = row === 0 ? 'climb'
         : row >= rows - 2 ? 'reach'
         : (i % 4 === 0) ? 'reach' : (i % 5 === 0) ? 'climb' : 'idle';
-      const ph = time * 1.8 + i * 1.3 + row * 0.7;
-      const col = depthRed(0.45 + t * 0.55);
-      drawFigure(ctx, x, y, { h: 14, color: col, state: st, phase: ph, facing: i % 2 ? 1 : -1 });
+      const ph = tm * 1.8 + i * 1.3 + row * 0.7;
+      // profondità: la base è più accesa, la punta svanisce nel nero
+      const col = artDepthTone(0.62 - t * 0.52 + rnd() * 0.06);
+      drawFigure(ctx, x, y, {
+        h: 12 + rnd() * 4, color: col, state: st, phase: ph,
+        facing: i % 2 ? 1 : -1, stretch: (rnd() - 0.5) * 0.4,
+      });
     }
   }
-  const grad = ctx.createLinearGradient(0, 0, 0, H * 0.5);
-  grad.addColorStop(0, 'rgba(0,0,0,0.95)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H * 0.5);
+
+  // FOSCHIA in alto: la punta della piramide recede nel buio (cover).
+  try {
+    const grad = ctx.createLinearGradient(0, 0, 0, hh * 0.5);
+    grad.addColorStop(0, 'rgba(0,0,0,0.95)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, ww, hh * 0.5);
+  } catch { /* niente foschia */ }
+
+  // FOSCHIA in basso: la base emerge dal nero, chiude la composizione.
+  try {
+    const grad2 = ctx.createLinearGradient(0, hh * 0.72, 0, hh);
+    grad2.addColorStop(0, 'rgba(0,0,0,0)'); grad2.addColorStop(1, 'rgba(0,0,0,0.85)');
+    ctx.fillStyle = grad2; ctx.fillRect(0, hh * 0.72, ww, hh * 0.28);
+  } catch { /* niente foschia */ }
 }
 
 // Testo del titolo a RISOLUZIONE PIENA (nitido).
