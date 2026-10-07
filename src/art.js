@@ -174,15 +174,19 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
   const p = climbPos(cl);
   const ly = p.ly - cameraY, ry = p.ry - cameraY;
   const ph = time;
+  // presa tesa mentre ci si tira su (reach), respiro a riposo
+  const reachK = cl.reach > 0 && cl.reachDur ? Math.max(0, cl.reach / cl.reachDur) : 0;
+  const breathe = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(time * 2));
   // alone caldo pulsante (ti fa trovare a colpo d'occhio)
   ctx.save();
   ctx.globalAlpha = 0.16 + 0.08 * Math.sin(time * 5);
   drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.redHot, phase: ph, thickness: 3, h: 19 });
   ctx.restore();
-  // contorno scuro sottile (1 px) + corpo acceso
+  // contorno scuro sottile + corpo acceso con dettagli (chele, ciuffo, rim)
   drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.black, phase: ph, thickness: 3, h: 19 });
   const col = (action === 'tendi' || action === 'spingi') ? C.redHot : C.redBright;
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: col, phase: ph, thickness: 1, h: 19 });
+  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: col, phase: ph, thickness: 1, h: 19,
+    breathe, grip: reachK > 0 ? 1 : 0.7, detail: true, rim: true });
   // mani evidenziate: dove sei aggrappato
   ctx.save();
   ctx.globalAlpha = 0.85;
@@ -234,7 +238,8 @@ export function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
     ctx.fillRect(Math.round(x) - 7, Math.round(y) + 8, 14, 1);
     ctx.restore();
   }
-  drawFigure(ctx, x, feetY, { h: 18, color: col, state: st, phase: ph });
+  // figura dettagliata (chele/ciuffo/rim) e con respiro
+  drawFigure(ctx, x, feetY, { h: 18, color: col, state: st, phase: ph, detail: true, rim: true });
 }
 
 // ---------------------------------------------------------------------------
