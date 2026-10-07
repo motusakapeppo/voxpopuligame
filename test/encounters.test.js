@@ -66,3 +66,25 @@ test('ogni girone ha almeno un incontro automatico o un pericolo specifico', () 
     for (const k of kinds) assert.ok(KINDS[k], g.id + ': tipo sconosciuto ' + k);
   }
 });
+
+// ---------------------------------------------------------------------------
+// V3b: gli 11 incontri devono avere vettori MECCANICI (dy/loyal/fall) DISTINTI.
+// ---------------------------------------------------------------------------
+import { KINDS as _K } from '../src/encounters.js';
+
+const mech = e => JSON.stringify([e.dy, e.loyal, e.fall]);
+
+test('V3b: i tipi d incontro hanno vettori meccanici distinti', () => {
+  const seen = new Map();
+  for (const k of Object.keys(_K)) {
+    const s = mech(_K[k].tendi) + '|' + mech(_K[k].spingi);
+    assert.ok(!seen.has(s), 'duplicato meccanico: ' + k + ' == ' + seen.get(s));
+    seen.set(s, k);
+  }
+});
+
+test('V3b: sleeper e siren differiscono meccanicamente', () => {
+  assert.notEqual(mech(_K.sleeper.tendi) + mech(_K.sleeper.spingi),
+                  mech(_K.siren.tendi) + mech(_K.siren.spingi),
+                  'sleeper/siren identici meccanicamente');
+});

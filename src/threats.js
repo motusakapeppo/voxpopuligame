@@ -141,15 +141,19 @@ export const THREAT_SIGNATURES = {
 // Effetto di un aiuto raccolto.
 export function applyPickup(kind, cl, state) {
   switch (kind) {
-    case 'gust':   shiftHands(cl, 0, +1); return 'una raffica ti spinge su';
-    case 'grip':   shiftHands(cl, 0, +1); return 'stringi la presa e sali';
+    // gust: una raffica ti spinge su di 2 file.
+    case 'gust':   shiftHands(cl, 0, +2); return 'una raffica ti spinge su';
+    // grip: NON ti muove, ma rende la presa salda (nessuno scivolamento per un po').
+    case 'grip':   state.firm = 5; return 'stringi la presa: niente scivolamenti';
     case 'shield': state.shield = (state.shield || 0) + 1; return 'scudo: cranio duro';
-    case 'coffee': state.speed = 6; return 'caffe: sali piu veloce';
+    case 'coffee': state.speed = 6; state.boost = 6; return 'caffe: sali piu veloce';
     case 'clock':  state.slow = 6; return 'il tempo rallenta';
-    case 'real':   state.real = 6; return 'vedi gli appigli veri';
+    case 'real':   state.real = 6; state.reveal = 6; return 'vedi gli appigli veri';
     case 'break':  state.breakFree = 6; return 'ti liberi dall edera';
-    case 'crowd':  shiftHands(cl, 0, +1); return 'la folla ti sostiene';
-    case 'chorus': shiftHands(cl, 0, +2); return 'il coro ti solleva';
+    // crowd: la folla ti sostiene su di 1 E ti dà slancio (flow).
+    case 'crowd':  shiftHands(cl, 0, +1); state.support = 4; return 'la folla ti sostiene';
+    // chorus: il coro ti solleva su di 2 E ti carica (loyalty).
+    case 'chorus': shiftHands(cl, 0, +2); state.charged = 4; return 'il coro ti solleva';
     default: return null;
   }
 }
@@ -159,6 +163,8 @@ export function createThreatState() {
     windDir: 1, rainDir: 1, waterRow: -1, lastMsg: '', msgT: 0,
     // campi distinti per i pericoli (T5): ognuno muta il proprio
     stun: 0, lag: 0, grip: 1, duel: 0, countdown: 0, decoy: 0, colliders: 0, tether: null,
+    // V3b: campi distinti dei pickup
+    firm: 0, boost: 0, reveal: 0, support: 0, charged: 0,
     shake: 0, debrisRow: -1, rivalDir: 0, cadence: 1,
     rng: 0x9e3779b9 };   // seme LCG deterministico
 }
@@ -170,6 +176,12 @@ export function stepThreats(girone, cl, state, dt, waterLevel) {
   if (state.slow > 0) state.slow -= dt;
   if (state.real > 0) state.real -= dt;
   if (state.breakFree > 0) state.breakFree -= dt;
+  // V3b: decadimento dei campi dei pickup
+  if (state.firm > 0) state.firm -= dt;
+  if (state.boost > 0) state.boost -= dt;
+  if (state.reveal > 0) state.reveal -= dt;
+  if (state.support > 0) state.support -= dt;
+  if (state.charged > 0) state.charged -= dt;
   if (state.msgT > 0) state.msgT -= dt;
   // decadimento dei campi dei pericoli (ognuno col proprio ritmo)
   if (state.stun > 0) state.stun -= dt;

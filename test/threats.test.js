@@ -227,3 +227,36 @@ test('time accelera la cadenza dei pericoli', () => {
   assert.ok(st.countdown > 0, 'time non imposta countdown');
   assert.ok(st.cadence < 1, 'time non accelera la cadenza');
 });
+
+// ---------------------------------------------------------------------------
+// V3b: i pickup devono avere effetti DISTINTI (gust != grip != crowd).
+// ---------------------------------------------------------------------------
+import { applyPickup as _ap } from '../src/threats.js';
+import { createClimb as _cc2 } from '../src/climb.js';
+
+test('V3b: pickup distinti cambiano stato diverso', () => {
+  const kinds = ['gust','grip','shield','coffee','clock','real','break','crowd','chorus'];
+  const sigs = new Map();
+  for (const k of kinds) {
+    const cl = _cc2(GIRONI[1]);
+    const st = createThreatState();
+    const before = { ...st };
+    const r0 = Math.max(cl.lh.r, cl.rh.r);
+    _ap(k, cl, st);
+    const dRow = Math.max(cl.lh.r, cl.rh.r) - r0;
+    const changed = Object.keys(st).filter(key => st[key] !== before[key]).sort().join(',');
+    const sig = 'row' + dRow + '|' + changed;
+    assert.ok(!sigs.has(sig), 'pickup duplicato: ' + k + ' == ' + sigs.get(sig) + ' (' + sig + ')');
+    sigs.set(sig, k);
+  }
+});
+
+test('V3b: coffee e clock hanno un effetto osservabile non nullo', () => {
+  const cl = _cc2(GIRONI[4]);
+  const st = createThreatState();
+  const m1 = _ap('coffee', cl, st);
+  assert.ok(m1 && (st.speed > 0 || st.boost > 0), 'coffee senza effetto');
+  const st2 = createThreatState();
+  const m2 = _ap('clock', cl, st2);
+  assert.ok(m2 && (st2.slow > 0), 'clock senza effetto');
+});

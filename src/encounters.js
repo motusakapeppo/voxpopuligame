@@ -31,17 +31,19 @@ export const KINDS = {
     tendi:  { dy: +24, loyal: +2, event: 'caught', fall: false },
     spingi: { dy: 0,   loyal: -1, event: 'ignored', fall: true },
   },
-  // Dorme (INTRO): svegliarla o calpestarla.
+  // Dorme (INTRO): svegliarla o calpestarla. Svegliarla = ti segue e ti dà una
+  // mano (sali), ma se lo calpesti affonda e ti trascina (caduta).
   sleeper: {
     prompt: 'dorme',
-    tendi:  { dy: 0,   loyal: +1, event: 'woken', fall: false },
-    spingi: { dy: -24, loyal: -1, event: 'shoved', fall: false },
+    tendi:  { dy: -24, loyal: +2, event: 'woken', fall: false },   // lo svegli: sale con te
+    spingi: { dy: -48, loyal: -1, event: 'stomped', fall: false }, // calpestarlo ti fa scivolare giù
   },
-  // Ti culla per farti addormentare (HO SONNO / Sirene).
+  // Ti culla per farti addormentare (HO SONNO / Sirene). Resistere = resti fermo
+  // (nessuna quota, ma ti addormenti un attimo); allontanarla = scivoli ma ti liberi.
   siren: {
     prompt: 'ti culla',
-    tendi:  { dy: 0,   loyal: +1, event: 'refused', fall: false },   // resisti restando con lei
-    spingi: { dy: -24, loyal: -1, event: 'escaped', fall: false },   // la allontani e sali
+    tendi:  { dy: 0,   loyal: +1, event: 'refused', fall: true },   // resisti ma rischi di cadere
+    spingi: { dy: -12, loyal: +1, event: 'escaped', fall: false },  // la allontani: piccolo guadagno
   },
   // Ti spinge giù (SCENDI / i potenti). Tendi = reggi il colpo insieme a chi è sotto.
   pusher: {
@@ -79,7 +81,7 @@ export const KINDS = {
     prompt: 'ti afferra per buttarti giù — martella!',
     mash: true,
     tendi:  { dy: 0,   loyal: +1, event: 'resisted', fall: false },
-    spingi: { dy: -24, loyal: -1, event: 'threwDown', fall: true },
+    spingi: { dy: -48, loyal: -1, event: 'threwDown', fall: true },
   },
 };
 
