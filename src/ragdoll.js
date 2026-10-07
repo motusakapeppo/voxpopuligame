@@ -19,6 +19,8 @@ export const RAG_MAX_DT = 1 / 30;       // dt più grande è un freeze, non un s
 export const RAG_PAIR_R = 3.0;          // raggio di contatto fra particelle di figure diverse
 export const RAG_PAIR_IT = 2;           // iterazioni di push inter-figura (pila)
 export const RAG_PAIR_MAX = 10;         // max vicini controllati per figura (costo)
+export const RAG_ARM_MIN = 1.75;        // distanza minima bacino↔gomito a scale 1 (torso*0.35):
+                                        // impedisce al braccio di ripiegarsi attraverso il torso
 
 function ragNum(v, d) { return Number.isFinite(v) ? v : d; }
 
@@ -67,24 +69,46 @@ export function ragAddFigure(world, opts = {}) {
 
   // lunghezze delle ossa: torso, collo, gamba (2–3 lunghezze distinte)
   const torso = 5 * s, neck = 2.5 * s, leg = 4 * s;
+  // braccia: 2 segmenti per lato (spalla→gomito→mano), ~0.45 del torso ciascuno
+  const armUp = torso * 0.45, armLo = torso * 0.45;
   // divaricazione dei piedi decisa dal LCG del mondo (deterministica)
   const spreadL = (rng() * 2 - 1) * leg * 0.4;
   const spreadR = (rng() * 2 - 1) * leg * 0.4;
+  // braccia: pendono giù/aperte con un piccolo jitter deterministico dal LCG.
+  // jitter in [-0.25, 0.25] rad circa, applicato all'angolo di ciascun segmento.
+  const jit = () => (rng() * 2 - 1) * 0.25;
+  const shY = y - torso;
+  // angolo 0 = giù; +x verso destra. Braccio L aperto a sinistra, R a destra.
+  const aL0 = -0.35 + jit(), aL1 = -0.15 + jit();
+  const aR0 = 0.35 + jit(), aR1 = 0.15 + jit();
+  const elLx = x + Math.sin(aL0) * armUp, elLy = shY + Math.cos(aL0) * armUp;
+  const haLx = elLx + Math.sin(aL0 + aL1) * armLo, haLy = elLy + Math.cos(aL0 + aL1) * armLo;
+  const elRx = x + Math.sin(aR0) * armUp, elRy = shY + Math.cos(aR0) * armUp;
+  const haRx = elRx + Math.sin(aR0 + aR1) * armLo, haRy = elRy + Math.cos(aR0 + aR1) * armLo;
   const parts = [
     { x: x, y: y, px: x, py: y },                       // 0 bacino
-    { x: x, y: y - torso, px: x, py: y - torso },       // 1 spalle
+    { x: x, y: shY, px: x, py: shY },                   // 1 spalle
     { x: x, y: y - torso - neck, px: x, py: y - torso - neck }, // 2 testa
     { x: x + spreadL, y: y + leg, px: x + spreadL, py: y + leg }, // 3 piede sx
     { x: x + spreadR, y: y + leg, px: x + spreadR, py: y + leg }, // 4 piede dx
+    { x: elLx, y: elLy, px: elLx, py: elLy },           // 5 gomito sx
+    { x: haLx, y: haLy, px: haLx, py: haLy },           // 6 mano sx
+    { x: elRx, y: elRy, px: elRx, py: elRy },           // 7 gomito dx
+    { x: haRx, y: haRy, px: haRx, py: haRy },           // 8 mano dx
   ];
   const bones = [
     { a: 0, b: 1, len: torso },       // torso
     { a: 1, b: 2, len: neck },        // collo
     { a: 0, b: 3, len: leg },         // gamba sx
     { a: 0, b: 4, len: leg },         // gamba dx
+    { a: 1, b: 5, len: armUp },       // braccio sx: spalla→gomito
+    { a: 5, b: 6, len: armLo },       // braccio sx: gomito→mano
+    { a: 1, b: 7, len: armUp },       // braccio dx: spalla→gomito
+    { a: 7, b: 8, len: armLo },       // braccio dx: gomito→mano
   ];
   const f = {
     parts, bones,
+    armMin: RAG_ARM_MIN * s,   // guardia anti-piegamento braccio, scala con la figura
     sleeping: false,
     sleepT: 0,          // frame consecutivi sotto la soglia
     motion: 0,          // motion dell'ultimo frame (debug/stats)
@@ -126,6 +150,29 @@ function ragSolveBones(f) {
       const ox = dx * diff, oy = dy * diff;
       a.x += ox; a.y += oy;
       c.x -= ox; c.y -= oy;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GUARDIA BRACCIA — dopo il solve delle ossa, il gomito non deve ripiegarsi
+// ATTRAVERSO il torso (il classico "fold-through"): impongo una distanza minima
+// bacino↔gomito spingendo il gomito verso l'esterno lungo la direzione bacino→
+// gomito. Deterministico (nessun RNG), no-op per figure legacy (< 9 particelle).
+// ---------------------------------------------------------------------------
+function ragGuardArms(f) {
+  if (f.parts.length < 9) return;
+  const hip = f.parts[0];
+  const min = f.armMin;
+  for (const ei of [5, 7]) {
+    const e = f.parts[ei];
+    let dx = e.x - hip.x, dy = e.y - hip.y;
+    let d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 1e-6) { dx = 0; dy = -1; d = 1; }   // degenere: spingo verso l'alto
+    if (d < min) {
+      const k = (min - d) / d;
+      e.x += dx * k;
+      e.y += dy * k;
     }
   }
 }
@@ -310,10 +357,16 @@ export function ragStep(world, dt) {
     for (const f of world.figures) {
       if (f.sleeping) continue;
       ragSolveBones(f);
+      ragGuardArms(f);   // anti fold-through: gomito mai dentro il torso
     }
     if (world.pair && it < RAG_PAIR_IT) ragCollidePairs(world);
   }
   ragCollide(world);
+  // guardia finale: le collisioni (ground/box/pair) possono aver riavvicinato
+  // il gomito al bacino; riapplico il vincolo così regge anche in movimento.
+  for (const f of world.figures) {
+    if (!f.sleeping) ragGuardArms(f);
+  }
   ragSleepWake(world);
   world.frame++;
 }

@@ -333,34 +333,46 @@ export function drawRagdoll(ctx, fig, opts = {}) {
   const hr = Math.max(1, Math.round(h * 0.09));
   disc(ctx, head.x, head.y, hr);
 
-  // braccia: dal punto spalle, due segmenti che pendono secondo la moto.
-  // Direzione = perpendicolare al torso, oscillante con la velocità del
-  // bacino: in volo sventolano in alto, a riposo pendono giù.
-  const vx = hip.x - hip.px, vy = hip.y - hip.py;
-  const speed = Math.sqrt(vx * vx + vy * vy);
-  const swing = Math.min(1, speed / 2.5);          // 0 = fermo, 1 = volo
-  const tx = sh.x - hip.x, ty = sh.y - hip.y;
-  const tl = Math.sqrt(tx * tx + ty * ty) || 1;
-  const ux = tx / tl, uy = ty / tl;                // asse torso (hip→sh)
-  const armLen = h * 0.30;
-  // angolo base: braccia lungo il torso verso il basso, aperte da `swing`
-  const baseA = Math.atan2(uy, ux) + PI / 2;       // "giù" rispetto al torso
-  for (const side of [-1, 1]) {
-    const wob = Math.sin((hip.x + hip.y) * 1.7 + side) * 0.35 * (1 - swing);
-    const a = baseA + side * (0.5 + swing * 1.1) + wob;
-    let hx = sh.x + Math.cos(a) * armLen;
-    let hy = sh.y + Math.sin(a) * armLen;
-    if (brace > 0) {
-      // brace: braccia raccolte verso l'alto/avanti (guardia), meno aperte
-      const ba = baseA + side * 0.4 - 1.0;
-      const bl = armLen * 0.85;
-      const bhx = sh.x + Math.cos(ba) * bl;
-      const bhy = sh.y + Math.sin(ba) * bl;
-      hx += (bhx - hx) * brace;
-      hy += (bhy - hy) * brace;
+  // braccia: se la figura ha le 4 particelle braccio (>= 9), disegno i segmenti
+  // REALI spalla→gomito→mano; altrimenti fallback storico (gesto legato alla moto).
+  if (parts.length >= 9) {
+    const elL = parts[5], haL = parts[6], elR = parts[7], haR = parts[8];
+    for (const [el, ha] of [[elL, haL], [elR, haR]]) {
+      line(ctx, sh.x, sh.y, el.x, el.y, t);
+      line(ctx, el.x, el.y, ha.x, ha.y, t);
+      // mano: tacca di 1px (pixel art, niente arc)
+      ctx.fillRect(Math.round(ha.x) - 1, Math.round(ha.y) - 1, 1, 1);
     }
-    line(ctx, sh.x, sh.y, hx, hy, t);
-    ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 1, 1);
+  } else {
+    // braccia: dal punto spalle, due segmenti che pendono secondo la moto.
+    // Direzione = perpendicolare al torso, oscillante con la velocità del
+    // bacino: in volo sventolano in alto, a riposo pendono giù.
+    const vx = hip.x - hip.px, vy = hip.y - hip.py;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+    const swing = Math.min(1, speed / 2.5);          // 0 = fermo, 1 = volo
+    const tx = sh.x - hip.x, ty = sh.y - hip.y;
+    const tl = Math.sqrt(tx * tx + ty * ty) || 1;
+    const ux = tx / tl, uy = ty / tl;                // asse torso (hip→sh)
+    const armLen = h * 0.30;
+    // angolo base: braccia lungo il torso verso il basso, aperte da `swing`
+    const baseA = Math.atan2(uy, ux) + PI / 2;       // "giù" rispetto al torso
+    for (const side of [-1, 1]) {
+      const wob = Math.sin((hip.x + hip.y) * 1.7 + side) * 0.35 * (1 - swing);
+      const a = baseA + side * (0.5 + swing * 1.1) + wob;
+      let hx = sh.x + Math.cos(a) * armLen;
+      let hy = sh.y + Math.sin(a) * armLen;
+      if (brace > 0) {
+        // brace: braccia raccolte verso l'alto/avanti (guardia), meno aperte
+        const ba = baseA + side * 0.4 - 1.0;
+        const bl = armLen * 0.85;
+        const bhx = sh.x + Math.cos(ba) * bl;
+        const bhy = sh.y + Math.sin(ba) * bl;
+        hx += (bhx - hx) * brace;
+        hy += (bhy - hy) * brace;
+      }
+      line(ctx, sh.x, sh.y, hx, hy, t);
+      ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 1, 1);
+    }
   }
 
   // lampo d'impatto: 1 frame di polvere al punto passato (deterministico)

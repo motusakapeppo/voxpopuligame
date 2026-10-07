@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   ragCreateWorld, ragAddFigure, ragStep, ragWorldStats, ragSleepRatio,
-  RAG_SLEEP_MOTION, RAG_WAKE_MOTION, RAG_SLEEP_FRAMES,
+  RAG_SLEEP_MOTION, RAG_WAKE_MOTION, RAG_SLEEP_FRAMES, RAG_ARM_MIN,
 } from '../src/ragdoll.js';
 
 const DT = 1 / 60;
@@ -194,4 +194,68 @@ test('con pair:true due figure sovrapposte si SEPARANO; con pair off no', () => 
   };
   const dOn = run(true), dOff = run(false);
   assert.ok(dOn > dOff + 1, `pair non separa: on=${dOn.toFixed(2)} off=${dOff.toFixed(2)}`);
+});
+
+// ---------------------------------------------------------------------------
+// ARMS — anatomia: 4 particelle braccio (gomito/mano L/R) su 4 ossa, indici
+// 5..8, così le figure sventolano le braccia nel crollo. Gli indici 0..4
+// restano INVARIATI (bacino, spalle, testa, piede L, piede R).
+// ---------------------------------------------------------------------------
+test('ragAddFigure: una figura ha >= 9 particelle e >= 8 ossa (braccia incluse)', () => {
+  const w = miniWorld();
+  const f = ragAddFigure(w, { x: 100, y: 100 });
+  assert.ok(f.parts.length >= 9, `particelle=${f.parts.length} (attese >= 9)`);
+  assert.ok(f.bones.length >= 8, `ossa=${f.bones.length} (attese >= 8)`);
+  // gli indici storici 0..4 restano bacino/spalle/testa/piedi
+  assert.ok(f.parts[0] && f.parts[1] && f.parts[2] && f.parts[3] && f.parts[4]);
+  // le 4 ossa braccio collegano le spalle (1) a gomiti (5,7) e gomiti a mani (6,8)
+  const has = (a, b) => f.bones.some(x => (x.a === a && x.b === b) || (x.a === b && x.b === a));
+  assert.ok(has(1, 5), 'manca osso spalle→gomito L');
+  assert.ok(has(5, 6), 'manca osso gomito→mano L');
+  assert.ok(has(1, 7), 'manca osso spalle→gomito R');
+  assert.ok(has(7, 8), 'manca osso gomito→mano R');
+});
+
+test('braccia: determinismo identico con le nuove particelle', () => {
+  const run = () => {
+    const w = ragCreateWorld({ gravity: 80, groundY: 170, seed: 321,
+      boxes: [{ x: 150, y: 150, w: 20, h: 20 }] });
+    for (let i = 0; i < 8; i++) ragAddFigure(w, { x: 100 + i * 15, y: 60 + (i % 3) * 8 });
+    for (let i = 0; i < 300; i++) ragStep(w, DT);
+    return w.figures.map(f => f.parts.map(p => [p.x, p.y]));
+  };
+  assert.deepEqual(run(), run());
+});
+
+test('braccia: dopo 10000 step tutte le particelle (incluse le braccia) restano finite', () => {
+  const w = miniWorld();
+  for (let i = 0; i < 12; i++) ragAddFigure(w, { x: 60 + i * 18, y: 40 + (i % 4) * 10 });
+  for (let i = 0; i < 10000; i++) {
+    ragStep(w, DT);
+    for (const f of w.figures) {
+      for (const p of f.parts) {
+        assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y),
+          `pos braccio non finita allo step ${i}: ${p.x},${p.y}`);
+      }
+    }
+  }
+});
+
+test('braccia: il gomito non piega attraverso il torso (guardia hip↔elbow)', () => {
+  const w = miniWorld();
+  for (let i = 0; i < 6; i++) ragAddFigure(w, { x: 80 + i * 25, y: 80 });
+  for (let i = 0; i < 900; i++) ragStep(w, DT);   // settle
+  for (const f of w.figures) {
+    const hip = f.parts[0];
+    for (const ei of [5, 7]) {
+      const e = f.parts[ei];
+      const d = Math.hypot(e.x - hip.x, e.y - hip.y);
+      assert.ok(d >= RAG_ARM_MIN - 0.75,
+        `gomito ${ei} a ${d.toFixed(2)} dal bacino (min ${RAG_ARM_MIN})`);
+    }
+  }
+});
+
+test('braccia: RAG_ARM_MIN è una costante positiva e finita', () => {
+  assert.ok(Number.isFinite(RAG_ARM_MIN) && RAG_ARM_MIN > 0, `RAG_ARM_MIN=${RAG_ARM_MIN}`);
 });

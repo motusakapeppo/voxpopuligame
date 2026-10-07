@@ -292,3 +292,53 @@ test('drawFigure: breathe default identico a zero (REGRESSIONE) e breathe>0 fini
       'breathe ha prodotto coordinate non finite');
   }
 });
+
+// ---------------------------------------------------------------------------
+// ARMS — figura ragdoll a 9 particelle: braccia reali spalla→gomito→mano.
+// ---------------------------------------------------------------------------
+function stubFig9() {
+  return {
+    parts: [
+      { x: 30, y: 40, px: 29, py: 39 },   // 0 bacino
+      { x: 30, y: 34, px: 29, py: 33 },   // 1 spalle
+      { x: 30, y: 31, px: 29, py: 30 },   // 2 testa
+      { x: 27, y: 46, px: 26, py: 45 },   // 3 piede L
+      { x: 33, y: 46, px: 32, py: 45 },   // 4 piede R
+      { x: 26, y: 37, px: 25, py: 36 },   // 5 gomito L
+      { x: 24, y: 41, px: 23, py: 40 },   // 6 mano L
+      { x: 34, y: 37, px: 33, py: 36 },   // 7 gomito R
+      { x: 36, y: 41, px: 35, py: 40 },   // 8 mano R
+    ],
+  };
+}
+
+test('drawRagdoll: figura a 9 particelle disegna segmenti braccio in più (>= 4)', () => {
+  const c5 = stubCtx(), c9 = stubCtx();
+  drawRagdoll(c5, stubFig(), { h: 14 });
+  drawRagdoll(c9, stubFig9(), { h: 14 });
+  assert.ok(c9.calls.length >= c5.calls.length + 4,
+    `braccia non disegnate: 5p=${c5.calls.length} 9p=${c9.calls.length}`);
+  for (const [x, y, w, hh] of c9.calls) {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+      'braccia hanno prodotto coordinate non finite');
+  }
+});
+
+test('drawRagdoll: figura legacy a 5 particelle usa ancora il fallback (REGRESSIONE)', () => {
+  const a = stubCtx(), b = stubCtx();
+  drawRagdoll(a, stubFig(), { h: 14, color: '#f00', thickness: 1, alpha: 1 });
+  drawRagdoll(b, stubFig(), { h: 14, color: '#f00', thickness: 1, alpha: 1, posture: 0 });
+  assert.deepEqual(a.calls, b.calls, 'il fallback legacy è cambiato');
+  assert.ok(a.calls.length > 0, 'nessun pixel disegnato');
+});
+
+test('drawRagdoll: braccia reali con coordinate degeneri restano finite', () => {
+  const fig = stubFig9();
+  fig.parts[5].x = NaN; fig.parts[7].y = Infinity;
+  const c = stubCtx();
+  drawRagdoll(c, fig, { h: 14 });
+  for (const [x, y, w, hh] of c.calls) {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+      'input degenere ha prodotto coordinate non finite');
+  }
+});
