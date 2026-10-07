@@ -780,7 +780,7 @@ function bpmFor(audioId) {
 // --- karaoke.js ---
 // Karaoke: [inizio, frase]. Le clip sono estratti da meta canzone: l inizio
 // e ancorato all onset della PAROLA cantata (tools/align-karaoke.mjs).
-const KARAOKE = {"01-intro":[[0.56,"E scopro ogni giorno che passa un pezzetto di me che si stacca dal cranio ah"],[4.22,"Scriverò versi finché non mi prosciugheranno del tutto anche l'anima"],[12.52,"Ma è più sicura per chi c'è già stato,"]],"02-vento":[[0.46,"Cristo qua"],[1.06,"Non sa nemmeno che esisto, ma"],[3.44,"Scrivo col sangue sopra quest'epistola"],[8.22,"Lo sguardo nel vuoto, quasi fossero in trance"],[11.44,"A che serve, non lo so, e chi forse lo sa"]],"03-tuoni":[[16.59,"Quando ci sono i tuoni vorrei che foste qua"],[19.87,"Raccontami come stanno i figli"]],"04-baghdad":[[4.3,"Mi trovo di sera da solo"],[9.82,"Sono tutti qua"],[14.44,"Guarda quanta gente"]],"05-hosonno":[[4.27,"Non mi va"]],"06-primoposto":[[1.33,"Voglio stare con te in tutti i sogni che farò questa notte"],[7.47,"Il cuore batte, sento solo le botte, le botte, le botte, sì,"],[11.85,"E però voglio stare con te con le coperte che sembrano più corte"]],"07-tictac":[[3.3,"Mi sono rotto il cazzo di star calmo"],[5.56,"Del fato"],[7.52,"Che bravo"],[9.32,"Anche solo una volta detto piano"]],"08-tuttofinto":[[1.56,"Tento di esprimere da queste seconde linee"],[4.62,"Il vero manca, il pensiero va"],[6.22,"Sembra il Nabucco di Verdi"],[10.94,"Nel mentre una ronda con i balaclava"],[14.46,"Ma sarà come aver dato forza all'orchestra"]],"09-edera":[[0.56,"Per te è normale ma"],[12.01,"Ed ho scene paratattiche nel senno che perdo"],[13.07,"Io voglio stare male sembra tipico, qua"],[17.19,"Finalmente forse sono libero, ma"],[19.01,"Ti lego così non ti uccidi"]],"10-scendi":[[0.68,"Accade da decenni, li guardano e li deridono"],[2.08,"Come la domenica allo stadio fanno il tifo"]],"11-lafinedelmondo":[[0.36,"Da attraversare il mondo"],[5.2,"Persino l'ultimo giorno"],[9.9,"È la fine del mondo"],[14.62,"Sarà la fine di sto mondo ma ce ne son tre"],[17.36,"La profezia ha parlato chiaro ma che ne sei te"]],"12-maranatha":[[0,"Mica lo sai che il sogno"],[0.8,"Di tutti questi popoli è dormire con un sogno"],[3.82,"Sopra un cuscino vero"],[4.8,"Invece sono gocce d'olio in questo mare nero"],[6.6,"Un giorno ho colto, credo il senso di"],[8.68,"Svegliarsi tutti i giorni, intendo… penso, si"],[10,"Cambiando tutto il mondo, ho detto \"certo\" e qui"],[11.88,"Se si parlasse meno a vuoto, forse è tutto lì"],[16.3,"Diranno \"scemo tu perché poi non ci credevi\""],[18.16,"Mentre il mondo brucerà nell'attesa che risorga"]],"13-outro":[[0,"Lei non voleva farti arrabbiare, chiami tutte puttane come se piaccia"],[3.74,"Vedo uomini piccoli tipo, chi porta ancora il razzismo nel tifo"],[7.44,"Chi nel suo ufficio tiene un busto di Benito, capito?"],[11.16,"Eh sì sì sì sì voglio scendere in piazza"],[12.8,"Ma senza striscioni e bandiera italiana"],[14.62,"Voglio un cerchio attorno a me fatto di donne"],[18.38,"E dimmi com'è"]]};
+const KARAOKE = {"01-intro":[[0.56,"E scopro ogni giorno che passa un pezzetto di me che si stacca dal cranio ah"],[4.22,"Scriverò versi finché non mi prosciugheranno del tutto anche l'anima"],[8.37,"La notte è scura ed espia dal peccato"],[12.52,"Ma è più sicura per chi c'è già stato,"],[13.69,"Danzo sul ghiaccio come Salomè"],[14.85,"Finché d'un tratto si sarà spezzato"],[16.02,"Mi sa tanto che boh sono morto"],[17.18,"Ho aperto mo' gli occhi e non vedo un cazzo"],[18.35,"Dalla tapparella entra un raggio rosso"],[19.51,"Le coperte per terra è tutto sudato"]],"02-vento":[[0.46,"Cristo qua"],[1.06,"Non sa nemmeno che esisto, ma"],[3.44,"Scrivo col sangue sopra quest'epistola"],[5.83,"Eh la gente che in coro canta Maranatha"],[8.22,"Lo sguardo nel vuoto, quasi fossero in trance"],[11.44,"A che serve, non lo so, e chi forse lo sa"],[12.6,"Lo tiene per sé, che ridà forza a maman"],[13.76,"Ma se anche il figlio di sto're"],[14.93,"Non sa che un giorno lui sarà sua maestà"],[16.09,"E se non sai che di-re, di-llo a me"],[17.25,"Ci lotto da quando avevo anch'io la tua età"],[18.41,"Il popolo sta male"],[19.58,"Il popolo c'ha fame"]],"03-tuoni":[[8.58,"Eh Oh Eh Oh"],[9.92,"Ho ancora le tue chiavi di casa"],[11.25,"Dimmi cos'è rimasto tra i mattoni e la ghiaia"],[12.59,"Eh Oh Eh Oh"],[15.26,"Raccontami come sta la mamma"],[16.59,"Quando ci sono i tuoni vorrei che foste qua"],[18.23,"Che se mi fermo perdo tempo e non voglio sprecarla"],[19.87,"Raccontami come stanno i figli"],[20.84,"Che per salvarli li abbiamo spediti dal mare"],[21.82,"Neanche fossero merce, l'ultimo degli appigli"]],"04-baghdad":[[1.43,"Abbassa, abbassa che al cell sennò"],[2.87,"di là s'incazzano e ti dico"],[4.3,"Mi trovo di sera da solo"],[5.68,"che parlo seduto di fronte al PC"],[7.06,"Arriva un messaggio e lo ignoro"],[8.44,"Io sono così."],[9.82,"Sono tutti qua"],[12.13,"Ti vedo lassù"],[14.44,"Guarda quanta gente"],[15.45,"Non si diverte"]],"05-hosonno":[[4.27,"Non mi va"],[5.19,"La mattina presto"]],"06-primoposto":[[1.33,"Voglio stare con te in tutti i sogni che farò questa notte"],[7.47,"Il cuore batte, sento solo le botte, le botte, le botte, sì,"],[11.85,"E però voglio stare con te con le coperte che sembrano più corte"],[12.95,"Perché ti muovi come fossi alle giostre, alle giostre, alle giostre"],[14.04,"Ho fatto il primo posto ad una gara"],[15.14,"E vinceva chi faceva più cazzate nella vita, quindi ho vinto io"],[16.24,"Non c'è neanche un premio per chi ce la fa"],[17.34,"Una volta tanto che vincevo qualcosa"],[18.43,"E farò ricorso alla giustizia, ma se solo le importasse qualcosa"],[19.53,"Questo mondo infame mi fa schifo tutto"]],"07-tictac":[[1.65,"E allora bau"],[3.3,"Mi sono rotto il cazzo di star calmo"],[5.56,"Del fato"],[7.52,"Che bravo"],[9.32,"Anche solo una volta detto piano"]],"08-tuttofinto":[[1.56,"Tento di esprimere da queste seconde linee"],[3.09,"Ma senza l'aiuto di terzi"],[4.62,"Il vero manca, il pensiero va"],[6.22,"Sembra il Nabucco di Verdi"],[7.79,"Prende più forma la bagarre"],[9.37,"Mischiamo Dubrovsk e Bataclan"],[10.94,"Nel mentre una ronda con i balaclava"],[12.7,"Spara sulla folla senza kalash"],[14.46,"Ma sarà come aver dato forza all'orchestra"],[15.5,"Si innamora oppure viene oppressa"],[16.53,"Resterà tra Stoccolma e Stendhal"],[17.57,"Lavorate per un pugno di dollari ma non siete Morricone"],[18.61,"La differenza sta negli attimi"],[19.64,"Contale e valuta la posizione"]],"09-edera":[[0.56,"Per te è normale ma"],[3.42,"Esplodi se accumuli per troppo tempo (ecco)"],[6.29,"Metterò me in scena, ma col tempo mi perderò"],[9.15,"Perché c'ho due voci che mi seguono e mentono"],[12.01,"Ed ho scene paratattiche nel senno che perdo"],[13.07,"Io voglio stare male sembra tipico, qua"],[15.13,"Così scrivo pezzi più fighi (fighi)"],[17.19,"Finalmente forse sono libero, ma"],[19.01,"Ti lego così non ti uccidi"],[19.96,"E so che berrò il mare con l'aroma di sangue"],[20.91,"Perché prenderò le onde a pugni con la falange"],[21.86,"Tornerò da te con quattro/cinque punti per guancia"]],"10-scendi":[[0.68,"Accade da decenni, li guardano e li deridono"],[2.08,"Come la domenica allo stadio fanno il tifo"],[3.2,"è troppo facile dire cose difficili"],[4.32,"Si diceva già ma tempo fa verso i politici"],[5.44,"Adesso sembra tutto un po' al contrario e siam felici"],[6.56,"Se parlano ai comizi, sono solo capre e cimici"],[7.68,"Scendi Scendi Scendi"],[12.17,"E adesso scendi pure tu, no?"],[13.29,"Manifesti pure tu, no?"]],"11-lafinedelmondo":[[0.36,"Da attraversare il mondo"],[2.78,"Chissà se pioverà"],[5.2,"Persino l'ultimo giorno"],[7.55,"Ora che il mare si alza inghiottirà pure il cielo"],[9.9,"È la fine del mondo"],[12.26,"E sì è la fine del mondo"],[14.62,"Sarà la fine di sto mondo ma ce ne son tre"],[17.36,"La profezia ha parlato chiaro ma che ne sei te"],[18.46,"Solo coloro che conoscono il segreto per durare"],[19.56,"Nell'eternità vivranno altrove insieme a me"],[20.66,"E chi ha vissuto in mezzo ai vizi forse morirà"],[21.76,"Chi ha dato poco peso ai simili soccomberà"]],"12-maranatha":[[0,"Mica lo sai che il sogno"],[0.8,"Di tutti questi popoli è dormire con un sogno"],[2.31,"Dormire per davvero"],[3.82,"Sopra un cuscino vero"],[4.8,"Invece sono gocce d'olio in questo mare nero"],[6.6,"Un giorno ho colto, credo il senso di"],[8.68,"Svegliarsi tutti i giorni, intendo… penso, si"],[10,"Cambiando tutto il mondo, ho detto \"certo\" e qui"],[11.88,"Se si parlasse meno a vuoto, forse è tutto lì"],[14.09,"Vedranno popoli in cammino verso l'alto dei cieli"],[16.3,"Diranno \"scemo tu perché poi non ci credevi\""],[18.16,"Mentre il mondo brucerà nell'attesa che risorga"],[19.3,"Sentirò Maranatha uscirvi dalla bocca"],[20.43,"Io sfuggirò al destino perché son convinto che"],[21.56,"Il tuo destino lo decidi te (ah)"]],"13-outro":[[0,"Lei non voleva farti arrabbiare, chiami tutte puttane come se piaccia"],[3.74,"Vedo uomini piccoli tipo, chi porta ancora il razzismo nel tifo"],[7.44,"Chi nel suo ufficio tiene un busto di Benito, capito?"],[11.16,"Eh sì sì sì sì voglio scendere in piazza"],[12.8,"Ma senza striscioni e bandiera italiana"],[14.62,"Voglio un cerchio attorno a me fatto di donne"],[16.5,"Voglio che mi chiamino solo puttana"],[18.38,"E dimmi com'è"],[19.24,"Che si cambia il mondo quando neanche Dio ce l'ha fatta"]]};
 
 
 // --- modifiers.js ---
@@ -3285,6 +3285,11 @@ function buildFigureGrid(W, H) {
       const depth = Math.min(0.95, 0.4 + (row / rows) * 0.5 + rng() * 0.05);
       // posa distinta per figura: ciclo sui 6 stati con offset deterministico
       const state = COLLAPSE_STATES[(row * 3 + i * 5) % COLLAPSE_STATES.length];
+      // CASCATA bottom-up: le file basse cedono per prime, quelle alte sono
+      // trattenute finché la struttura sotto non è venuta giù. `delay` cresce
+      // con la riga (+ jitter deterministico) → il crollo si propaga dal basso
+      // in ~2.6s (14 righe × ~0.19s), lento e pesante.
+      const delay = row * 0.19 + rng() * 0.06;
       figs.push({
         x: cx - span / 2 + (i * span) / Math.max(1, count),
         y, row,
@@ -3295,6 +3300,7 @@ function buildFigureGrid(W, H) {
         // spin/launch deterministici per il crollo (usati da stepCollapse)
         spin: (rng() * 2 - 1) * 0.9,
         launch: 0.6 + rng() * 0.8,
+        delay,
         vy: 0,
       });
     }
@@ -3333,52 +3339,93 @@ function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }) {
     rf.loyal = i < keep;
     rf.home = rf.parts.map(p => ({ x: p.x, y: p.y }));
     rf.dustCd = 0;      // cooldown polvere per figura (costo limitato)
+    rf.released = false; // cascata: la riga non ha ancora ceduto
     f.rag = rf;   // aggancio figura ↔ ragfigure (disegno + impulsi)
   }
   return { bodies, viewW, viewH, supported, figs, keep, world,
     phase: 'zoomOut', t: 0, phaseIndex: 0, done: false, angle: 0,
-    // supported modula anche la forza del trigger: più consenso → scossa più
-    // ampia (deterministico, nessun RNG).
+    // supported modula la forza del trigger: più consenso → scossa più ampia
+    // (deterministico, nessun RNG).
     triggerStrength: 1 + Math.max(0, supported) * 0.06,
+    collapseT: 0,   // tempo trascorso dall'inizio del crollo (cascata bottom-up)
+    // semi-ampiezza dell'impronta della base: la pila deve restare dentro
+    // ~1.3× questo valore (contenimento inward, niente esplosione).
+    baseHalf: (() => {
+      const base = figs.filter(f => f.row === 0).map(f => f.x);
+      return base.length ? (Math.max(...base) - Math.min(...base)) / 2 : 0;
+    })(),
     trigger: { x: viewW / 2, y: viewH - 16 }, dust: [], dustTick: 0 };
 }
 
 // ---------------------------------------------------------------------------
-// IMPULSO — al passaggio crack→collapse: spinta radiale dal punto trigger
-// verso le figure vicine (deterministica: ordine di scansione fisso).
+// CLAMP — limite di velocità per particella (px/frame). Le collisioni fra
+// figure (ragdoll.js) con sovrapposizioni profonde possono generare push-out
+// enormi: qui li taglio. Rende il crollo LENTO e PESANTE e impedisce che una
+// figura venga "sparata" fuori dalla pila. Deterministico, solo collapse.js.
+// ---------------------------------------------------------------------------
+const COLLAPSE_MAX_V = 1.2;
+function clampVel(rf) {
+  for (const p of rf.parts) {
+    const vx = p.x - p.px, vy = p.y - p.py;
+    const sp = Math.sqrt(vx * vx + vy * vy);
+    if (sp > COLLAPSE_MAX_V) {
+      const k = COLLAPSE_MAX_V / sp;
+      p.px = p.x - vx * k;
+      p.py = p.y - vy * k;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CONTAIN — contenimento INWARD: la pila non deve sfuggire verso l'esterno.
+// Oltre ~1.15× l'impronta della base, freno la velocità orizzontale uscente
+// (attrito forte) e, oltre ~1.3×, la annullo del tutto. Deterministico.
+// ---------------------------------------------------------------------------
+function containFigure(c, rf) {
+  const cx = c.viewW / 2, half = c.baseHalf || 1;
+  const soft = half * 1.15, hard = half * 1.3;
+  for (const p of rf.parts) {
+    const dx = p.x - cx, ad = Math.abs(dx);
+    if (ad <= soft) continue;
+    const vx = p.x - p.px;
+    if (vx * Math.sign(dx) <= 0) continue;   // si muove già verso l'interno
+    const k = ad >= hard ? 0 : 0.5;           // oltre il limite duro: stop
+    p.px = p.x - vx * k;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IMPULSO — al passaggio crack→collapse NON c'è più alcun blast radiale. La
+// struttura cede dal BASSO: le figure restano in piedi (ancorate) finché la
+// loro riga non è "rilasciata" (vedi stepCollapse, campo g.delay). Qui si
+// inizializza solo lo stato della cascata: azzero il tempo di crollo e segno
+// tutte le figure non-fedeli come non ancora rilasciate. Deterministico.
 // ---------------------------------------------------------------------------
 function collapseImpulse(c) {
-  const world = c.world;
-  const cxAll = c.viewW / 2, baseY = c.viewH - 14;
-  const strength = c.triggerStrength || 1;
-  for (let i = 0; i < world.figures.length; i++) {
-    const rf = world.figures[i];
-    const g = c.figs[i];
-    // LOYALTY: i fedeli non ricevono l'impulso → restano eretti (keep vivo).
+  c.collapseT = 0;
+  for (const rf of c.world.figures) {
     if (rf.loyal) continue;
-    // 1) INSTABILITA' GLOBALE: ogni omino riceve un calcio verso l'esterno e
-    //    in basso, scalato dall'altezza (le file alte partono con più spinta:
-    //    il "crollo" è totale, non solo vicino al trigger). Deterministico.
-    const hx = rf.parts[0].x - cxAll;
-    const hd = Math.abs(hx) + 1;
-    const outward = (hx / hd) * (0.8 + g.launch * 0.8) * strength;
-    const down = (1.4 + g.launch * 1.0 + (g.depth * 0.8)) * strength;
-    const spin = (g.spin || 0);
-    // 2) SPINTA LOCALE dal trigger: chi è vicino al punto di rottura è sparato.
-    const dx = rf.parts[0].x - c.trigger.x, dy = rf.parts[0].y - c.trigger.y;
-    const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const near = Math.max(0, 1 - d / 150) * g.launch * 2.4 * strength;
-    const ix = outward + (dx / d) * near - (dy / d) * spin * 0.8;
-    const iy = down + (dy / d) * near * 0.4;
-    for (const p of rf.parts) {
-      p.px -= ix;
-      p.py -= iy;
-    }
-    // rotazione del tumble: i piedi divergono → la figura ruota cadendo
-    rf.parts[3].px -= spin * 2.2;
-    rf.parts[4].px += spin * 2.2;
-    rf.parts[3].py += 0.8; rf.parts[4].py += 0.8;
+    rf.released = false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// RELEASE — quando la riga di una figura cede: le gambe si piegano e il corpo
+// AFFONDA (impulso VERTICALE verso il basso, gravità). Nessuna spinta radiale:
+// solo un minuscolo nudge orizzontale deterministico (< ~0.4 px/frame) per
+// rompere la simmetria. I piedi affondano un po' più del bacino → le gambe
+// cedono e il corpo casca in avanti/dentro, non viene sparato di lato.
+// ---------------------------------------------------------------------------
+function releaseFigure(rf, g) {
+  const sink = 0.5 + g.launch * 0.5;      // ~0.5..1.1 px/frame verso il basso
+  const nudge = (g.spin || 0) * 0.35;     // ~[-0.32, 0.32] px/frame orizzontale
+  for (const p of rf.parts) {
+    p.py -= sink;      // velocità verso il basso (p.y - p.py > 0)
+    p.px -= nudge;     // piccola deriva orizzontale, non radiale
+  }
+  // le gambe cedono per prime: i piedi affondano un filo di più del bacino
+  rf.parts[3].py -= sink * 0.4;
+  rf.parts[4].py -= sink * 0.4;
 }
 
 // ---------------------------------------------------------------------------
@@ -3414,13 +3461,36 @@ function stepCollapse(c, dt) {
   } else if (c.phase === 'collapse' || c.phase === 'settle') {
     c.shake = 0;
     const step = Math.min(RAG_MAX_DT, Math.max(0, Math.min(dt, COLLAPSE_DT)));
+    c.collapseT += step;
+
+    // CASCATA bottom-up: una figura resta ANCORATA alla posa eretta finché la
+    // sua riga non cede (collapseT >= g.delay). Al rilascio riceve solo un
+    // affondamento verticale (le gambe cedono) + micro-nudge: nessun blast.
+    for (let i = 0; i < c.world.figures.length; i++) {
+      const rf = c.world.figures[i];
+      if (rf.loyal || rf.released) continue;
+      const g = c.figs[i];
+      if (c.collapseT >= g.delay) {
+        releaseFigure(rf, g);
+        rf.released = true;
+        rf.sleeping = false;   // sveglia: altrimenti ragIntegrate la salterebbe
+        rf.sleepT = 0;
+      }
+    }
+
     ragStep(c.world, step);
 
-    // LOYALTY: i fedeli restano eretti. Li ri-ancoro alla posa iniziale (il
-    // wake per prossimità di ragdoll.js potrebbe averli svegliati): così `keep`
-    // è vivo e il nucleo superstite non crolla. Deterministico.
+    // CLAMP: taglio le velocità esplosive da push-out profondo (pila densa,
+    // crollo lento e pesante). Solo figure in caduta (non ancorate/fedeli).
     for (const rf of c.world.figures) {
-      if (!rf.loyal) continue;
+      if (!rf.loyal && rf.released) { clampVel(rf); containFigure(c, rf); }
+    }
+
+    // ANCORAGGIO: i fedeli restano eretti per sempre; le figure non ancora
+    // rilasciate restano nella posa iniziale (la struttura regge finché la
+    // riga sotto non cede). Deterministico.
+    for (const rf of c.world.figures) {
+      if (!rf.loyal && rf.released) continue;
       for (let k = 0; k < rf.parts.length; k++) {
         const p = rf.parts[k], h = rf.home[k];
         p.x = h.x; p.y = h.y; p.px = h.x; p.py = h.y;
@@ -3430,22 +3500,32 @@ function stepCollapse(c, dt) {
 
     for (let i = 0; i < c.world.figures.length; i++) {
       const rf = c.world.figures[i];
-      if (rf.loyal) continue;   // i fedeli non atterrano: restano in piedi
+      if (rf.loyal || !rf.released) continue;   // fedeli/ancora in piedi: non atterrano
       if (!rf.landed) {
         const foot = rf.parts[3];
-        if (foot.y >= c.viewH - 1) {
+        // atterraggio su QUALSIASI superficie: fondo o top di un box (la pila
+        // si accumula anche sulle mensole, non solo a terra).
+        let onSurface = foot.y >= c.viewH - 1;
+        if (!onSurface) {
+          for (const box of c.world.boxes) {
+            if (foot.x < box.x || foot.x > box.x + box.w) continue;
+            if (foot.y >= box.y - 1.5 && foot.y <= box.y + 1.5) { onSurface = true; break; }
+          }
+        }
+        if (onSurface) {
           rf.landed = true;
-          // TORQUE: all'atterraggio la figura RUOTA a terra. Impulsi orizzontali
-          // di SEGNO OPPOSTO su testa/spalle vs piedi (momento, non traslazione):
-          // il bacino fa da perno, il corpo ruota invece di scivolare. Il verso
-          // è deterministico (dir dallo spin memorizzato della figura).
+          // TORQUE: all'atterraggio la figura RUOTA a terra. Spostamenti
+          // POSIZIONALI orizzontali di SEGNO OPPOSTO su testa/spalle vs piedi
+          // (momento puro, non traslazione): il bacino fa da perno, il corpo
+          // ruota invece di scivolare. Applico x e px insieme → nessuna
+          // velocità aggiunta (il crollo resta lento, niente "sparo" laterale).
           const g = c.figs[i];
           const dir = (g.spin || 0) >= 0 ? 1 : -1;
           const k = 2.2 + g.launch * 1.2;
-          rf.parts[1].px += dir * k;   // spalle
-          rf.parts[2].px += dir * k;   // testa
-          rf.parts[3].px -= dir * k;   // piede sx
-          rf.parts[4].px -= dir * k;   // piede dx
+          rf.parts[1].x += dir * k; rf.parts[1].px += dir * k;   // spalle
+          rf.parts[2].x += dir * k; rf.parts[2].px += dir * k;   // testa
+          rf.parts[3].x -= dir * k; rf.parts[3].px -= dir * k;   // piede sx
+          rf.parts[4].x -= dir * k; rf.parts[4].px -= dir * k;   // piede dx
           emitDust(c, rf.parts[0].x, c.viewH - 1, 0.5 + (i % 3) * 0.1);
         }
       }
@@ -5161,10 +5241,10 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
   ctx.textAlign = 'left';
 }
 
-// Lirica di sfondo in PIXEL ART: SOLO backdrop atmosferico. La leggibilità è
-// Lirica PIXEL — PROTAGONISTA: corpo bianco + outline nero a 4 direzioni + banda
-// scura con capelli rossi. Vive nella scena (attraversa il post: resta pixel-art),
-// leggibile e mai fuori schermo. La riga precedente resta come fantasma rosso.function drawLyricsPixel(ctx, lines, pos, time, W, H) {
+// Lirica PIXEL — PROTAGONISTA: corpo bianco + alone nero a 8 direzioni (4
+// ortogonali + 4 diagonali) + ombra morbida offset. Il contrasto ABBRACCIA IL
+// TESTO (niente banda full-width, niente righe rosse): la lirica resta nella
+// scena, amalgamata, ma sempre leggibile. La riga precedente è un fantasma rosso.function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   if (!lines || !lines.length) return;
   const w = Number.isFinite(W) ? W : 320;
   const h = Number.isFinite(H) ? H : 180;
@@ -5229,30 +5309,31 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
   }
 
   const step = size * 1.25;
-  const bandTop = y - ((rows.length - 1) / 2) * step - size - 3;
-  const bandH = (rows.length - 1) * step + size + 8;
-  // banda scura dimensionata sulla riga più larga + padding, clampata allo schermo
-  const wideW = Math.min(maxW + 8, Math.max(...rows.map(r => wid(r, size))) + 14);
-  const bandX = Math.max(0, Math.round((w - wideW) / 2));
-  ctx.globalAlpha = 0.72; ctx.fillStyle = C.black;
-  ctx.fillRect(bandX, Math.round(bandTop), Math.round(wideW), Math.round(bandH));
-  ctx.globalAlpha = 0.55; ctx.fillStyle = C.red;
-  ctx.fillRect(bandX, Math.round(bandTop), Math.round(wideW), 1);
-  ctx.fillRect(bandX, Math.round(bandTop + bandH) - 1, Math.round(wideW), 1);
-
   // riga attiva: misura e disegna la RIGA INTERA con lo stesso font (niente
   // avanzamento a passo fisso: così la larghezza disegnata == quella misurata).
+  // Contrasto che ABBRACCIA il testo: ombra morbida + alone nero a 8 direzioni,
+  // poi il corpo bianco. Nessuna banda rettangolare, nessuna riga rossa.
   ctx.font = font(size);
+  const cx = Math.round(w / 2);
   for (let li = 0; li < rows.length; li++) {
     const ln = rows[li];
     const ly = Math.round(y + (li - (rows.length - 1) / 2) * step);
+    // ombra morbida: copia nera offset down-right (1,2), alpha ridotta → profondità
+    ctx.globalAlpha = 0.45; ctx.fillStyle = C.black;
+    ctx.fillText(ln, cx + 1, ly + 2);
+    // alone solido: 4 ortogonali + 4 diagonali a 1px, tutto nero
     ctx.globalAlpha = 0.95; ctx.fillStyle = C.black;
-    ctx.fillText(ln, w / 2 - 1, ly);
-    ctx.fillText(ln, w / 2 + 1, ly);
-    ctx.fillText(ln, w / 2, ly - 1);
-    ctx.fillText(ln, w / 2, ly + 1);
+    ctx.fillText(ln, cx - 1, ly);
+    ctx.fillText(ln, cx + 1, ly);
+    ctx.fillText(ln, cx, ly - 1);
+    ctx.fillText(ln, cx, ly + 1);
+    ctx.fillText(ln, cx - 1, ly - 1);
+    ctx.fillText(ln, cx + 1, ly - 1);
+    ctx.fillText(ln, cx - 1, ly + 1);
+    ctx.fillText(ln, cx + 1, ly + 1);
+    // corpo: bianco pieno, il tono più leggibile della palette
     ctx.globalAlpha = 1; ctx.fillStyle = C.white;
-    ctx.fillText(ln, w / 2, ly);
+    ctx.fillText(ln, cx, ly);
   }
   ctx.restore();
   ctx.textAlign = 'left';
