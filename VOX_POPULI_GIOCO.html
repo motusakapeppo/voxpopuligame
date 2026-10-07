@@ -2190,7 +2190,12 @@ function createRenderer(canvas, W, H) {
   const scratchCtx = scratch.getContext('2d');
   const tmpCtx = tmp.getContext('2d');
   const outCtx = out.getContext('2d');
-  const visibleCtx = canvas.getContext('2d');
+  // il canvas VISIBILE è opaco per costruzione (out copre tutto lo schermo):
+  // alpha:false lascia che il browser salti la composizione del canale alpha
+  // (guida di maestria §7.4).
+  let visibleCtx = null;
+  try { visibleCtx = canvas.getContext('2d', { alpha: false }); } catch { visibleCtx = null; }
+  if (!visibleCtx) visibleCtx = canvas.getContext('2d');
 
   // pattern scanline (1×2): riga pari nera, riga dispari trasparente
   const scan = mk(1, 2);

@@ -71,6 +71,23 @@ raggiunge il target senza scatti"):
 
 ---
 
+## Ciclo 4 — Canvas opaco `alpha:false`
+**Data:** 2026-10-07 · **Commit:** *(vedi git)*
+
+**Problema (perf):** il canvas visibile usava il contesto con canale alpha attivo,
+pur coprendo sempre tutto lo schermo (out è opaco) → composizione alpha inutile.
+
+**Regole applicate** (guida §7.4): `getContext('2d', { alpha:false })` sul canvas
+visibile, con fallback se non supportato.
+
+**Verifica:** 118/118 test · FPS 60 · zero errori.
+
+**Esito:** KEEP.
+
+**File:** `src/renderer.js` (`createRenderer`).
+
+---
+
 ## Prossimi cicli (backlog prioritizzato dalla ricerca)
 
 1. **Parete che respira** — la folla dietro è caotica; ridurre densità/scurire per far
