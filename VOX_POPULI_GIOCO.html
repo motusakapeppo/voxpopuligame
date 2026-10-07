@@ -3221,9 +3221,14 @@ function buildWallCanvas(ctx, g, climb, W, H) {
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
-  // corpo: 2 passate sole (contorno scuro netto + corpo acceso). Niente aloni
-  // multipli: con il bloom diventavano un blob illeggibile.
+  // corpo: contorno CHIARO sottile (bianco tenue) → silhouette scura piena
+  // (ritaglia il giocatore dalla folla rossa) → corpo acceso. Il bianco stacca,
+  // il nero fa da "ritaglio", il rosso resta il soggetto.
   const col = actK > 0.1 ? C.redHot : C.redBright;
+  ctx.save();
+  ctx.globalAlpha = 0.34 + 0.18 * actK;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.white, phase: ph, thickness: 5, h: 22, bx: hipX, by: byc + hipYOff, swing });
+  ctx.restore();
   drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 3, h: 22, bx: hipX, by: byc + hipYOff, swing });
   drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 22,
     bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
