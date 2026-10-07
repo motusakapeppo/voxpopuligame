@@ -2382,6 +2382,8 @@ const RAG_MAX_DT = 1 / 30;       // dt più grande è un freeze, non un salto fi
 const RAG_PAIR_R = 3.0;          // raggio di contatto fra particelle di figure diverse
 const RAG_PAIR_IT = 2;           // iterazioni di push inter-figura (pila)
 const RAG_PAIR_MAX = 10;         // max vicini controllati per figura (costo)
+const RAG_ARM_MIN = 1.75;        // distanza minima bacino↔gomito a scale 1 (torso*0.35):
+                                        // impedisce al braccio di ripiegarsi attraverso il torso
 
 function ragNum(v, d) { return Number.isFinite(v) ? v : d; }
 
@@ -2430,24 +2432,46 @@ function ragAddFigure(world, opts = {}) {
 
   // lunghezze delle ossa: torso, collo, gamba (2–3 lunghezze distinte)
   const torso = 5 * s, neck = 2.5 * s, leg = 4 * s;
+  // braccia: 2 segmenti per lato (spalla→gomito→mano), ~0.45 del torso ciascuno
+  const armUp = torso * 0.45, armLo = torso * 0.45;
   // divaricazione dei piedi decisa dal LCG del mondo (deterministica)
   const spreadL = (rng() * 2 - 1) * leg * 0.4;
   const spreadR = (rng() * 2 - 1) * leg * 0.4;
+  // braccia: pendono giù/aperte con un piccolo jitter deterministico dal LCG.
+  // jitter in [-0.25, 0.25] rad circa, applicato all'angolo di ciascun segmento.
+  const jit = () => (rng() * 2 - 1) * 0.25;
+  const shY = y - torso;
+  // angolo 0 = giù; +x verso destra. Braccio L aperto a sinistra, R a destra.
+  const aL0 = -0.35 + jit(), aL1 = -0.15 + jit();
+  const aR0 = 0.35 + jit(), aR1 = 0.15 + jit();
+  const elLx = x + Math.sin(aL0) * armUp, elLy = shY + Math.cos(aL0) * armUp;
+  const haLx = elLx + Math.sin(aL0 + aL1) * armLo, haLy = elLy + Math.cos(aL0 + aL1) * armLo;
+  const elRx = x + Math.sin(aR0) * armUp, elRy = shY + Math.cos(aR0) * armUp;
+  const haRx = elRx + Math.sin(aR0 + aR1) * armLo, haRy = elRy + Math.cos(aR0 + aR1) * armLo;
   const parts = [
     { x: x, y: y, px: x, py: y },                       // 0 bacino
-    { x: x, y: y - torso, px: x, py: y - torso },       // 1 spalle
+    { x: x, y: shY, px: x, py: shY },                   // 1 spalle
     { x: x, y: y - torso - neck, px: x, py: y - torso - neck }, // 2 testa
     { x: x + spreadL, y: y + leg, px: x + spreadL, py: y + leg }, // 3 piede sx
     { x: x + spreadR, y: y + leg, px: x + spreadR, py: y + leg }, // 4 piede dx
+    { x: elLx, y: elLy, px: elLx, py: elLy },           // 5 gomito sx
+    { x: haLx, y: haLy, px: haLx, py: haLy },           // 6 mano sx
+    { x: elRx, y: elRy, px: elRx, py: elRy },           // 7 gomito dx
+    { x: haRx, y: haRy, px: haRx, py: haRy },           // 8 mano dx
   ];
   const bones = [
     { a: 0, b: 1, len: torso },       // torso
     { a: 1, b: 2, len: neck },        // collo
     { a: 0, b: 3, len: leg },         // gamba sx
     { a: 0, b: 4, len: leg },         // gamba dx
+    { a: 1, b: 5, len: armUp },       // braccio sx: spalla→gomito
+    { a: 5, b: 6, len: armLo },       // braccio sx: gomito→mano
+    { a: 1, b: 7, len: armUp },       // braccio dx: spalla→gomito
+    { a: 7, b: 8, len: armLo },       // braccio dx: gomito→mano
   ];
   const f = {
     parts, bones,
+    armMin: RAG_ARM_MIN * s,   // guardia anti-piegamento braccio, scala con la figura
     sleeping: false,
     sleepT: 0,          // frame consecutivi sotto la soglia
     motion: 0,          // motion dell'ultimo frame (debug/stats)
@@ -2489,6 +2513,29 @@ function ragSolveBones(f) {
       const ox = dx * diff, oy = dy * diff;
       a.x += ox; a.y += oy;
       c.x -= ox; c.y -= oy;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GUARDIA BRACCIA — dopo il solve delle ossa, il gomito non deve ripiegarsi
+// ATTRAVERSO il torso (il classico "fold-through"): impongo una distanza minima
+// bacino↔gomito spingendo il gomito verso l'esterno lungo la direzione bacino→
+// gomito. Deterministico (nessun RNG), no-op per figure legacy (< 9 particelle).
+// ---------------------------------------------------------------------------
+function ragGuardArms(f) {
+  if (f.parts.length < 9) return;
+  const hip = f.parts[0];
+  const min = f.armMin;
+  for (const ei of [5, 7]) {
+    const e = f.parts[ei];
+    let dx = e.x - hip.x, dy = e.y - hip.y;
+    let d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 1e-6) { dx = 0; dy = -1; d = 1; }   // degenere: spingo verso l'alto
+    if (d < min) {
+      const k = (min - d) / d;
+      e.x += dx * k;
+      e.y += dy * k;
     }
   }
 }
@@ -2673,10 +2720,16 @@ function ragStep(world, dt) {
     for (const f of world.figures) {
       if (f.sleeping) continue;
       ragSolveBones(f);
+      ragGuardArms(f);   // anti fold-through: gomito mai dentro il torso
     }
     if (world.pair && it < RAG_PAIR_IT) ragCollidePairs(world);
   }
   ragCollide(world);
+  // guardia finale: le collisioni (ground/box/pair) possono aver riavvicinato
+  // il gomito al bacino; riapplico il vincolo così regge anche in movimento.
+  for (const f of world.figures) {
+    if (!f.sleeping) ragGuardArms(f);
+  }
   ragSleepWake(world);
   world.frame++;
 }
@@ -3168,6 +3221,8 @@ function buildFigureGrid(W, H) {
 // ---------------------------------------------------------------------------
 function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }) {
   const figs = buildFigureGrid(viewW, viewH);
+  // keep = i "fedeli": figure che restano in piedi sul nucleo della piramide.
+  // supported (consenso) allarga il nucleo → più superstiti eretti.
   const keep = Math.max(3, Math.min(figs.length, 6 + Math.round(supported) * 2));
   const boxes = (Array.isArray(bodies) ? bodies : []).map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
   // muri laterali invisibili: contengono la pila dentro lo schermo
@@ -3180,14 +3235,24 @@ function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }) {
     pair: true,   // collisioni fra figure: la pila si accumula invece di scivolare
     boxes,
   });
-  for (const f of figs) {
+  for (let i = 0; i < figs.length; i++) {
+    const f = figs[i];
     const rf = ragAddFigure(world, { x: f.x, y: f.y, scale: 0.55 + f.depth * 0.35 });
     rf.spin = f.spin;   // usato per la rotazione del tumble all'impulso
+    // LOYALTY: i primi `keep` (ordine di scansione fisso → deterministico) sono
+    // i fedeli. Ancorati alla posa eretta iniziale: non crollano, restano in
+    // piedi. `keep` non è più un valore morto: guida il nucleo superstite.
+    rf.loyal = i < keep;
+    rf.home = rf.parts.map(p => ({ x: p.x, y: p.y }));
+    rf.dustCd = 0;      // cooldown polvere per figura (costo limitato)
     f.rag = rf;   // aggancio figura ↔ ragfigure (disegno + impulsi)
   }
   return { bodies, viewW, viewH, supported, figs, keep, world,
     phase: 'zoomOut', t: 0, phaseIndex: 0, done: false, angle: 0,
-    trigger: { x: viewW / 2, y: viewH - 16 }, dust: [] };
+    // supported modula anche la forza del trigger: più consenso → scossa più
+    // ampia (deterministico, nessun RNG).
+    triggerStrength: 1 + Math.max(0, supported) * 0.06,
+    trigger: { x: viewW / 2, y: viewH - 16 }, dust: [], dustTick: 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -3197,21 +3262,24 @@ function createCollapse({ bodies, viewW, viewH, supported = 4, seed = 1 }) {
 function collapseImpulse(c) {
   const world = c.world;
   const cxAll = c.viewW / 2, baseY = c.viewH - 14;
+  const strength = c.triggerStrength || 1;
   for (let i = 0; i < world.figures.length; i++) {
     const rf = world.figures[i];
     const g = c.figs[i];
+    // LOYALTY: i fedeli non ricevono l'impulso → restano eretti (keep vivo).
+    if (rf.loyal) continue;
     // 1) INSTABILITA' GLOBALE: ogni omino riceve un calcio verso l'esterno e
     //    in basso, scalato dall'altezza (le file alte partono con più spinta:
     //    il "crollo" è totale, non solo vicino al trigger). Deterministico.
     const hx = rf.parts[0].x - cxAll;
     const hd = Math.abs(hx) + 1;
-    const outward = (hx / hd) * (0.8 + g.launch * 0.8);
-    const down = 1.4 + g.launch * 1.0 + (g.depth * 0.8);
+    const outward = (hx / hd) * (0.8 + g.launch * 0.8) * strength;
+    const down = (1.4 + g.launch * 1.0 + (g.depth * 0.8)) * strength;
     const spin = (g.spin || 0);
     // 2) SPINTA LOCALE dal trigger: chi è vicino al punto di rottura è sparato.
     const dx = rf.parts[0].x - c.trigger.x, dy = rf.parts[0].y - c.trigger.y;
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const near = Math.max(0, 1 - d / 150) * g.launch * 2.4;
+    const near = Math.max(0, 1 - d / 150) * g.launch * 2.4 * strength;
     const ix = outward + (dx / d) * near - (dy / d) * spin * 0.8;
     const iy = down + (dy / d) * near * 0.4;
     for (const p of rf.parts) {
@@ -3226,9 +3294,19 @@ function collapseImpulse(c) {
 }
 
 // ---------------------------------------------------------------------------
+// POLVERE — burst breve, cap fisso (costo costante). Un solo punto d'ingresso
+// così ogni sorgente (piede, corpo, box) resta limitata.
+// ---------------------------------------------------------------------------
+const DUST_MAX = 32;
+function emitDust(c, x, y, life) {
+  c.dust.push({ x, y, t: 0, life });
+  if (c.dust.length > DUST_MAX) c.dust.shift();
+}
+
+// ---------------------------------------------------------------------------
 // STEP — zoomOut/revealBodies come prima (griglia + sweep), crack: brivido
-// deterministico, collapse/settle: ragStep a dt fisso, polvere al primo
-// contatto col fondo, done quando il mondo dorme (o fine fase).
+// deterministico, collapse/settle: ragStep a dt fisso, TORQUE all'atterraggio,
+// polvere su ogni impatto (piedi + corpi/box), fedeli ancorati eretti.
 // ---------------------------------------------------------------------------
 function stepCollapse(c, dt) {
   if (c.done) return;
@@ -3249,21 +3327,55 @@ function stepCollapse(c, dt) {
     c.shake = 0;
     const step = Math.min(RAG_MAX_DT, Math.max(0, Math.min(dt, COLLAPSE_DT)));
     ragStep(c.world, step);
-    // polvere: al primo contatto di un piede col fondo, un burst breve
+
+    // LOYALTY: i fedeli restano eretti. Li ri-ancoro alla posa iniziale (il
+    // wake per prossimità di ragdoll.js potrebbe averli svegliati): così `keep`
+    // è vivo e il nucleo superstite non crolla. Deterministico.
+    for (const rf of c.world.figures) {
+      if (!rf.loyal) continue;
+      for (let k = 0; k < rf.parts.length; k++) {
+        const p = rf.parts[k], h = rf.home[k];
+        p.x = h.x; p.y = h.y; p.px = h.x; p.py = h.y;
+      }
+      rf.sleeping = true;
+    }
+
     for (let i = 0; i < c.world.figures.length; i++) {
       const rf = c.world.figures[i];
-      if (rf.landed) continue;
-      const foot = rf.parts[3];
-      if (foot.y >= c.viewH - 1) {
-        rf.landed = true;
-        // TOPPLE: all'atterraggio la figura riceve un momento che la fa giacere
-        // (una spinta orizzontale sui piedi = radice del "crollo" credibile).
-        const g = c.figs[i];
-        const dir = (g.spin || 0) >= 0 ? 1 : -1;
-        const k = 2.2 + g.launch * 1.2;
-        for (const p of rf.parts) { p.px -= dir * k; }
-        c.dust.push({ x: rf.parts[0].x, y: c.viewH - 1, t: 0, life: 0.5 + (i % 3) * 0.1 });
-        if (c.dust.length > 24) c.dust.shift();
+      if (rf.loyal) continue;   // i fedeli non atterrano: restano in piedi
+      if (!rf.landed) {
+        const foot = rf.parts[3];
+        if (foot.y >= c.viewH - 1) {
+          rf.landed = true;
+          // TORQUE: all'atterraggio la figura RUOTA a terra. Impulsi orizzontali
+          // di SEGNO OPPOSTO su testa/spalle vs piedi (momento, non traslazione):
+          // il bacino fa da perno, il corpo ruota invece di scivolare. Il verso
+          // è deterministico (dir dallo spin memorizzato della figura).
+          const g = c.figs[i];
+          const dir = (g.spin || 0) >= 0 ? 1 : -1;
+          const k = 2.2 + g.launch * 1.2;
+          rf.parts[1].px += dir * k;   // spalle
+          rf.parts[2].px += dir * k;   // testa
+          rf.parts[3].px -= dir * k;   // piede sx
+          rf.parts[4].px -= dir * k;   // piede dx
+          emitDust(c, rf.parts[0].x, c.viewH - 1, 0.5 + (i % 3) * 0.1);
+        }
+      }
+      // POLVERE su impatto con box/mensole (non solo il primo contatto del
+      // piede): una particella che scende e tocca il top di un box. Cooldown
+      // per figura → costo limitato e cap globale.
+      if (rf.dustCd > 0) { rf.dustCd--; continue; }
+      for (const p of rf.parts) {
+        if (p.y - p.py <= 0.4) continue;   // non sta scendendo
+        for (const box of c.world.boxes) {
+          if (p.x < box.x || p.x > box.x + box.w) continue;
+          if (p.y >= box.y - 1.5 && p.y <= box.y + 1.5) {
+            emitDust(c, p.x, box.y, 0.4 + (i % 3) * 0.1);
+            rf.dustCd = 6;
+            break;
+          }
+        }
+        if (rf.dustCd > 0) break;
       }
     }
     for (let i = c.dust.length - 1; i >= 0; i--) {
@@ -3276,6 +3388,20 @@ function stepCollapse(c, dt) {
   }
 }
 function collapseFinished(c) { return c.done === true; }
+
+// ---------------------------------------------------------------------------
+// UPRIGHT — quante figure sono ancora in piedi (testa sopra il bacino, quasi
+// verticale). Espone l'effetto di keep/supported: più consenso → più eretti.
+// ---------------------------------------------------------------------------
+function collapseUpright(c) {
+  let n = 0;
+  for (const rf of c.world.figures) {
+    const hip = rf.parts[0], head = rf.parts[2];
+    const dx = head.x - hip.x, dy = head.y - hip.y;
+    if (dy < 0 && Math.abs(dx) < Math.abs(dy) * 0.6) n++;
+  }
+  return n;
+}
 
 // ---------------------------------------------------------------------------
 // DRAW — fasi statiche: griglia con drawFigure (tinta di profondità, sway).
@@ -3720,34 +3846,46 @@ function drawRagdoll(ctx, fig, opts = {}) {
   const hr = Math.max(1, Math.round(h * 0.09));
   disc(ctx, head.x, head.y, hr);
 
-  // braccia: dal punto spalle, due segmenti che pendono secondo la moto.
-  // Direzione = perpendicolare al torso, oscillante con la velocità del
-  // bacino: in volo sventolano in alto, a riposo pendono giù.
-  const vx = hip.x - hip.px, vy = hip.y - hip.py;
-  const speed = Math.sqrt(vx * vx + vy * vy);
-  const swing = Math.min(1, speed / 2.5);          // 0 = fermo, 1 = volo
-  const tx = sh.x - hip.x, ty = sh.y - hip.y;
-  const tl = Math.sqrt(tx * tx + ty * ty) || 1;
-  const ux = tx / tl, uy = ty / tl;                // asse torso (hip→sh)
-  const armLen = h * 0.30;
-  // angolo base: braccia lungo il torso verso il basso, aperte da `swing`
-  const baseA = Math.atan2(uy, ux) + PI / 2;       // "giù" rispetto al torso
-  for (const side of [-1, 1]) {
-    const wob = Math.sin((hip.x + hip.y) * 1.7 + side) * 0.35 * (1 - swing);
-    const a = baseA + side * (0.5 + swing * 1.1) + wob;
-    let hx = sh.x + Math.cos(a) * armLen;
-    let hy = sh.y + Math.sin(a) * armLen;
-    if (brace > 0) {
-      // brace: braccia raccolte verso l'alto/avanti (guardia), meno aperte
-      const ba = baseA + side * 0.4 - 1.0;
-      const bl = armLen * 0.85;
-      const bhx = sh.x + Math.cos(ba) * bl;
-      const bhy = sh.y + Math.sin(ba) * bl;
-      hx += (bhx - hx) * brace;
-      hy += (bhy - hy) * brace;
+  // braccia: se la figura ha le 4 particelle braccio (>= 9), disegno i segmenti
+  // REALI spalla→gomito→mano; altrimenti fallback storico (gesto legato alla moto).
+  if (parts.length >= 9) {
+    const elL = parts[5], haL = parts[6], elR = parts[7], haR = parts[8];
+    for (const [el, ha] of [[elL, haL], [elR, haR]]) {
+      line(ctx, sh.x, sh.y, el.x, el.y, t);
+      line(ctx, el.x, el.y, ha.x, ha.y, t);
+      // mano: tacca di 1px (pixel art, niente arc)
+      ctx.fillRect(Math.round(ha.x) - 1, Math.round(ha.y) - 1, 1, 1);
     }
-    line(ctx, sh.x, sh.y, hx, hy, t);
-    ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 1, 1);
+  } else {
+    // braccia: dal punto spalle, due segmenti che pendono secondo la moto.
+    // Direzione = perpendicolare al torso, oscillante con la velocità del
+    // bacino: in volo sventolano in alto, a riposo pendono giù.
+    const vx = hip.x - hip.px, vy = hip.y - hip.py;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+    const swing = Math.min(1, speed / 2.5);          // 0 = fermo, 1 = volo
+    const tx = sh.x - hip.x, ty = sh.y - hip.y;
+    const tl = Math.sqrt(tx * tx + ty * ty) || 1;
+    const ux = tx / tl, uy = ty / tl;                // asse torso (hip→sh)
+    const armLen = h * 0.30;
+    // angolo base: braccia lungo il torso verso il basso, aperte da `swing`
+    const baseA = Math.atan2(uy, ux) + PI / 2;       // "giù" rispetto al torso
+    for (const side of [-1, 1]) {
+      const wob = Math.sin((hip.x + hip.y) * 1.7 + side) * 0.35 * (1 - swing);
+      const a = baseA + side * (0.5 + swing * 1.1) + wob;
+      let hx = sh.x + Math.cos(a) * armLen;
+      let hy = sh.y + Math.sin(a) * armLen;
+      if (brace > 0) {
+        // brace: braccia raccolte verso l'alto/avanti (guardia), meno aperte
+        const ba = baseA + side * 0.4 - 1.0;
+        const bl = armLen * 0.85;
+        const bhx = sh.x + Math.cos(ba) * bl;
+        const bhy = sh.y + Math.sin(ba) * bl;
+        hx += (bhx - hx) * brace;
+        hy += (bhy - hy) * brace;
+      }
+      line(ctx, sh.x, sh.y, hx, hy, t);
+      ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 1, 1);
+    }
   }
 
   // lampo d'impatto: 1 frame di polvere al punto passato (deterministico)
