@@ -4793,8 +4793,9 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
 }
 
 // Lirica di sfondo in PIXEL ART: SOLO backdrop atmosferico. La leggibilità è
-// dell'overlay full-res (drawLyricsOverlay): qui alpha bassissime, mai in gara.
-// Stesso guard overflow dell'overlay: shrink-to-fit + wrap, mai fuori schermo.function drawLyricsPixel(ctx, lines, pos, time, W, H) {
+// Lirica PIXEL — PROTAGONISTA: corpo bianco + outline nero a 4 direzioni + banda
+// scura con capelli rossi. Vive nella scena (attraversa il post: resta pixel-art),
+// leggibile e mai fuori schermo. La riga precedente resta come fantasma rosso.function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   if (!lines || !lines.length) return;
   const w = Number.isFinite(W) ? W : 320;
   const h = Number.isFinite(H) ? H : 180;
@@ -4808,30 +4809,34 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
 
   ctx.save();
   ctx.textAlign = 'center';
-  const y = h * 0.30 + Math.sin(t * 0.7) * 2;
+  const y = h * 0.30 + Math.sin(t * 0.7) * 1.5;
 
-  // fantasma riga precedente: ancora più tenue, shrink-to-fit (righe separate)
+  // fantasma riga precedente: rossa tenue, sopra
   if (prev) {
     const pl = lyricLayout(ctx, prev, w * 0.92, 1, 8, 6);
-    const pstep = pl.size * 1.15;
-    for (let li = 0; li < pl.lines.length; li++) {
-      drawVert(ctx, pl.lines[li], w / 2, y - 14 - (pl.lines.length - 1 - li) * pstep, t, 0.05, pl.size, 0);
-    }
+    drawVert(ctx, pl.lines[0], w / 2, y - pl.size - 6, t, 0.30, pl.size, 0);
   }
 
-  // riga attiva: backdrop tenue (alpha ~0.10), mai sopra la soglia di gara
-  const lay = lyricLayout(ctx, text, w * 0.92, 1, 14, 6);
+  // layout riga attiva (shrink-to-fit + wrap, mai fuori schermo)
+  const lay = lyricLayout(ctx, text, w * 0.92, 1, 14, 7);
   const size = lay.size;
   const n = lay.lines.length;
-  const step = size * 1.15;
-  const bandTop = y - ((n - 1) / 2) * step - size - 2;
-  const bandH = (n - 1) * step + size + 6;
-  ctx.globalAlpha = 0.10;
-  ctx.fillStyle = C.black;
-  ctx.fillRect(0, bandTop, w, bandH);
+  const step = size * 1.25;
+  const bandTop = y - ((n - 1) / 2) * step - size - 3;
+  const bandH = (n - 1) * step + size + 8;
 
-  ctx.font = size + 'px monospace';
-  const cw = size * 0.6;
+  // banda scura dietro la riga + capelli rossi sopra/sotto (inquadratura)
+  ctx.globalAlpha = 0.72;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, Math.round(bandTop), w, Math.round(bandH));
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = C.red;
+  ctx.fillRect(0, Math.round(bandTop), w, 1);
+  ctx.fillRect(0, Math.round(bandTop + bandH) - 1, w, 1);
+
+  // riga attiva: outline nero a 4 direzioni, poi corpo BIANCO
+  ctx.font = 'bold ' + size + 'px monospace';
+  const cw = size * 0.62;
   for (let li = 0; li < n; li++) {
     const ln = lay.lines[li];
     const ly = y + (li - (n - 1) / 2) * step;
@@ -4839,13 +4844,16 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
     if (x < 0) x = 0;
     for (let i = 0; i < ln.length; i++) {
       const ch = ln[i];
-      const wob = Math.sin(t * 1.1 + i * 0.35) * 0.8;
       if (ch !== ' ') {
-        ctx.globalAlpha = 0.08;
-        ctx.fillStyle = C.black; ctx.fillText(ch, x + 1, ly + wob + 1);
-        ctx.globalAlpha = 0.10;
-        ctx.fillStyle = i % 7 === 0 ? C.redHot : C.red;
-        ctx.fillText(ch, x, ly + wob);
+        const wob = Math.sin(t * 1.1 + i * 0.35) * 0.5;
+        const gx = x, gy = Math.round(ly + wob);
+        ctx.globalAlpha = 0.95; ctx.fillStyle = C.black;
+        ctx.fillText(ch, gx - 1, gy);
+        ctx.fillText(ch, gx + 1, gy);
+        ctx.fillText(ch, gx, gy - 1);
+        ctx.fillText(ch, gx, gy + 1);
+        ctx.globalAlpha = 1; ctx.fillStyle = C.white;
+        ctx.fillText(ch, gx, gy);
       }
       x += cw;
     }
@@ -5280,15 +5288,16 @@ function updatePrompt() {
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
-  // lirica estetica in PIXEL ART (coerente col mondo)
-  const kl = KARAOKE[lv.girone.audioId];
-  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
+  // lirica PIXEL protagonista: in CIMA alla scena (dopo folla/giocatore/front),
+  // così resta leggibile in ogni tema pur restando pixel-art (attraversa il post).
+  const kl = KARAOKE[lv.girone.audioId];
+  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
   // T9: acqua che sale (girone 11) — copre la scena sotto il livello raggiunto.
   const wl = lv.fxState && lv.fxState.water;
   if (wl && wl > 0) {
@@ -5314,10 +5323,8 @@ function drawOverlay() {
   const pos = audio.position() + LYRIC_LEAD;
   // liriche NITIDE a risoluzione piena: solo dove hanno senso (playing/unlocked),
   // mai sopra title/cta/collapse. La scena pixel resta come sfondo tenue.
-  if (level && (state.phase === 'playing' || state.phase === 'unlocked')) {
-    const kl = KARAOKE[level.girone.audioId];
-    if (kl && !SKIP.has('lyrics')) drawLyricsOverlay(uctx, SCALE, kl, pos, VIEW_W, VIEW_H, time);
-  }
+  // Le liriche sono PIXEL (drawLyricsPixel, nella scena): qui niente testo nitido
+  // sovrapposto — evitava il doppio testo. Il resto dell'HUD resta a piena risoluzione.
   drawUIOverlay(uctx, SCALE, VIEW_W, VIEW_H, {
     inscription: level ? level.girone.inscription.text : '',
     threatMsg: level ? level.threatMsg : '',
