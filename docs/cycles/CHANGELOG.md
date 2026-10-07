@@ -31,6 +31,27 @@ penzolanti corte e "a rana". HANG arbitrario, proporzioni scollegate dall'anatom
 
 ---
 
+## Ciclo 2 — Parete che "respira"
+**Data:** 2026-10-07 · **Commit:** *(vedi git)*
+
+**Problema:** la folla dietro era troppo fitta e accesa → caos rosso, il giocatore si
+perdeva. (Segnalato dall'utente.)
+
+**Regole applicate** (guida §4.6 "rosso solo per il critico", §1.4 "valore batte tinta"):
+- Densità folla ridotta: passo `13–21px` (era `10–16px`) → più buio tra i corpi.
+- Valori del rosso di sfondo abbassati: `depthRed(0.04–0.42)` (era `0.08–0.62`) → la
+  folla resta nella metà bassa della rampa.
+- Layer dietro più raro (0.65) e più trasparente (0.50).
+- La parete intera si attenua: `globalAlpha 0.80` (era 0.92) → sfondo, non soggetto.
+
+**Verifica:** 118/118 test · FPS 60 · zero errori · screenshot parete completa.
+
+**Esito:** KEEP. Il giocatore (contorno chiaro + rosso acceso) domina la scena.
+
+**File:** `src/art.js` (`buildWallCanvas`, `drawWall`).
+
+---
+
 ## Prossimi cicli (backlog prioritizzato dalla ricerca)
 
 1. **Parete che respira** — la folla dietro è caotica; ridurre densità/scurire per far

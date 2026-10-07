@@ -3106,23 +3106,26 @@ function buildWallCanvas(ctx, g, climb, W, H) {
     if (lo === null) continue;
     const x0 = climb.xOf(lo) - 16, x1 = climb.xOf(hi) + 16;
     const span = x1 - x0;
-    // densità variabile: a volte fitta, a volte rada (fessure di buio)
-    const n = Math.max(2, Math.round(span / (10 + rnd() * 6)));
+    // densità: corpi RADI (più buio tra loro), così la massa "respira" e il
+    // giocatore (rosso acceso) resta il soggetto dominante. Guida §4.6 + §1.4.
+    const n = Math.max(2, Math.round(span / (13 + rnd() * 8)));
     for (let i = 0; i < n; i++) {
-      const jitter = (rnd() - 0.5) * 5;
+      const jitter = (rnd() - 0.5) * 6;
       const fx = x0 + (i + 0.5) * (span / n) + jitter;
-      const layers = rnd() > 0.55 ? 2 : 1;      // a volte un corpo dietro
+      const layers = rnd() > 0.65 ? 2 : 1;      // dietro, raro
       for (let layer = 0; layer < layers; layer++) {
         const baseWorld = rows[r] - topY + stepY * (0.7 + rnd() * 0.25) + layer * 4;
         const depth = r / Math.max(1, nRows - 1);
         const hh = 11 + rnd() * 4;
-        const colr = depthRed(0.08 + depth * 0.4 + (layer ? 0 : 0.14) + rnd() * 0.16);
+        // VALORI SCURI: la folla resta nella metà bassa della rampa rossa, così
+        // solo gli appigli vicini e il giocatore usano i rossi accesi.
+        const colr = depthRed((0.04 + depth * 0.26 + (layer ? 0 : 0.08) + rnd() * 0.10));
         const ph = r * 1.5 + i * 1.2 + layer * 2.1;
         const roll = rnd();
         const st = roll < 0.4 ? 'climb' : roll < 0.7 ? 'reach' : roll < 0.9 ? 'idle' : 'push';
         drawFigure(c, fx, baseWorld, {
           h: hh, color: colr, state: st, phase: ph,
-          facing: rnd() > 0.5 ? 1 : -1, alpha: layer ? 0.65 : 0.92,
+          facing: rnd() > 0.5 ? 1 : -1, alpha: layer ? 0.5 : 0.82,
         });
       }
     }
@@ -3136,7 +3139,8 @@ function buildWallCanvas(ctx, g, climb, W, H) {
 
   if (wall) {
     ctx.save();
-    ctx.globalAlpha = 0.92 + 0.08 * bt;
+    // la parete si ATTENUA: la folla è sfondo, non soggetto (guida §4.6).
+    ctx.globalAlpha = 0.80 + 0.06 * bt;
     ctx.drawImage(wall.canvas, 0, Math.round(cameraY - wall.topY), W, H, 0, 0, W, H);
     ctx.restore();
   } else {
