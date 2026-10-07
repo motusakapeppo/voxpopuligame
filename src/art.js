@@ -1390,3 +1390,238 @@ export function drawTitleText(ctx, W, H, time, S) {
 }
 
 
+
+// ---------------------------------------------------------------------------
+// NPC SCENES (VC) � varieta' VISIVA per girone. `gironi.js` autora `npcScenes`
+// (parole-chiave) ma non erano mai disegnate: ogni livello aveva lo stesso muro.
+// Qui ogni keyword disegna un dettaglio ambientale DISTINTO, deterministico dal
+// seed del girone, in pixel-art (rect/dot/line), palette nero+rosso+bianco.
+// ---------------------------------------------------------------------------
+function npcHash(g) { return artSeed(((g && g.id) || '') + '|' + ((g && g.npcScenes) || []).join(',')); }
+
+// Disegna UNA scena keyword. Ritorna void. Deterministico (LCG locale).
+function drawOneScene(ctx, key, g, camY, time, W, H, idx) {
+  const rng = artLcg(npcHash(g) + idx * 2654435761);
+  const cy = artNum(camY, 0), w = artNum(W, 320), h = artNum(H, 180), t = artNum(time, 0);
+  const baseY = h - 24;
+  const col = (i) => [C.redDeep, C.redDark, C.redMid, C.red][i & 3];
+  const dot = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), 1, 1); };
+  const colOf = (i) => { ctx.fillStyle = col(i); };
+
+  switch (key) {
+    case 'sleepers': {                    // figure coricate in basso
+      ctx.globalAlpha = 0.5;
+      for (let i = 0; i < 6; i++) {
+        const x = 20 + i * 46 + Math.round(rng() * 8);
+        const c = C.redDark; colOf(i);
+        ctx.fillRect(x, baseY + 2, 10, 2);
+        dot(x + (rng() > 0.5 ? 11 : -1), baseY + 2, c);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'seaWall': {                     // linea di onde in alto
+      ctx.globalAlpha = 0.4;
+      ctx.fillStyle = C.redDark;
+      for (let x = 0; x < w; x++) {
+        const yy = 30 + Math.round(Math.sin(x * 0.08 + t) * 3);
+        ctx.fillRect(x, yy, 1, 1);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'blownBodies': {                 // corpi inclinati dal vento
+      ctx.globalAlpha = 0.45;
+      for (let i = 0; i < 8; i++) {
+        const x = 16 + i * 38 + Math.round(Math.sin(t * 2 + i) * 4);
+        colOf(i); ctx.fillRect(x, baseY - 8 + i % 3, 1, 9);
+        ctx.fillRect(x + (i % 2 ? 1 : -1), baseY - 10, 1, 2);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'domeHouses': {                  // cupole
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 5; i++) {
+        const x = 30 + i * 62; colOf(i);
+        for (let d = 0; d < 6; d++) ctx.fillRect(x - d + 6, baseY - 10 + Math.abs(3 - d), d * 2 + 1, 1);
+        ctx.fillRect(x, baseY - 4, 12, 4);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'separatedMothers': {            // due gruppi di figure distanti
+      ctx.globalAlpha = 0.45;
+      for (let i = 0; i < 3; i++) { colOf(i); ctx.fillRect(40 + i * 10, baseY - 8, 2, 9); }
+      for (let i = 0; i < 3; i++) { colOf(i + 1); ctx.fillRect(w - 70 + i * 10, baseY - 8, 2, 9); }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'trembling': {                   // puntini che tremano con la camera
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 20; i++) {
+        const x = rng() * w, y = 40 + rng() * (h - 60);
+        dot(x, y + Math.sin(t * 8 + i) * 1.5, C.redMid);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'repressedProtest': case 'protest': case 'raisedFists': {  // pugni alzati
+      ctx.globalAlpha = 0.5;
+      for (let i = 0; i < 14; i++) {
+        const x = 12 + i * 22 + Math.round(Math.sin(i * 2.1) * 3);
+        const fy = baseY - 6 - Math.round(Math.sin(t * 3 + i) * 2);
+        colOf(i); ctx.fillRect(x, baseY - 8, 2, 9);           // corpo
+        ctx.fillRect(x, fy - 4, 2, 3);                        // pugno
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'stillBody': {                   // un corpo immobile, fermo
+      ctx.globalAlpha = 0.55; colOf(2);
+      const x = Math.round(w / 2);
+      ctx.fillRect(x, baseY - 10, 2, 11); dot(x + 1, baseY - 11, C.redMid);
+      ctx.globalAlpha = 1; break;
+    }
+    case 'workLoop': case 'climbers': {   // figure che salgono (animate)
+      ctx.globalAlpha = 0.45;
+      for (let i = 0; i < 10; i++) {
+        const x = 20 + i * 30; const yy = baseY - ((t * 8 + i * 17) % 60);
+        colOf(i); ctx.fillRect(x, yy, 2, 6);
+        ctx.fillRect(x - 1 + Math.round(Math.sin(t * 4 + i) * 1), yy - 2, 1, 2);
+        ctx.fillRect(x + 1 - Math.round(Math.sin(t * 4 + i) * 1), yy - 2, 1, 2);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'timecard': {                   // tacca oraria
+      ctx.globalAlpha = 0.5; colOf(1);
+      ctx.fillRect(w - 30, baseY - 12, 6, 10);
+      ctx.fillRect(24, baseY - 12, 6, 10);
+      ctx.globalAlpha = 1; break;
+    }
+    case 'sirene': {                      // onde sonore
+      ctx.globalAlpha = 0.4; colOf(2);
+      for (let r = 4; r < 26; r += 4) ctx.fillRect(Math.round(w * 0.7) - r, 40, 1, r);
+      ctx.globalAlpha = 1; break;
+    }
+    case 'snakes': {                      // linee serpentine
+      ctx.globalAlpha = 0.45;
+      for (let i = 0; i < 5; i++) {
+        colOf(i);
+        for (let x = 0; x < w; x += 2) {
+          const y = 40 + i * 22 + Math.round(Math.sin(x * 0.1 + t * 2 + i) * 4);
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'clocks': {                      // quadranti
+      ctx.globalAlpha = 0.5;
+      for (let i = 0; i < 4; i++) {
+        const x = 40 + i * 70, y = 42 + (i % 2) * 30; colOf(i);
+        for (let a = 0; a < 12; a++) {
+          const ang = a / 12 * Math.PI * 2;
+          dot(x + Math.cos(ang) * 5, y + Math.sin(ang) * 5, col(i));
+        }
+        ctx.fillRect(x, y, 1, -4);        // lancetta
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'wornBodies': {                  // figure consumate/curvate
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 9; i++) {
+        const x = 18 + i * 34; colOf(i);
+        ctx.fillRect(x, baseY - 6, 3, 7);
+        ctx.fillRect(x - 2, baseY - 6, 2, 2);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'crackedMirror': {               // schegge rotte
+      ctx.globalAlpha = 0.4; colOf(2);
+      for (let i = 0; i < 10; i++) {
+        const x = rng() * w, y = 30 + rng() * 90;
+        ctx.fillRect(x, y, 1, 1); ctx.fillRect(x + 2, y + 2, 1, 1);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'redCurtain': {                  // drappeggi verticali
+      ctx.globalAlpha = 0.35; colOf(1);
+      for (let i = 0; i < 12; i++) ctx.fillRect(i * 28, 0, 8, 60);
+      ctx.globalAlpha = 1; break;
+    }
+    case 'maskedOrchestra': {             // figure in fila
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 8; i++) { colOf(i); ctx.fillRect(30 + i * 34, baseY - 7, 2, 8); }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'delta': {                       // forma a delta/triangolo
+      ctx.globalAlpha = 0.4; colOf(2);
+      for (let y = 0; y < 14; y++) ctx.fillRect(w / 2 - y, 70 + y, y * 2 + 1, 1);
+      ctx.globalAlpha = 1; break;
+    }
+    case 'cerberus': case 'double': {     // due/tre sagome grandi
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 3; i++) { colOf(i); ctx.fillRect(50 + i * 80, baseY - 16, 4, 17); dot(52 + i * 80, baseY - 17, col(i)); }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'wetCrowd': {                    // folla bassa e fitta
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 36; i++) {
+        const x = rng() * w; colOf(i);
+        ctx.fillRect(x, baseY - 2 - Math.round(rng() * 4), 2, 5);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'screamingWorld': {              // linee radiali (grido)
+      ctx.globalAlpha = 0.35; colOf(2);
+      const cx = w / 2, cyy = 60;
+      for (let a = 0; a < 16; a++) {
+        const ang = a / 16 * Math.PI * 2;
+        ctx.fillRect(cx + Math.cos(ang) * 20, cyy + Math.sin(ang) * 20, 1, 1);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'wiltingFlowers': {              // steli piegati
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 10; i++) {
+        const x = 16 + i * 30; colOf(i);
+        ctx.fillRect(x, baseY - 6, 1, 7); ctx.fillRect(x + 1, baseY - 8, 2, 1);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'blackShroud': {                 // velo scuro
+      ctx.globalAlpha = 0.35; ctx.fillStyle = C.black;
+      ctx.fillRect(0, 0, w, 46);
+      ctx.globalAlpha = 1; break;
+    }
+    case 'popoliInCammino': {             // folla in marcia
+      ctx.globalAlpha = 0.45;
+      for (let i = 0; i < 20; i++) {
+        const x = ((i * 18 + t * 10) % (w + 20)) - 10;
+        colOf(i); ctx.fillRect(x, baseY - 6, 2, 7);
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'chorus': {                      // bocche/note
+      ctx.globalAlpha = 0.4;
+      for (let i = 0; i < 12; i++) {
+        const x = 20 + i * 26, y = 36 + Math.round(Math.sin(t * 3 + i) * 2); colOf(i);
+        dot(x, y, col(i)); dot(x + 1, y - 2, col(i));
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    case 'theTop': {                      // cima luminosa
+      ctx.globalAlpha = 0.5; colOf(3);
+      for (let i = 0; i < 5; i++) dot(w / 2 - 2 + i, 28 - i, col(i));
+      ctx.globalAlpha = 1; break;
+    }
+    default: {                           // sconosciuta: un accento discreto
+      ctx.globalAlpha = 0.3; colOf(1);
+      ctx.fillRect(24, baseY - 4, 3, 1);
+      ctx.globalAlpha = 1; break;
+    }
+  }
+}
+
+// Disegna TUTTE le scene NPC del girone (dietro il muro, prima della folla).
+export function drawNpcScenes(ctx, g, climb, camY, time, W, H) {
+  if (!g || !Array.isArray(g.npcScenes) || !g.npcScenes.length) return;
+  ctx.save();
+  for (let i = 0; i < g.npcScenes.length; i++) {
+    try { drawOneScene(ctx, g.npcScenes[i], g, camY, time, W, H, i); } catch { /* una scena non blocca le altre */ }
+  }
+  ctx.restore();
+}

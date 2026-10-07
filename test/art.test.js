@@ -287,3 +287,49 @@ test('rampTone: ramp-safe (rosso dominante) e monotona in luminosita', () => {
   }
   assert.equal(rampTone(0), rampTone(0));
 });
+
+// ---------------------------------------------------------------------------
+// VC: npcScenes — varieta' visiva per girone (scene authored ma mai disegnate).
+// ---------------------------------------------------------------------------
+import { drawNpcScenes } from '../src/art.js';
+
+function fakeGironeScenes(scenes) {
+  return { id: '01', npcScenes: scenes, bodies: [], modifiers: [] };
+}
+
+test('drawNpcScenes: coordinate finite e colori palette-safe', () => {
+  const ctx = recCtx();
+  drawNpcScenes(ctx, fakeGironeScenes(['seaWall', 'clocks', 'snakes']), null, 0, 1.5, 320, 180);
+  assert.ok(ctx.calls.length > 0, 'nessun disegno');
+  for (const c of ctx.calls) {
+    if (c.op === 'fillRect') assert.ok(Number.isFinite(c.x) && Number.isFinite(c.y), 'coord non finita');
+    if (c.fill && c.fill.startsWith('#') && c.fill !== '#f5f5f5' && c.fill !== '#000000') {
+      const r = parseInt(c.fill.slice(1, 3), 16), g = parseInt(c.fill.slice(3, 5), 16), b = parseInt(c.fill.slice(5, 7), 16);
+      assert.ok(r >= g && r >= b, 'colore non rosso-dominante: ' + c.fill);
+    }
+  }
+});
+
+test('drawNpcScenes: deterministico', () => {
+  const a = recCtx(), b = recCtx();
+  const g = fakeGironeScenes(['wetCrowd', 'raisedFists']);
+  drawNpcScenes(a, g, null, 0, 1.5, 320, 180);
+  drawNpcScenes(b, g, null, 0, 1.5, 320, 180);
+  assert.deepEqual(a.calls, b.calls, 'non deterministico');
+});
+
+test('drawNpcScenes: scene diverse -> disegni diversi', () => {
+  const a = recCtx(), b = recCtx();
+  drawNpcScenes(a, fakeGironeScenes(['seaWall']), null, 0, 1.5, 320, 180);
+  drawNpcScenes(b, fakeGironeScenes(['clocks']), null, 0, 1.5, 320, 180);
+  assert.notDeepEqual(a.calls, b.calls, 'scene diverse devono disegnare diversamente');
+  assert.ok(a.calls.length > 0 && b.calls.length > 0);
+});
+
+test('drawNpcScenes: scene vuote/sconosciute -> nessun errore', () => {
+  const ctx = recCtx();
+  drawNpcScenes(ctx, fakeGironeScenes([]), null, 0, 1, 320, 180);
+  drawNpcScenes(ctx, { id: '01' }, null, 0, 1, 320, 180);
+  drawNpcScenes(ctx, null, null, 0, 1, 320, 180);
+  assert.ok(true);
+});
