@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pose, drawFigure, drawClimber, drawRagdoll, ik2, poseInterp, postureSpring } from '../src/figure.js';
+import { pose, drawFigure, drawClimber, drawRagdoll, ik2, poseInterp, postureSpring,
+         gesturePhase, smearAmount, squashStretch } from '../src/figure.js';
 
 // Verifica che le pose siano articolate (angoli delle ossa) e che cambino
 // nel tempo: è ciò che rende il gioco animato e non statico.
@@ -340,5 +341,106 @@ test('drawRagdoll: braccia reali con coordinate degeneri restano finite', () => 
   for (const [x, y, w, hh] of c.calls) {
     assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
       'input degenere ha prodotto coordinate non finite');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W3-ANIM — principi di animazione: anticipazione, smear, squash&stretch,
+// tenuta d'impatto. Tutti helper PURI e DETERMINISTICI (nessun Math.random).
+// ---------------------------------------------------------------------------
+const GESTURE_KEYS = ['phase', 'anticipation', 'strike', 'recover', 'actK'];
+
+test('gesturePhase: anticipazione PRIMA dello strike (early t) e output limitati/finiti', () => {
+  const dur = 1;
+  const early = gesturePhase(0.1 * dur, dur);
+  assert.ok(early.anticipation > early.strike,
+    'anticipazione non precede lo strike: ' + early.anticipation + ' vs ' + early.strike);
+  for (const t of [0, 0.05, 0.2, 0.4, 0.5, 0.7, 1, 2, -1, NaN, Infinity, -Infinity]) {
+    const g = gesturePhase(t, dur);
+    for (const k of GESTURE_KEYS) {
+      assert.ok(Number.isFinite(g[k]), k + ' non finito a t=' + String(t));
+      assert.ok(g[k] >= 0 && g[k] <= 1, k + ' fuori [0,1] a t=' + String(t) + ': ' + g[k]);
+    }
+  }
+  // dur degenere → fallback sicuro, mai NaN
+  for (const d of [0, -1, NaN, Infinity]) {
+    const g = gesturePhase(0.1, d);
+    for (const k of GESTURE_KEYS) assert.ok(Number.isFinite(g[k]), k + ' non finito con dur=' + String(d));
+  }
+});
+
+test('gesturePhase: plateau di hold all\'impatto (~0.15-0.2s) prima del recover', () => {
+  const dur = 1, hold = 0.18;
+  const strikeT = 0.45 * dur;
+  const a = gesturePhase(strikeT, dur, { hold });
+  const b = gesturePhase(strikeT + 0.15, dur, { hold });
+  assert.ok(a.actK >= 0.99, 'actK non alto allo strike: ' + a.actK);
+  assert.ok(b.actK >= 0.99, 'actK non resta alto durante la tenuta: ' + b.actK);
+  const after = gesturePhase(strikeT + hold + 0.1, dur, { hold });
+  assert.ok(after.actK < b.actK, 'actK non cala dopo la tenuta');
+  assert.ok(after.recover > 0, 'recover non è iniziato dopo la tenuta');
+});
+
+test('gesturePhase: fasi monotone-ish (wind-up sale, poi cala; recover sale)', () => {
+  const dur = 1;
+  const a1 = gesturePhase(0.05, dur), a2 = gesturePhase(0.25, dur), a3 = gesturePhase(0.4, dur);
+  assert.ok(a2.anticipation > a1.anticipation, 'anticipazione non cresce nel wind-up');
+  assert.ok(a3.anticipation < a2.anticipation, 'anticipazione non cala verso lo strike');
+  const r1 = gesturePhase(0.7, dur), r2 = gesturePhase(0.9, dur);
+  assert.ok(r2.recover > r1.recover, 'recover non cresce');
+  assert.ok(r2.actK < r1.actK, 'actK non cala nel recover');
+});
+
+test('smearAmount: 0 agli estremi, positivo e con picco al centro, sempre finito', () => {
+  const A = pose('idle', 0), B = pose('run', 1.1);
+  assert.equal(smearAmount(A, B, 0), 0, 'k=0 deve valere 0');
+  assert.equal(smearAmount(A, B, 1), 0, 'k=1 deve valere 0');
+  const mid = smearAmount(A, B, 0.5);
+  assert.ok(mid > 0, 'smear nullo a metà transizione');
+  assert.ok(mid >= smearAmount(A, B, 0.25) - 1e-9, 'smear non cresce verso il centro');
+  assert.ok(mid >= smearAmount(A, B, 0.75) - 1e-9, 'smear non decresce dal centro');
+  for (const k of [NaN, Infinity, -Infinity, -1, 2, undefined]) {
+    const v = smearAmount(A, B, k);
+    assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, 'k=' + String(k) + ' non valido: ' + v);
+  }
+});
+
+test('smearAmount: pose identiche → nessuno smear', () => {
+  const A = pose('walk', 0.5);
+  assert.equal(smearAmount(A, A, 0.5), 0);
+});
+
+test('squashStretch: 1 a vel=0, limitato in 0.8..1.2, sempre finito', () => {
+  assert.equal(squashStretch(0), 1, 'vel=0 deve valere 1');
+  for (const v of [-100, -5, -1, 0, 1, 5, 100, NaN, Infinity, -Infinity]) {
+    const s = squashStretch(v);
+    assert.ok(Number.isFinite(s), 'vel=' + String(v) + ' non finito');
+    assert.ok(s >= 0.8 && s <= 1.2, 'vel=' + String(v) + ' fuori [0.8,1.2]: ' + s);
+  }
+});
+
+test('drawFigure: impact default identico a prima (REGRESSIONE)', () => {
+  const a = stubCtx(), b = stubCtx();
+  drawFigure(a, 25, 45, { h: 16, state: 'idle', phase: 0.9 });
+  drawFigure(b, 25, 45, { h: 16, state: 'idle', phase: 0.9, impact: undefined });
+  assert.deepEqual(a.calls, b.calls, 'impact default altera il rendering storico');
+});
+
+test('drawFigure: impact>=0 differisce dal default e resta finito', () => {
+  const base = stubCtx(), hit = stubCtx();
+  drawFigure(base, 25, 45, { h: 16, state: 'idle', phase: 0.9 });
+  drawFigure(hit, 25, 45, { h: 16, state: 'idle', phase: 0.9, impact: 0 });
+  assert.notDeepEqual(hit.calls, base.calls, 'impact non ha effetto sul rendering');
+  for (const [x, y, w, hh] of hit.calls) {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+      'impact ha prodotto coordinate non finite');
+  }
+  for (const imp of [NaN, Infinity, -Infinity, -1, 1e9]) {
+    const c = stubCtx();
+    drawFigure(c, 25, 45, { h: 16, state: 'idle', phase: 0.9, impact: imp });
+    for (const [x, y, w, hh] of c.calls) {
+      assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+        'impact=' + String(imp) + ' non finito');
+    }
   }
 });

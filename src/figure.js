@@ -161,6 +161,76 @@ export function postureSpring(t, decay = 0.4) {
 }
 
 // ---------------------------------------------------------------------------
+// W3-ANIM — GESTURE PHASE — curva a 4 tempi per i gesti (Z=tendi / X=spingi):
+//   anticipazione (carica, moto opposto) → strike (veloce) → tenuta all'impatto
+//   (~150-200ms) → recover. Tutti gli output sono limitati in [0,1] e finiti.
+//   opts: { hold = 0.18 (s), strikeAt = 0.45, rise = 0.15 } (frazioni di dur).
+//   `actK` = intensità complessiva: picco allo strike, tenuta durante l'impatto.
+// ---------------------------------------------------------------------------
+export function gesturePhase(t, dur, opts = {}) {
+  const d = (Number.isFinite(dur) && dur > 0) ? dur : 1;
+  const u = clamp(finiteOr(t, 0) / d, 0, 1);
+  const strikeAt = clamp(finiteOr(opts.strikeAt, 0.45), 0.05, 0.95);
+  const rise = clamp(finiteOr(opts.rise, 0.15), 0.01, strikeAt);
+  const holdN = clamp(finiteOr(opts.hold, 0.18) / d, 0, 1 - strikeAt);
+  const holdEnd = strikeAt + holdN;
+  const recoverN = Math.max(1e-6, 1 - holdEnd);
+
+  // anticipazione: campana sul wind-up, si spegne allo strike
+  const anticipation = u < strikeAt ? Math.sin(PI * (u / strikeAt)) : 0;
+  // strike: sale rapido verso l'impatto, resta 1 durante la tenuta, poi cala
+  let strike;
+  if (u < strikeAt) strike = clamp((u - (strikeAt - rise)) / rise, 0, 1);
+  else if (u <= holdEnd) strike = 1;
+  else strike = 1 - clamp((u - holdEnd) / recoverN, 0, 1);
+  // recover: parte solo dopo la tenuta
+  const recover = u <= holdEnd ? 0 : clamp((u - holdEnd) / recoverN, 0, 1);
+  // actK: intensità complessiva, picco allo strike e tenuta durante l'impatto
+  let actK;
+  if (u < strikeAt) actK = clamp(u / strikeAt, 0, 1);
+  else if (u <= holdEnd) actK = 1;
+  else actK = 1 - recover;
+
+  return { phase: u, anticipation, strike, recover, actK };
+}
+
+// distanza fra due pose (somma delle differenze assolute dei giunti), finita
+function poseDist(A, B) {
+  if (!A || !B) return 0;
+  const num = (v) => (Number.isFinite(v) ? v : 0);
+  let d = Math.abs(num(A.lean) - num(B.lean)) + Math.abs(num(A.bob) - num(B.bob));
+  for (const k of ['aL', 'aR', 'lL', 'lR']) {
+    const a = A[k], b = B[k];
+    if (Array.isArray(a) && Array.isArray(b)) {
+      d += Math.abs(num(a[0]) - num(b[0])) + Math.abs(num(a[1]) - num(b[1]));
+    }
+  }
+  return d;
+}
+
+// ---------------------------------------------------------------------------
+// W3-ANIM — SMEAR — quanto "strisciare" fra due pose al blend k. 0 agli estremi
+// (k=0, k=1), massimo a metà transizione (bump 4k(1-k)) scalato dalla distanza
+// fra le pose. Ritorna uno scalare in [0,1], sempre finito e deterministico.
+// ---------------------------------------------------------------------------
+export function smearAmount(prevPose, nextPose, k) {
+  const kk = clamp(finiteOr(k, 0), 0, 1);
+  const bump = 4 * kk * (1 - kk);          // 0 agli estremi, 1 al centro
+  const d = poseDist(prevPose, nextPose);
+  const sat = d / (d + 3);                // saturazione 0..1
+  return clamp(bump * sat, 0, 1);
+}
+
+// ---------------------------------------------------------------------------
+// W3-ANIM — SQUASH & STRETCH — fattore verticale per atterraggi/impatto.
+// 1 a velocità 0, limitato in [0.8, 1.2] (tanh: mai oltre, mai NaN).
+// ---------------------------------------------------------------------------
+export function squashStretch(vel) {
+  const v = finiteOr(vel, 0);
+  return clamp(1 + 0.2 * Math.tanh(v), 0.8, 1.2);
+}
+
+// ---------------------------------------------------------------------------
 // IK A 2 SEGMENTI — dato l'attacco (sx,sy) e il bersaglio (tx,ty) con lunghezze
 // FISSE l1,l2, restituisce gomito e mano. La mano non supera MAI la portata:
 // così le braccia si PIEGANO invece di allungarsi come tentacoli.
@@ -396,12 +466,19 @@ export function drawFigure(ctx, x, y, opts = {}) {
     thickness = 1, alpha = 1, shadow = false,
     detail = false, stretch = 0, rim = false,
     breathe = 0,   // S-ANAT: 0..1 respiro sottile (testa/petto), 0 = storico
+    impact = undefined,   // W3-ANIM: secondi dall'impatto (>=0) → squash; default OFF
   } = opts;
   const P = pose(state, phase);
   const f = facing;
   // squash&stretch: fattore verticale limitato in [-1,1]; 0 = neutro (default)
   const st = clamp(finiteOr(stretch, 0), -1, 1);
-  const sy = 1 + st * 0.30;   // 0.7 (schiacciato) … 1.3 (allungato)
+  let sy = 1 + st * 0.30;   // 0.7 (schiacciato) … 1.3 (allungato)
+  // W3-ANIM: impatto — solo se `impact` è un numero finito >= 0 (default OFF).
+  // Squash che decade in ~0.2s: la figura "si siede" per un attimo sull'urto.
+  if (Number.isFinite(impact) && impact >= 0) {
+    const ik = 1 - clamp(impact / 0.2, 0, 1);   // 1 subito dopo l'urto → 0 a 0.2s
+    sy *= squashStretch(-ik * 3);              // tanh(-3) ≈ -0.995 → ~0.8 schiacciato
+  }
   // respiro: offset verticale sottile su petto/testa, sfasato dal bob della posa
   const br = clamp(finiteOr(breathe, 0), 0, 1);
   const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br * 0.6 : 0;
