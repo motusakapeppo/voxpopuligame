@@ -93,19 +93,20 @@ export function isAutoKind(kind) {
 // Quanti incontri per girone e di che tipo (in ordine di scalata).
 // Ogni girone è monotono: non "spam" di tipi, ma una progressione tematica.
 export const GIRONE_ENCOUNTERS = {
-  '01': ['sleeper', 'helper', 'hand'],
-  '02': ['hand', 'grabber', 'pusher'],
+  // Ribilanciato (T4): nessun tipo piu' di 5 volte, tutti gli 11 presenti.
+  '01': ['sleeper', 'helper', 'siren'],
+  '02': ['hand', 'pusher', 'grabber'],
   '03': ['rival', 'helper', 'falling'],
   '04': ['falling', 'grabber', 'pusher'],
-  '05': ['siren', 'helper', 'hand'],
-  '06': ['rival', 'grabber', 'hand'],
-  '07': ['rival', 'falling', 'grabber'],
-  '08': ['fake', 'helper', 'hand'],
+  '05': ['siren', 'sleeper', 'hand'],
+  '06': ['rival', 'grabber', 'helper'],
+  '07': ['rival', 'falling', 'pusher'],
+  '08': ['fake', 'self', 'helper'],
   '09': ['self', 'grabber', 'falling'],
-  '10': ['pusher', 'grabber', 'hand'],
-  '11': ['falling', 'grabber', 'helper'],
+  '10': ['hand', 'pusher', 'siren'],
+  '11': ['falling', 'fake', 'sleeper'],
   '12': ['chorus', 'helper', 'hand'],
-  '13': ['hand'],
+  '13': ['chorus'],
 };
 
 // Crea gli incontri per un girone, distribuiti lungo la scala.

@@ -8,8 +8,11 @@ export function createModState(mod) {
 }
 
 // Ritorna void. Aggiorna ctx.player / ctx.world / ctx.events. Deterministico.
+// Aggiorna ANCHE ctx.effects (T4): un oggetto osservabile con dim/flicker/water/
+// elapsed, così il rendering può consumare gli stati oggi solo calcolati.
 export function applyModifier(mod, ctx, dt, st = createModState(mod)) {
   st.t += dt;
+  const fx = ctx.effects || (ctx.effects = { dim: 0, flicker: 0, water: 0, elapsed: 0, verlet: false });
   switch (mod.kind) {
     case 'tutorial': break;
 
@@ -40,6 +43,7 @@ export function applyModifier(mod, ctx, dt, st = createModState(mod)) {
     case 'sleep': {
       if (mod.dimTo !== undefined) {
         st.dim = Math.max(mod.dimTo, 1 - st.t * 0.05); // cala la luce col tempo
+        fx.dim = 1 - st.dim;                            // esposizione osservabile
         ctx.events.push('dim');
       }
       break;
@@ -62,6 +66,7 @@ export function applyModifier(mod, ctx, dt, st = createModState(mod)) {
 
     case 'illusion': {
       st.flicker = Math.sin(st.t * 6) > 0.9;
+      fx.flicker = st.flicker ? 1 : 0;
       if (st.flicker) ctx.events.push('fake');
       break;
     }
@@ -69,6 +74,7 @@ export function applyModifier(mod, ctx, dt, st = createModState(mod)) {
     case 'descent': {
       // direzione invertita: il progresso va "verso l'ade" (giù)
       st.verletOn = st.t < mod.verletFor;
+      fx.verlet = st.verletOn;
       break;
     }
 
@@ -87,4 +93,6 @@ export function applyModifier(mod, ctx, dt, st = createModState(mod)) {
 
     default: break;
   }
+  fx.water = st.water || 0;
+  fx.elapsed = st.elapsed || 0;
 }
