@@ -1,5 +1,14 @@
 {
- "01-intro": [],
+ "01-intro": [
+  [
+   12.52,
+   "Ma è più sicura per chi c'è già stato,"
+  ],
+  [
+   15.9,
+   "Danzo sul ghiaccio come Salomè"
+  ]
+ ],
  "02-vento": [
   [
    3.44,
@@ -34,8 +43,22 @@
    "Guarda quanta gente"
   ]
  ],
- "05-hosonno": [],
- "06-primoposto": [],
+ "05-hosonno": [
+  [
+   4.27,
+   "Non mi va"
+  ]
+ ],
+ "06-primoposto": [
+  [
+   12.17,
+   "Voglio stare con te in tutti i sogni che farò questa notte"
+  ],
+  [
+   18.43,
+   "Perché ti muovi come fossi alle giostre, alle giostre, alle giostre"
+  ]
+ ],
  "07-tictac": [
   [
    6.18,
@@ -78,7 +101,16 @@
    "Metterò me in scena, ma col tempo mi perderò"
   ]
  ],
- "10-scendi": [],
+ "10-scendi": [
+  [
+   0,
+   "Ma lo vogliono fermare"
+  ],
+  [
+   3.06,
+   "Come la domenica allo stadio fanno il tifo"
+  ]
+ ],
  "11-lafinedelmondo": [
   [
    12.48,

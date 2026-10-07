@@ -5,6 +5,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { alignLines } from './align-core.mjs';
 
+const onset = w => (Array.isArray(w) ? Number(w[0]) : (w && Number(w.start))) || 0;
+
 const words = JSON.parse(readFileSync('tools/_words.json', 'utf8'));
 const official = JSON.parse(readFileSync('tools/_official.json', 'utf8'));
 
@@ -14,7 +16,24 @@ const summary = [];
 for (const [id, w] of Object.entries(words)) {
   const lines = official[id] || [];
   const ws = (w && w.words) || [];
-  const entries = alignLines(lines, ws, { window: 12 });
+  // 1) match STRETTO (preciso).
+  let entries = alignLines(lines, ws, { window: 12 });
+  // 2) se troppo poche, ALLENTA (finestra ampia, niente vincolo sull'ultimo token).
+  if (entries.length < 2) {
+    const loose = alignLines(lines, ws, { window: 24, minRatio: 0.34, requireLast: false });
+    if (loose.length > entries.length) entries = loose;
+  }
+  // 3) se ancora vuoto, DISTRIBUISCI le righe ufficiali sulla durata della clip
+  //    (meglio un testo approssimato che una schermata muta).
+  if (entries.length === 0 && lines.length) {
+    const dur = ws.length ? onset(ws[ws.length - 1]) + 0.6 : 0;
+    const n = Math.min(lines.length, 8);
+    entries = [];
+    for (let i = 0; i < n; i++) {
+      const t = dur > 0 ? (i / n) * dur : i * 2.5;
+      entries.push([Number(t.toFixed(2)), lines[i]]);
+    }
+  }
   karaoke[id] = entries;
   summary.push({ id, lines: lines.length, words: ws.length, matched: entries.length, first: entries[0] ? entries[0][1] : '' });
 }

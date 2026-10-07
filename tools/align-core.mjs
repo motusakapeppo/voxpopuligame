@@ -46,6 +46,8 @@ function wordText(w) {
  */
 export function alignLines(officialLines, words, opts = {}) {
   const win = Number.isFinite(opts.window) && opts.window > 0 ? opts.window : 12;
+  const minRatio = Number.isFinite(opts.minRatio) ? opts.minRatio : 0.5;
+  const requireLast = opts.requireLast !== false;
   const lines = Array.isArray(officialLines) ? officialLines : [];
   const ws = Array.isArray(words) ? words : [];
   const wToks = ws.map(w => tokenize(wordText(w)));
@@ -82,7 +84,7 @@ export function alignLines(officialLines, words, opts = {}) {
     }
 
     const ratio = matched / toks.length;
-    const accepted = matched >= 2 && ratio >= 0.5 && lastTokMatched;
+    const accepted = matched >= 2 && ratio >= minRatio && (lastTokMatched || !requireLast);
 
     if (accepted) {
       const start = wordOnset(ws[firstIdx]);
