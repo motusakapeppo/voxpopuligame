@@ -124,20 +124,32 @@ export function createRenderer(canvas, W, H) {
   const supportsOverlay = rdrSupportsOp(outCtx, 'overlay');
   const rng = rdrLcg(1);
   let scale = 1;
+  // Cache: dimensione del canvas visibile (evita di rileggere/ricalcolare la
+  // scala a ogni frame) e stringa rgb della soglia bloom (evita di allocarla).
+  let cw = -1, ch = -1;
+  let lastGv = -1, lastGvStr = '';
+  // Legge un parametro post SENZA allocare un oggetto per frame: opts.post
+  // vince se la chiave è propria, altrimenti fallback su api.post (stessa
+  // semantica di Object.assign({}, api.post, opts.post), zero allocazioni).
+  const hasOwn = Object.prototype.hasOwnProperty;
+  const postVal = (o, key) => (o && hasOwn.call(o, key)) ? o[key] : api.post[key];
 
   const api = {
     W: w, H: h, scene, glow, out,
     post: createPostDefaults(),
 
     resize() {
-      const cw = rdrNum(canvas.width, 0), ch = rdrNum(canvas.height, 0);
-      scale = Math.max(1, Math.floor(Math.min(cw / w, ch / h)));
+      const nw = rdrNum(canvas.width, 0), nh = rdrNum(canvas.height, 0);
+      if (nw !== cw || nh !== ch) {
+        cw = nw; ch = nh;
+        scale = Math.max(1, Math.floor(Math.min(cw / w, ch / h)));
+      }
       return scale;
     },
 
     render(paint, opts) {
       api.resize();
-      const o = (opts && opts.post) ? Object.assign({}, api.post, opts.post) : api.post;
+      const o = opts?.post ?? null;
 
       // 1. scena
       sceneCtx.globalCompositeOperation = 'source-over';
@@ -156,7 +168,7 @@ export function createRenderer(canvas, W, H) {
       outCtx.drawImage(scene, 0, 0);
 
       // 3. bloom (glow a metà risoluzione, bloom additivo)
-      const bloom = rdrClamp01(o.bloom);
+      const bloom = rdrClamp01(postVal(o, 'bloom'));
       if (bloom > 0.001) {
         glowCtx.globalCompositeOperation = 'source-over';
         glowCtx.globalAlpha = 1;
@@ -177,11 +189,12 @@ export function createRenderer(canvas, W, H) {
           glowCtx.drawImage(scratch, 0, -1);
         }
         // soglia: color-burn (vera soglia) o multiply (fallback)
-        const thr = rdrClamp01(o.bloomThreshold);
+        const thr = rdrClamp01(postVal(o, 'bloomThreshold'));
         const gv = Math.round(255 * (1 - thr));
+        if (gv !== lastGv) { lastGv = gv; lastGvStr = `rgb(${gv},${gv},${gv})`; }
         glowCtx.globalCompositeOperation = supportsColorBurn ? 'color-burn' : 'multiply';
         glowCtx.globalAlpha = 1;
-        glowCtx.fillStyle = `rgb(${gv},${gv},${gv})`;
+        glowCtx.fillStyle = lastGvStr;
         glowCtx.fillRect(0, 0, gw, gh);
         // composita il glow su out
         outCtx.globalCompositeOperation = 'lighter';
@@ -192,7 +205,7 @@ export function createRenderer(canvas, W, H) {
       }
 
       // 4. aberrazione cromatica: fantasma rosso a destra, ciano a sinistra
-      const chroma = rdrClamp01(o.chroma);
+      const chroma = rdrClamp01(postVal(o, 'chroma'));
       const dx = Math.round(chroma * 3);
       if (dx > 0) {
         outCtx.globalCompositeOperation = 'lighter';
@@ -210,14 +223,14 @@ export function createRenderer(canvas, W, H) {
       }
 
       // 5. scanline + grana
-      const scanA = rdrClamp01(o.scan);
+      const scanA = rdrClamp01(postVal(o, 'scan'));
       if (scanA > 0.001 && scanPattern) {
         outCtx.globalCompositeOperation = 'source-over';
         outCtx.globalAlpha = scanA;
         outCtx.fillStyle = scanPattern;
         outCtx.fillRect(0, 0, w, h);
       }
-      const grain = rdrClamp01(o.grain);
+      const grain = rdrClamp01(postVal(o, 'grain'));
       if (grain > 0.001 && noisePattern) {
         const gx = Math.floor(rng() * 64), gy = Math.floor(rng() * 64);
         outCtx.globalCompositeOperation = supportsOverlay ? 'overlay' : 'source-over';
@@ -230,7 +243,7 @@ export function createRenderer(canvas, W, H) {
       }
 
       // 6. vignettatura
-      const vig = rdrClamp01(o.vignette);
+      const vig = rdrClamp01(postVal(o, 'vignette'));
       if (vig > 0.001 && vignette) {
         outCtx.globalCompositeOperation = 'source-over';
         outCtx.globalAlpha = vig;
@@ -239,7 +252,7 @@ export function createRenderer(canvas, W, H) {
       }
 
       // 7. glitch: fette orizzontali spostate
-      const glitch = rdrClamp01(o.glitch);
+      const glitch = rdrClamp01(postVal(o, 'glitch'));
       if (glitch > 0.001) {
         tmpCtx.globalCompositeOperation = 'source-over';
         tmpCtx.globalAlpha = 1;
@@ -263,7 +276,7 @@ export function createRenderer(canvas, W, H) {
       }
 
       // 8. flash
-      const flash = rdrClamp01(o.flash);
+      const flash = rdrClamp01(postVal(o, 'flash'));
       if (flash > 0.001) {
         outCtx.globalCompositeOperation = 'lighter';
         outCtx.globalAlpha = flash;
@@ -274,14 +287,15 @@ export function createRenderer(canvas, W, H) {
         outCtx.fillRect(w * 0.3, h * 0.3, w * 0.4, h * 0.4);
       }
 
-      // 9. blit scalato sul canvas visibile
+      // 9. blit scalato sul canvas visibile (usa la cache di resize: qui non
+      // si rileggono canvas.width/height)
       outCtx.globalCompositeOperation = 'source-over';
       outCtx.globalAlpha = 1;
       visibleCtx.globalCompositeOperation = 'source-over';
       visibleCtx.globalAlpha = 1;
       visibleCtx.imageSmoothingEnabled = false;
-      const cw = rdrNum(canvas.width, w * scale), ch = rdrNum(canvas.height, h * scale);
-      visibleCtx.clearRect(0, 0, cw, ch);
+      const bw = cw > 0 ? cw : w * scale, bh = ch > 0 ? ch : h * scale;
+      visibleCtx.clearRect(0, 0, bw, bh);
       visibleCtx.drawImage(out, 0, 0, w, h, 0, 0, w * scale, h * scale);
     },
   };
