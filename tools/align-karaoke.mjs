@@ -51,7 +51,12 @@ for (const [id, w] of Object.entries(words)) {
   out.sort((a, b) => a[0] - b[0]);
   const clean = [];
   for (const e of out) if (!clean.length || clean[clean.length - 1][1] !== e[1]) clean.push(e);
-  karaoke[id] = clean;
+  // tripla [start, end, riga]: end = inizio della riga successiva (o +4s l'ultima)
+  const tri = clean.map((e, i) => {
+    const end = i + 1 < clean.length ? clean[i + 1][0] : e[0] + 4;
+    return [e[0], Math.max(e[0] + 0.6, end), e[1]];
+  });
+  karaoke[id] = tri;
 }
 
 writeFileSync('tools/karaoke.json', JSON.stringify(karaoke, null, 1));

@@ -449,48 +449,117 @@ export function drawMash(ctx, m, W, H) {
 }
 
 // ---------------------------------------------------------------------------
-// LIRICHE KARAOKE — la frase appare quando viene CANTATA (sincronizzata all'audio).
-// `karaoke` = [[secondo, frase], ...]; `pos` = posizione audio in secondi.
-// Mostra la riga attiva (battuta a macchina), con eco della successiva.
+// SKYLINE — strati di silhouette in parallasse: danno profondità e scala alla
+// salita. Un palazzo/pendio alla volta, dal più lontano al più vicino.
+// ---------------------------------------------------------------------------
+export function drawSkyline(ctx, audioId, camY, time, W, H) {
+  const seed = String(audioId || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 97, 7);
+  const layers = [
+    { f: 0.12, col: C.redDeep, base: 0.86, h: 22, step: 26, al: 0.5 },
+    { f: 0.25, col: C.redDeep, base: 0.95, h: 34, step: 34, al: 0.34 },
+    { f: 0.42, col: C.redDark, base: 1.05, h: 46, step: 44, al: 0.2 },
+  ];
+  ctx.save();
+  for (let li = 0; li < layers.length; li++) {
+    const L = layers[li];
+    const baseY = H * L.base - ((camY * L.f) % (H + 80)) + 40;
+    ctx.globalAlpha = L.al;
+    ctx.fillStyle = L.col;
+    // profilo a denti di sega / tetti
+    let i = 0;
+    for (let x = -10; x < W + 10; x += L.step, i++) {
+      const hh = L.h + ((seed + i * 7) % 5) * 3;
+      const ww = L.step - 2;
+      ctx.fillRect(Math.round(x), Math.round(baseY - hh), ww, Math.round(hh + 30));
+      // antenna/cippo
+      if ((seed + i) % 3 === 0) ctx.fillRect(Math.round(x + ww / 2), Math.round(baseY - hh - 5), 1, 6);
+    }
+    ctx.fillRect(0, Math.round(baseY), W, Math.round(H - baseY + 30));
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// LIRICHE KARAOKE — la frase appare quando viene CANTATA; le PAROLE si accendono
+// una a una man mano che la canzone le dice (evidenza progressiva + glow).
+// `karaoke` = [[inizio, fine, frase], ...]; `pos` = posizione audio in secondi.
 // ---------------------------------------------------------------------------
 export function drawKaraoke(ctx, karaoke, pos, time, W, H) {
   if (!karaoke || !karaoke.length) return;
-  const beat = 0.5 + 0.5 * Math.sin(time * 5);
-  ctx.save();
-  ctx.textAlign = 'center';
-  // riga precedente (fantasma)
   let idx = -1;
   for (let i = 0; i < karaoke.length; i++) if (pos >= karaoke[i][0]) idx = i;
   if (idx < 0) idx = 0;
-  const [t0, text] = karaoke[idx];
+  const [t0, t1, text] = karaoke[idx];
   const next = karaoke[idx + 1];
-  // tempo dall'inizio della riga → battitura rapida
-  const since = Math.max(0, pos - t0);
-  const shown = Math.min(text.length, Math.ceil(since * 18) + 1);
-  const size = Math.max(7, Math.min(13, Math.floor((W * 0.9) / Math.max(1, text.length * 0.6))));
+  const size = Math.max(7, Math.min(13, Math.floor((W * 0.92) / Math.max(1, text.length * 0.6))));
+  const cw = size * 0.6;                 // larghezza carattere
+  const totalW = text.length * cw;
+  const x0 = W / 2 - totalW / 2;
   const y = H * 0.36;
+  const k = t1 > t0 ? (pos - t0) / (t1 - t0) : 1;      // 0..1 nella frase
+  const sung = Math.min(text.length, Math.max(0, Math.ceil(k * text.length)));
+  const beat = 0.5 + 0.5 * Math.sin(time * 5);
 
-  // eco della riga precedente in alto
+  ctx.save();
+  ctx.textAlign = 'left';
+  // eco delle righe precedenti (fantasmi in alto)
   for (let i = Math.max(0, idx - 2); i < idx; i++) {
-    const oy = y - (idx - i) * 12;
     ctx.globalAlpha = 0.10 * (i - idx + 3);
-    drawVert(ctx, karaoke[i][1], W / 2, oy, time, 0.5, 7, 0);
+    drawCentered(ctx, karaoke[i][2], W / 2, y - (idx - i) * 12, time, 7);
   }
-  // riga attiva
-  ctx.globalAlpha = 0.45;
+  // banda scura per leggibilità
+  ctx.globalAlpha = 0.5;
   ctx.fillStyle = C.black;
   ctx.fillRect(0, y - size, W, size + 10);
-  ctx.globalAlpha = 0.95;
-  drawVert(ctx, text.slice(0, shown), W / 2, y, time, 0.95, size, 1);
-  // linea che pulsa a tempo
-  const half = (text.length * size * 0.6) / 2;
+  // parola per parola: le cantate sono accese, la corrente pulsa, le future spente
+  ctx.font = size + 'px monospace';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === ' ') continue;
+    const px = x0 + i * cw;
+    const isSung = i < sung;
+    const isCur = i === sung - 1;
+    const jitterY = isSung ? 0 : Math.sin(time * 4 + i * 0.9) * 0.5;
+    // ombra
+    ctx.globalAlpha = 0.9; ctx.fillStyle = C.black;
+    ctx.fillText(ch, px + 1, y + jitterY + 1);
+    if (isSung) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = isCur ? C.white : (i % 6 === 0 ? C.redHot : C.red);
+      ctx.fillText(ch, px, y + jitterY);
+    } else {
+      ctx.globalAlpha = 0.35;                       // non ancora cantata: spenta
+      ctx.fillStyle = C.redDark;
+      ctx.fillText(ch, px, y + jitterY);
+    }
+  }
+  // cursore luminoso sotto la sillaba corrente
+  if (sung > 0 && sung <= text.length) {
+    const cx = x0 + sung * cw;
+    ctx.globalAlpha = 0.5 + 0.5 * beat;
+    ctx.fillStyle = C.redHot;
+    ctx.fillRect(Math.round(cx), y + 3, 1, 4);
+  }
+  // barra di avanzamento della frase
   ctx.globalAlpha = 0.35 + 0.35 * beat;
   ctx.fillStyle = C.red;
-  ctx.fillRect(W / 2 - half, y + 6, half * 2, 1);
-  // prossima riga, in eco in basso
-  if (next) { ctx.globalAlpha = 0.14; drawVert(ctx, next[1], W / 2, y + 26, time, 0.6, 7, 0); }
+  ctx.fillRect(x0, y + 7, totalW * Math.min(1, k), 1);
+  // prossima riga in eco
+  if (next) { ctx.globalAlpha = 0.13; drawCentered(ctx, next[2], W / 2, y + 24, time, 7); }
   ctx.restore();
   ctx.textAlign = 'left';
+}
+
+// Testo centrato con tremolio (per le righe fantasma).
+function drawCentered(ctx, text, cx, cy, time, size) {
+  const cw = size * 0.6;
+  let x = cx - (text.length * cw) / 2;
+  ctx.font = size + 'px monospace';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch !== ' ') ctx.fillText(ch, x, cy + Math.sin(time * 4 + i * 0.9) * 0.5);
+    x += cw;
+  }
 }
 
 // ---------------------------------------------------------------------------
