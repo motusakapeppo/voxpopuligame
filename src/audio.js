@@ -41,5 +41,8 @@ export function createAudio({ storage, loadClip }) {
     },
     stop() { if (audioEl) { audioEl.pause(); audioEl = null; current = null; } },
     currentTrack: () => current,
+    // posizione corrente in secondi (per il karaoke). 0 se non in riproduzione.
+    position() { return audioEl && Number.isFinite(audioEl.currentTime) ? audioEl.currentTime : 0; },
+    duration() { return audioEl && Number.isFinite(audioEl.duration) ? audioEl.duration : 0; },
   };
 }

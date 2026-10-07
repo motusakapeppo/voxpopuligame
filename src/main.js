@@ -8,11 +8,13 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash } from './art.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow } from './art.js';
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup } from './threats.js';
 import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone } from './mash.js';
+import { createJuice, impact, addFlow, breakFlow, setBpm, stepJuice, shakeOffsetJ, punchZoom, flowRatio, bpmFor } from './juice.js';
+import { KARAOKE } from './karaoke.js';
 import { createRenderer } from './renderer.js';
 import { drawThemeBack, drawThemeFront } from './themes.js';
 import { createFx, emitFx, stepFx, drawFx } from './fx.js';
@@ -60,6 +62,7 @@ let loyalty = 0;
 let action = 'idle';
 let actionT = 0;
 let mash = createMash();
+let juice = createJuice();
 
 const trackLabel = document.getElementById('track-label');
 const btnAudio = document.getElementById('btn-audio');
@@ -101,6 +104,7 @@ function loadGirone(index) {
     return { kind: p.kind, taken: false, phase: i, r, c: centerCol(climb, r) };
   });
   audio.play(g.audioId);   // la traccia del girone suona mentre lo giochi
+  setBpm(juice, bpmFor(g.audioId));
   return {
     girone: g, modStates, climb,
     bodies,
@@ -109,6 +113,7 @@ function loadGirone(index) {
     threats: createThreatState(),
     pfx: createFx((index + 1) * 7919),   // particelle cinematografiche (deterministiche)
     events: [], fx: createEffects(), transition: null, active: null, threatMsg: '',
+    chapter: 1.4,                        // chapter card del brano
   };
 }
 
@@ -201,7 +206,14 @@ function updatePrompt() {
 
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
-  if (!SKIP.has('lyrics')) drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
+  // karaoke sincronizzato all'audio (se disponibile), altrimenti liriche a tempo interno
+  const pos = audio.position();
+  if (!SKIP.has('lyrics')) {
+    if (KARAOKE[lv.girone.audioId] && audio.currentTrack() === lv.girone.audioId && pos > 0.05)
+      drawKaraoke(ctx, KARAOKE[lv.girone.audioId], pos, time, VIEW_W, VIEW_H);
+    else
+      drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
+  }
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
@@ -210,7 +222,26 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   drawInscription(ctx, lv.girone.inscription.text, VIEW_W);
   drawThreatMsg(ctx, lv.threatMsg, VIEW_W, VIEW_H);
+  drawFlow(ctx, flowRatio(juice), juice.beat, VIEW_W, VIEW_H);
 }
+
+// Post-processing con JUICE: battito a tempo, flow, flash/shake, vignettatura.
+function playingPost(dt, glitch) {
+  const post = renderer.post;
+  const beat = juice.beat;
+  const flow = flowRatio(juice);
+  const pulse = 1 + beat * (0.10 + flow * 0.35);   // la scena "respira" a tempo
+  post.bloom = 0.30 * pulse + flow * 0.1;
+  post.bloomThreshold = 0.6 - beat * 0.08 - flow * 0.1;
+  post.chroma = 0.2 + beat * 0.12 + flow * 0.15;
+  post.scan = 0.14 + beat * 0.05;
+  post.grain = 0.06 + flow * 0.05;
+  post.vignette = 0.40 - beat * 0.06;
+  post.flash = juflash();
+  post.glitch = Math.max(glitch || 0, juice.shake > 6 ? 0.5 : 0) * 0.9;
+  return post;
+}
+function juflash() { return Math.max(0, juice.flash); }
 
 // Parametri di post-processing per fase. Imposta la base e fa decadere
 // glitch/flash del frame precedente; gli eventi del frame poi li rinforzano.
@@ -228,8 +259,11 @@ function applyPost(kind) {
 
 function loop() {
   requestAnimationFrame(loop);
-  time += 0.016;
-  if (actionT > 0) { actionT -= 0.016; if (actionT <= 0) action = 'idle'; }
+  const dt = 0.016;
+  stepJuice(juice, dt);
+  const sdt = juice.hitstop > 0 ? 0 : dt;   // hit-stop: congela la simulazione
+  time += dt;
+  if (actionT > 0) { actionT -= dt; if (actionT <= 0) action = 'idle'; }
 
   if (state.phase === 'title') {
     showCtaButton(false); setPrompt('');
@@ -274,8 +308,7 @@ function loop() {
     const k = Math.min(1, level.transition.t / 1.2);
     const burst = (1 - k) * (1 - k);
     const tpost = Object.assign(applyPost('unlocked'), { glitch: 1.1 * burst, flash: 0.7 * burst, chroma: 0.9 * burst });
-    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });
-    if (level.transition.done) {
+    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });    if (level.transition.done) {
       state = advance(state, 'audioDone');
       if (state.phase === 'playing') level = loadGirone(state.gironeIndex);
       else level.transition = null;
@@ -285,32 +318,40 @@ function loop() {
 
   // --- playing: arrampicata ---
   level.events.length = 0;
+  if (level.chapter > 0) level.chapter -= dt;
   const NONE = { left: false, right: false, up: false, down: false };
   // Il mash blocca tutto: stai lottando.
   if (mash.active) {
-    stepMash(mash, 0.016);
+    stepMash(mash, sdt);
     const mp = climbPos(cl);
     if (mash.won) {
       // hai vinto: butti giù l'avversario e sali di 3
       moveHands(cl, +3); loyalty += 1;
       emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 12, spread: 4 });
-      renderer.post.flash = 0.5;
+      impact(juice, 1.4, 0, -1);
       if (level.active) { level.active.resolved = true; level.active.verb = 'spingi'; }
       mash = createMash();
     } else if (mash.lost) {
       // perso: scendi di 4
       moveHands(cl, -4);
       emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 8 });
-      renderer.post.glitch = 0.9; renderer.post.flash = 0.5;
+      impact(juice, 1.2, 0, 1); breakFlow(juice);
       if (level.active) { level.active.resolved = true; level.active.verb = 'tendi'; }
       mash = createMash();
     }
-    stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
+    stepFx(level.pfx, dt, cameraY, { H: VIEW_H });
     const pc = climbPos(cl);
     cameraY = Math.max(0, Math.min(Math.max(0, cl.rows[0] - VIEW_H + 40), pc.by - VIEW_H * 0.55));
     updatePrompt();
     if (cl.reached && state.phase === 'playing') state = advance(state, 'reachedTop');
-    renderer.render(() => { drawWorld(level, cameraY); drawMash(ctx, mash, VIEW_W, VIEW_H, time); }, { post: applyPost('playing') });
+    const msh = shakeOffsetJ(juice, time);
+    renderer.render(() => {
+      ctx.save(); ctx.translate(msh.x, msh.y);
+      drawWorld(level, cameraY);
+      ctx.restore();
+      drawChapterCard(ctx, g.title, level.chapter, VIEW_W, VIEW_H);
+      drawMash(ctx, mash, VIEW_W, VIEW_H, time);
+    }, { post: playingPost(dt, 0) });
     return;
   }
 
@@ -345,20 +386,24 @@ function loop() {
     }
   }
   const acts = (level.active && !isAutoKind(level.active.kind)) ? NONE : input.climbActions();
-  if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, 0.016);
+  if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, dt);
 
   // scintille quando le mani si muovono
   const prevL = { c: cl.lhA.c, r: cl.lhA.r }, prevR = { c: cl.rhA.c, r: cl.rhA.r };
-  stepClimb(cl, acts, 0.016);
+  const rowBefore = Math.max(cl.lh.r, cl.rh.r);
+  stepClimb(cl, acts, sdt);
   const moved = Math.abs(cl.lhA.c - prevL.c) + Math.abs(cl.lhA.r - prevL.r) +
                 Math.abs(cl.rhA.c - prevR.c) + Math.abs(cl.rhA.r - prevR.r);
   if (moved > 0.02) {
     const p0 = climbPos(cl);
     emitFx(level.pfx, 'spark', p0.lx, p0.ly + cameraY, { count: 1, spread: 2 });
   }
+  // FLOW: salire di fila lo carica; l'impatto lo azzera
+  if (Math.max(cl.lh.r, cl.rh.r) > rowBefore) addFlow(juice, 0.06);
+  else if (moved < 0.001) addFlow(juice, -dt * 0.5);
 
   // ostacoli/aiuti legati alla canzone
-  const msg = stepThreats(g, cl, level.threats, 0.016, 0);
+  const msg = stepThreats(g, cl, level.threats, sdt, 0);
   if (msg && msg !== level.threatMsg) {
     const m = msg.toLowerCase();
     const mp = climbPos(cl);
@@ -366,7 +411,8 @@ function loop() {
     else if (/tuono|tempo/.test(m)) { level.events.push('quake'); emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 6 }); }
     else if (/detrito|cranio|edera|sonno/.test(m)) { level.events.push('blade'); emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 5 }); }
     else { level.events.push('fake'); emitFx(level.pfx, 'ash', mp.tx, mp.ty + cameraY, { count: 4 }); }
-    renderer.post.glitch = Math.max(renderer.post.glitch, 0.5);
+    impact(juice, 0.8, 0, 1);
+    breakFlow(juice);
   }
   level.threatMsg = msg;
 
@@ -381,7 +427,7 @@ function loop() {
         level.threats.lastMsg = m; level.threats.msgT = 2; level.events.push('warm');
         const mp = climbPos(cl);
         emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 8, spread: 3 });
-        renderer.post.flash = 0.35;
+        impact(juice, 0.9, 0, -1);
       }
     }
   }
@@ -391,22 +437,21 @@ function loop() {
   const fakeP = { x: pos.tx - 4, y: pos.ty, w: 8, h: 12, vx: 0, vy: 0, onGround: true };
   const mctx = { player: fakeP, world: { bodies: level.bodies, gravity: 0 }, time, events: level.events };
   for (let i = 0; i < g.modifiers.length; i++)
-    applyModifier(g.modifiers[i], mctx, 0.016, level.modStates[i]);
+    applyModifier(g.modifiers[i], mctx, sdt, level.modStates[i]);
 
   spawnFromEvents(level.fx, level.events, cameraY, pos.tx);
-  stepEffects(level.fx, 0.016, cameraY, VIEW_H);
-  stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
-  const sh = shakeOffset(level.fx, time);
+  stepEffects(level.fx, sdt, cameraY, VIEW_H);
+  stepFx(level.pfx, dt, cameraY, { H: VIEW_H });
 
   const maxCam = Math.max(0, cl.rows[0] - VIEW_H + 40);
   cameraY = Math.max(0, Math.min(maxCam, pos.ty - VIEW_H * 0.55));
 
   // cedimento di un corpo debole: cade da solo e ti trascina giù
   if (cl.collapseEvent) {
-    const ev = cl.collapseEvent; cl.collapseEvent = null;
+    cl.collapseEvent = null;
     emitFx(level.pfx, 'ash', pos.tx, pos.ty + cameraY, { count: 10, spread: 3 });
     emitFx(level.pfx, 'blood', pos.tx, pos.ty + cameraY, { count: 4 });
-    renderer.post.glitch = 0.8; renderer.post.flash = 0.25;
+    impact(juice, 1.1, 0, 1); breakFlow(juice);
     level.events.push('quake');
   }
 
@@ -415,20 +460,27 @@ function loop() {
 
   if (cl.reached && state.phase === 'playing') {
     emitFx(level.pfx, 'shock', pos.tx, pos.ty + cameraY, { count: 1 });
-    renderer.post.flash = 0.6;
+    impact(juice, 1.6, 0, -1);
     state = advance(state, 'reachedTop');
   }
 
+  // camera: scossa (fx classici) + scossa juice + punch zoom
+  const sh = shakeOffset(level.fx, time);
+  const jsh = shakeOffsetJ(juice, time);
+  const z = punchZoom(juice);
   renderer.render(() => {
-    ctx.save(); ctx.translate(sh.x, sh.y);
+    ctx.save();
+    ctx.translate(VIEW_W / 2, VIEW_H / 2); ctx.scale(z, z); ctx.translate(-VIEW_W / 2, -VIEW_H / 2);
+    ctx.translate(sh.x + jsh.x, sh.y + jsh.y);
     drawWorld(level, cameraY);
     ctx.restore();
     if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+    drawChapterCard(ctx, g.title, level.chapter, VIEW_W, VIEW_H);
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
     ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
     drawMash(ctx, mash, VIEW_W, VIEW_H);
-  }, { post: applyPost('playing') });
+  }, { post: playingPost(dt, 0) });
 }
 
 // --- debug: ?g=NN ---
@@ -443,7 +495,7 @@ if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = idx;
   level = loadGirone(idx);
 }
-window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, doVerb };
+window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb };
 
 loop();
 

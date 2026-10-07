@@ -635,6 +635,112 @@ function mashRatio(m) {
 function mashDone(m) { return m.won || m.lost; }
 
 
+// --- juice.js ---
+// ============================================================================
+// JUICE — il "game feel". Puro e deterministico, nessun DOM.
+// Raccoglie i sistemi che fanno sembrare un gioco "costoso":
+//   - HIT-STOP: micro-congelamento all'impatto (i colpi pesano)
+//   - PUNCH:  la camera "spinge" dentro e torna con una molla
+//   - SHAKE:  scossa direzionale con decadimento
+//   - FLASH:  lampo breve
+//   - BEAT:   pulsazione a tempo (BPM) per sincronizzare i visual alla musica
+//   - FLOW:   barra che sale salendo in ritmo e intensifica tutto
+// ============================================================================
+
+const FLOW_MAX = 1;
+const FLOW_UP = 0.45;      // di quanto sale il flow al secondo salendo
+const FLOW_DOWN = 0.9;     // di quanto cala quando sei fermo/colpito
+function createJuice() {
+  return {
+    hitstop: 0,                       // secondi di congelamento residui
+    punch: 0, punchVel: 0,            // zoom della camera
+    shake: 0, dirX: 0, dirY: 0,       // scossa
+    flash: 0,                         // lampo
+    bpm: 100, beatPhase: 0, beat: 0,  // pulsazione a tempo
+    flow: 0,                          // 0..1
+    combo: 0,                         // scalata continua
+  };
+}
+
+// Un impatto: congela, spinge la camera, scuote, lampeggia.
+function impact(j, power = 1, dx = 0, dy = 0) {
+  const p = Number.isFinite(power) ? power : 1;
+  j.hitstop = Math.max(j.hitstop, Math.min(0.11, 0.045 * p));
+  punch(j, Math.min(0.14, 0.06 * p));
+  j.shake = Math.max(j.shake, Math.min(10, 4 * p));
+  j.dirX = Number.isFinite(dx) ? dx : 0;
+  j.dirY = Number.isFinite(dy) ? dy : 0;
+  j.flash = Math.max(j.flash, Math.min(0.7, 0.3 * p));
+}
+function punch(j, amt) {
+  const a = Number.isFinite(amt) ? amt : 0;
+  j.punch = Math.min(0.16, j.punch + a);
+}
+function addFlow(j, amt) {
+  const a = Number.isFinite(amt) ? amt : 0;
+  j.flow = Math.max(0, Math.min(FLOW_MAX, j.flow + a));
+}
+function breakFlow(j) { j.flow = 0; j.combo = 0; }
+function setBpm(j, bpm) { j.bpm = Number.isFinite(bpm) && bpm > 0 ? bpm : 100; }
+
+// Avanza tutti i sistemi. Ritorna l'ampiezza del "battito" corrente (0..1).
+function stepJuice(j, dt) {
+  const d = Number.isFinite(dt) ? dt : 0.016;
+  // hit-stop
+  j.hitstop = Math.max(0, j.hitstop - d);
+  // punch: molla critica smorzata verso 0
+  j.punchVel += (-j.punch) * 140 * d;
+  j.punchVel *= Math.pow(0.015, d);
+  j.punch += j.punchVel * d;
+  if (Math.abs(j.punch) < 0.0005 && Math.abs(j.punchVel) < 0.0005) { j.punch = 0; j.punchVel = 0; }
+  // shake e flash decadono
+  j.shake = Math.max(0, j.shake - d * 22);
+  j.flash = Math.max(0, j.flash - d * 5.5);
+  // battito: fase da BPM; l'ampiezza è un impulso che decade dentro il battito
+  j.beatPhase += d * (j.bpm / 60);
+  const frac = j.beatPhase - Math.floor(j.beatPhase);
+  j.beat = Math.pow(1 - frac, 3);   // 1 all'inizio del battito, 0 alla fine
+  return j.beat;
+}
+
+// Offset di scossa direzionale (per la camera). Deterministico sul tempo.
+function shakeOffsetJ(j, time) {
+  if (j.shake <= 0.01) return { x: 0, y: 0 };
+  const t = Number.isFinite(time) ? time : 0;
+  const amp = j.shake;
+  const dx = j.dirX || 1, dy = j.dirY || 0;
+  const n = Math.sin(t * 63) * Math.cos(t * 41);
+  const n2 = Math.sin(t * 47 + 2) * Math.cos(t * 57);
+  return { x: (dx * 0.6 + n * 0.4) * amp, y: (dy * 0.6 + n2 * 0.4) * amp };
+}
+
+// Fattore di zoom della camera (1 = neutro).
+function punchZoom(j) { return 1 + Math.max(0, j.punch) * 0.6; }
+function flowRatio(j) {
+  const f = Number.isFinite(j.flow) ? j.flow : 0;
+  return f < 0 ? 0 : f > 1 ? 1 : f;
+}
+
+// BPM per traccia: guida la pulsazione dei visual.
+const BPM_BY_TRACK = {
+  '01-intro': 90, '02-vento': 100, '03-tuoni': 96, '04-baghdad': 112,
+  '05-hosonno': 84, '06-primoposto': 122, '07-tictac': 132, '08-tuttofinto': 106,
+  '09-edera': 100, '10-scendi': 116, '11-lafinedelmondo': 80,
+  '12-maranatha': 92, '13-outro': 70,
+};
+function bpmFor(audioId) {
+  const b = BPM_BY_TRACK[audioId];
+  return Number.isFinite(b) ? b : 100;
+}
+
+
+
+// --- karaoke.js ---
+// Karaoke: [secondo, frase]. La frase appare quando viene cantata.
+// Tempi da whisper (faster-whisper) + testo ufficiale allineato (tools/align-karaoke.mjs).
+const KARAOKE = {"01-intro":[[0,"E scopro ogni giorno che passa un pezzetto di me che si stacca dal cranio ah"],[3.76,"Scriverò versi finché non mi prosciugheranno del tutto anche l'anima"],[7.5,"La notte è scura ed espia dal peccato"],[11.52,"Ma è più sicura per chi c'è già stato,"],[15,"Danzo sul ghiaccio come Salomè"]],"02-vento":[[0,"E certo che mi sfido"],[5.1,"Che ogni giorno c'ho in mente"],[11.32,"L'asfalto che respiro"],[16.48,"Ho imparato che il destino"]],"03-tuoni":[[7.25,"Il mondo ormai non so più che faccia abbia"],[9.37,"Riparami dal sole dei tuoi occhi rosso fiamma"],[16.59,"E i visi tristi che"],[19.87,"Mentre li fissi beh"],[21.65,"Provi dolori che poi quando li realizzi bang"]],"04-baghdad":[[0,"Siamo in un incubo, ti giuro"],[4.3,"Io ti parlo, tu stai zitto"],[8.4,"O ti uccido"],[11.22,"Sento voci dentro ai muri, che film cupo"]],"05-hosonno":[[0,"Oggi vedo il cielo dentro il mare"],[3.4,"Eppure gli occhi"],[6.8,"Li stropiccio finché fanno male"],[10.2,"E porgi"],[13.6,"Sempre l'altra guancia e taci"],[17,"Dicon tutti"],[20.4,"Però son sicuro che oggi"],[23.8,"Non mi va"]],"06-primoposto":[[1.33,"Voglio stare con te in tutti i sogni che farò questa notte"],[4.09,"Il cuore batte, sento solo le botte, le botte, le botte, sì,"],[7.47,"E però voglio stare con te con le coperte che sembrano più corte"],[11.41,"Perché ti muovi come fossi alle giostre, alle giostre, alle giostre"],[15.45,"Ho fatto il primo posto ad una gara"],[18.43,"E vinceva chi faceva più cazzate nella vita, quindi ho vinto io"]],"07-tictac":[[0,"Un ragazzo"],[1.62,"Un uomo piccolo, immaturo, non sa"],[4.24,"Proprio un cazzo"],[6.18,"Che ci penso"],[8.48,"Che l'affitto lo pago da solo e ora a stento ci riesco"],[10.44,"Non me la sento"],[12.72,"E dimmi come fai"],[14.26,"A giocare"],[15.62,"Perdi il tempo che invece non ho"],[18.62,"Si però dimmi come posso"]],"08-tuttofinto":[[0,"Il sipario rosso si alzerà"],[4.62,"Di un pubblico che in verità"],[7.44,"Non immagina neanche che cosa vedrà lì"],[10.94,"In penombra quasi si scorgono"],[14.46,"Ma è tutto finto"],[18.66,"Perciò sta' zitto"]],"09-edera":[[0.56,"Sai, quasi quasi"],[5.63,"Ma la voce che ho in testa non tace"],[8.47,"Neanche se resetterò l'algoritmo"],[10.53,"Volta pagina"],[13.07,"La fai facile"],[15.03,"Non è un genio chi è solo ed immagina"],[17.19,"Sono fragile"],[19.01,"Come ogni vita caduta dall'aldilà"],[20.77,"Ecco il fondale"]],"10-scendi":[[0,"Ma lo vogliono fermare"],[3.82,"E marciano da truppe"],[11.39,"Puntano le dita al cielo"]],"11-lafinedelmondo":[[0,"Ho visto il male come un mare che travolge gente"],[6.16,"E adesso tutto il mondo urla al cielo e chiede pietà"],[11.82,"È la fine del mondo"],[14.62,"Sarà la fine di sto mondo ma ce ne son tre"],[17.36,"La profezia ha parlato chiaro ma che ne sei te"],[19.76,"Solo coloro che conoscono il segreto per durare"]],"12-maranatha":[[0,"Sai che faccio?"],[2.8,"Fosse un disco"],[4.8,"Ci sono vite"],[6.6,"Spezzate da uno stato che le ignora, ma"],[9.22,"A vedere il mondo come crollerà"],[11.88,"Io sfuggirò al destino perché son convinto che"],[13.96,"Il tuo destino lo decidi te"],[16.3,"Mi imbucherò al mattino"],[18.16,"In mezzo ad altre lettere"],[20.16,"Soltanto per venire lì da te"]],"13-outro":[[0,"Lei non voleva farti arrabbiare, chiami tutte puttane come se piaccia"],[3.74,"Vedo uomini piccoli tipo, chi porta ancora il razzismo nel tifo"],[7.44,"Chi nel suo ufficio tiene un busto di Benito, capito?"],[11.06,"Eh sì sì sì sì voglio scendere in piazza"],[14.62,"Voglio un cerchio attorno a me fatto di donne"],[18.38,"E dimmi com'è"]]};
+
+
 // --- modifiers.js ---
 const EVENTS = ['quake','blade','dim','push','slip','fake'];
 function createModState(mod) {
@@ -2367,6 +2473,9 @@ function createAudio({ storage, loadClip }) {
     },
     stop() { if (audioEl) { audioEl.pause(); audioEl = null; current = null; } },
     currentTrack: () => current,
+    // posizione corrente in secondi (per il karaoke). 0 se non in riproduzione.
+    position() { return audioEl && Number.isFinite(audioEl.currentTime) ? audioEl.currentTime : 0; },
+    duration() { return audioEl && Number.isFinite(audioEl.duration) ? audioEl.duration : 0; },
   };
 }
 
@@ -3264,6 +3373,100 @@ function drawEncounterFlourish(ctx, kind, x, y, time, isActive) {
 }
 
 // ---------------------------------------------------------------------------
+// LIRICHE KARAOKE — la frase appare quando viene CANTATA (sincronizzata all'audio).
+// `karaoke` = [[secondo, frase], ...]; `pos` = posizione audio in secondi.
+// Mostra la riga attiva (battuta a macchina), con eco della successiva.
+// ---------------------------------------------------------------------------function drawKaraoke(ctx, karaoke, pos, time, W, H) {
+  if (!karaoke || !karaoke.length) return;
+  const beat = 0.5 + 0.5 * Math.sin(time * 5);
+  ctx.save();
+  ctx.textAlign = 'center';
+  // riga precedente (fantasma)
+  let idx = -1;
+  for (let i = 0; i < karaoke.length; i++) if (pos >= karaoke[i][0]) idx = i;
+  if (idx < 0) idx = 0;
+  const [t0, text] = karaoke[idx];
+  const next = karaoke[idx + 1];
+  // tempo dall'inizio della riga → battitura rapida
+  const since = Math.max(0, pos - t0);
+  const shown = Math.min(text.length, Math.ceil(since * 18) + 1);
+  const size = Math.max(7, Math.min(13, Math.floor((W * 0.9) / Math.max(1, text.length * 0.6))));
+  const y = H * 0.36;
+
+  // eco della riga precedente in alto
+  for (let i = Math.max(0, idx - 2); i < idx; i++) {
+    const oy = y - (idx - i) * 12;
+    ctx.globalAlpha = 0.10 * (i - idx + 3);
+    drawVert(ctx, karaoke[i][1], W / 2, oy, time, 0.5, 7, 0);
+  }
+  // riga attiva
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, y - size, W, size + 10);
+  ctx.globalAlpha = 0.95;
+  drawVert(ctx, text.slice(0, shown), W / 2, y, time, 0.95, size, 1);
+  // linea che pulsa a tempo
+  const half = (text.length * size * 0.6) / 2;
+  ctx.globalAlpha = 0.35 + 0.35 * beat;
+  ctx.fillStyle = C.red;
+  ctx.fillRect(W / 2 - half, y + 6, half * 2, 1);
+  // prossima riga, in eco in basso
+  if (next) { ctx.globalAlpha = 0.14; drawVert(ctx, next[1], W / 2, y + 26, time, 0.6, 7, 0); }
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------
+// CHAPTER CARD — titolo del brano che "sbatte" dentro all'inizio del girone.
+// ---------------------------------------------------------------------------function drawChapterCard(ctx, title, k, W, H) {
+  if (k <= 0) return;
+  const ease = 1 - Math.pow(1 - Math.min(1, k * 2), 3);   // entra rapido
+  const slide = (1 - ease) * 30;
+  ctx.save();
+  // banda scura diagonale
+  ctx.globalAlpha = 0.7 * Math.min(1, k * 3);
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, H * 0.42, W, 30);
+  ctx.globalAlpha = 0.5 * Math.min(1, k * 3);
+  ctx.fillStyle = C.redDeep;
+  ctx.fillRect(0, H * 0.42, W, 1);
+  ctx.fillRect(0, H * 0.42 + 29, W, 1);
+  // titolo
+  const size = Math.max(11, Math.min(22, Math.floor((W * 0.9) / Math.max(1, title.length * 0.62))));
+  ctx.font = size + 'px monospace';
+  ctx.textAlign = 'center';
+  const tw = title.length * size * 0.62;
+  ctx.globalAlpha = Math.min(1, k * 2.5) * 0.8;
+  ctx.fillStyle = C.black; ctx.fillText(title, W / 2 + 1 - slide, H * 0.42 + 21 + 1);
+  ctx.globalAlpha = Math.min(1, k * 2.5);
+  ctx.fillStyle = C.redHot; ctx.fillText(title, W / 2 - slide, H * 0.42 + 21);
+  // freccia/dettaglio
+  ctx.globalAlpha = Math.min(1, k * 2) * 0.6;
+  ctx.fillStyle = C.red;
+  ctx.fillRect(W / 2 - tw / 2 - slide, H * 0.42 + 25, tw, 1);
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------
+// FLOW METER — barra che sale scalando in ritmo (intensifica i visual).
+// ---------------------------------------------------------------------------function drawFlow(ctx, ratio, beat, W, H) {
+  if (ratio <= 0.01) return;
+  const bw = 60, bh = 3, bx = W / 2 - bw / 2, by = H - 10;
+  ctx.save();
+  ctx.globalAlpha = 0.4 + 0.4 * beat;
+  ctx.fillStyle = C.black; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+  ctx.fillStyle = ratio > 0.66 ? C.redHot : C.red;
+  ctx.fillRect(bx, by, Math.round(bw * ratio), bh);
+  if (ratio > 0.66) {
+    ctx.globalAlpha = 0.6 * beat;
+    ctx.fillStyle = C.white;
+    ctx.fillRect(bx + Math.round(bw * ratio) - 1, by - 1, 1, bh + 2);
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
 // ISCRIZIONE
 // ---------------------------------------------------------------------------function drawInscription(ctx, text, W) {
   ctx.font = '7px monospace';
@@ -3354,7 +3557,7 @@ function advance(state, event) {
 
 
 
-
+
 
 const canvas = document.getElementById('game');
 let ctx = canvas.getContext('2d');   // riassegnato al contesto offscreen del renderer
@@ -3399,6 +3602,7 @@ let loyalty = 0;
 let action = 'idle';
 let actionT = 0;
 let mash = createMash();
+let juice = createJuice();
 
 const trackLabel = document.getElementById('track-label');
 const btnAudio = document.getElementById('btn-audio');
@@ -3440,6 +3644,7 @@ function loadGirone(index) {
     return { kind: p.kind, taken: false, phase: i, r, c: centerCol(climb, r) };
   });
   audio.play(g.audioId);   // la traccia del girone suona mentre lo giochi
+  setBpm(juice, bpmFor(g.audioId));
   return {
     girone: g, modStates, climb,
     bodies,
@@ -3448,6 +3653,7 @@ function loadGirone(index) {
     threats: createThreatState(),
     pfx: createFx((index + 1) * 7919),   // particelle cinematografiche (deterministiche)
     events: [], fx: createEffects(), transition: null, active: null, threatMsg: '',
+    chapter: 1.4,                        // chapter card del brano
   };
 }
 
@@ -3540,7 +3746,14 @@ function updatePrompt() {
 
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
-  if (!SKIP.has('lyrics')) drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
+  // karaoke sincronizzato all'audio (se disponibile), altrimenti liriche a tempo interno
+  const pos = audio.position();
+  if (!SKIP.has('lyrics')) {
+    if (KARAOKE[lv.girone.audioId] && audio.currentTrack() === lv.girone.audioId && pos > 0.05)
+      drawKaraoke(ctx, KARAOKE[lv.girone.audioId], pos, time, VIEW_W, VIEW_H);
+    else
+      drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
+  }
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
@@ -3549,7 +3762,26 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   drawInscription(ctx, lv.girone.inscription.text, VIEW_W);
   drawThreatMsg(ctx, lv.threatMsg, VIEW_W, VIEW_H);
+  drawFlow(ctx, flowRatio(juice), juice.beat, VIEW_W, VIEW_H);
 }
+
+// Post-processing con JUICE: battito a tempo, flow, flash/shake, vignettatura.
+function playingPost(dt, glitch) {
+  const post = renderer.post;
+  const beat = juice.beat;
+  const flow = flowRatio(juice);
+  const pulse = 1 + beat * (0.10 + flow * 0.35);   // la scena "respira" a tempo
+  post.bloom = 0.30 * pulse + flow * 0.1;
+  post.bloomThreshold = 0.6 - beat * 0.08 - flow * 0.1;
+  post.chroma = 0.2 + beat * 0.12 + flow * 0.15;
+  post.scan = 0.14 + beat * 0.05;
+  post.grain = 0.06 + flow * 0.05;
+  post.vignette = 0.40 - beat * 0.06;
+  post.flash = juflash();
+  post.glitch = Math.max(glitch || 0, juice.shake > 6 ? 0.5 : 0) * 0.9;
+  return post;
+}
+function juflash() { return Math.max(0, juice.flash); }
 
 // Parametri di post-processing per fase. Imposta la base e fa decadere
 // glitch/flash del frame precedente; gli eventi del frame poi li rinforzano.
@@ -3567,8 +3799,11 @@ function applyPost(kind) {
 
 function loop() {
   requestAnimationFrame(loop);
-  time += 0.016;
-  if (actionT > 0) { actionT -= 0.016; if (actionT <= 0) action = 'idle'; }
+  const dt = 0.016;
+  stepJuice(juice, dt);
+  const sdt = juice.hitstop > 0 ? 0 : dt;   // hit-stop: congela la simulazione
+  time += dt;
+  if (actionT > 0) { actionT -= dt; if (actionT <= 0) action = 'idle'; }
 
   if (state.phase === 'title') {
     showCtaButton(false); setPrompt('');
@@ -3613,8 +3848,7 @@ function loop() {
     const k = Math.min(1, level.transition.t / 1.2);
     const burst = (1 - k) * (1 - k);
     const tpost = Object.assign(applyPost('unlocked'), { glitch: 1.1 * burst, flash: 0.7 * burst, chroma: 0.9 * burst });
-    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });
-    if (level.transition.done) {
+    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });    if (level.transition.done) {
       state = advance(state, 'audioDone');
       if (state.phase === 'playing') level = loadGirone(state.gironeIndex);
       else level.transition = null;
@@ -3624,32 +3858,40 @@ function loop() {
 
   // --- playing: arrampicata ---
   level.events.length = 0;
+  if (level.chapter > 0) level.chapter -= dt;
   const NONE = { left: false, right: false, up: false, down: false };
   // Il mash blocca tutto: stai lottando.
   if (mash.active) {
-    stepMash(mash, 0.016);
+    stepMash(mash, sdt);
     const mp = climbPos(cl);
     if (mash.won) {
       // hai vinto: butti giù l'avversario e sali di 3
       moveHands(cl, +3); loyalty += 1;
       emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 12, spread: 4 });
-      renderer.post.flash = 0.5;
+      impact(juice, 1.4, 0, -1);
       if (level.active) { level.active.resolved = true; level.active.verb = 'spingi'; }
       mash = createMash();
     } else if (mash.lost) {
       // perso: scendi di 4
       moveHands(cl, -4);
       emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 8 });
-      renderer.post.glitch = 0.9; renderer.post.flash = 0.5;
+      impact(juice, 1.2, 0, 1); breakFlow(juice);
       if (level.active) { level.active.resolved = true; level.active.verb = 'tendi'; }
       mash = createMash();
     }
-    stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
+    stepFx(level.pfx, dt, cameraY, { H: VIEW_H });
     const pc = climbPos(cl);
     cameraY = Math.max(0, Math.min(Math.max(0, cl.rows[0] - VIEW_H + 40), pc.by - VIEW_H * 0.55));
     updatePrompt();
     if (cl.reached && state.phase === 'playing') state = advance(state, 'reachedTop');
-    renderer.render(() => { drawWorld(level, cameraY); drawMash(ctx, mash, VIEW_W, VIEW_H, time); }, { post: applyPost('playing') });
+    const msh = shakeOffsetJ(juice, time);
+    renderer.render(() => {
+      ctx.save(); ctx.translate(msh.x, msh.y);
+      drawWorld(level, cameraY);
+      ctx.restore();
+      drawChapterCard(ctx, g.title, level.chapter, VIEW_W, VIEW_H);
+      drawMash(ctx, mash, VIEW_W, VIEW_H, time);
+    }, { post: playingPost(dt, 0) });
     return;
   }
 
@@ -3684,20 +3926,24 @@ function loop() {
     }
   }
   const acts = (level.active && !isAutoKind(level.active.kind)) ? NONE : input.climbActions();
-  if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, 0.016);
+  if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, dt);
 
   // scintille quando le mani si muovono
   const prevL = { c: cl.lhA.c, r: cl.lhA.r }, prevR = { c: cl.rhA.c, r: cl.rhA.r };
-  stepClimb(cl, acts, 0.016);
+  const rowBefore = Math.max(cl.lh.r, cl.rh.r);
+  stepClimb(cl, acts, sdt);
   const moved = Math.abs(cl.lhA.c - prevL.c) + Math.abs(cl.lhA.r - prevL.r) +
                 Math.abs(cl.rhA.c - prevR.c) + Math.abs(cl.rhA.r - prevR.r);
   if (moved > 0.02) {
     const p0 = climbPos(cl);
     emitFx(level.pfx, 'spark', p0.lx, p0.ly + cameraY, { count: 1, spread: 2 });
   }
+  // FLOW: salire di fila lo carica; l'impatto lo azzera
+  if (Math.max(cl.lh.r, cl.rh.r) > rowBefore) addFlow(juice, 0.06);
+  else if (moved < 0.001) addFlow(juice, -dt * 0.5);
 
   // ostacoli/aiuti legati alla canzone
-  const msg = stepThreats(g, cl, level.threats, 0.016, 0);
+  const msg = stepThreats(g, cl, level.threats, sdt, 0);
   if (msg && msg !== level.threatMsg) {
     const m = msg.toLowerCase();
     const mp = climbPos(cl);
@@ -3705,7 +3951,8 @@ function loop() {
     else if (/tuono|tempo/.test(m)) { level.events.push('quake'); emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 6 }); }
     else if (/detrito|cranio|edera|sonno/.test(m)) { level.events.push('blade'); emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 5 }); }
     else { level.events.push('fake'); emitFx(level.pfx, 'ash', mp.tx, mp.ty + cameraY, { count: 4 }); }
-    renderer.post.glitch = Math.max(renderer.post.glitch, 0.5);
+    impact(juice, 0.8, 0, 1);
+    breakFlow(juice);
   }
   level.threatMsg = msg;
 
@@ -3720,7 +3967,7 @@ function loop() {
         level.threats.lastMsg = m; level.threats.msgT = 2; level.events.push('warm');
         const mp = climbPos(cl);
         emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 8, spread: 3 });
-        renderer.post.flash = 0.35;
+        impact(juice, 0.9, 0, -1);
       }
     }
   }
@@ -3730,22 +3977,21 @@ function loop() {
   const fakeP = { x: pos.tx - 4, y: pos.ty, w: 8, h: 12, vx: 0, vy: 0, onGround: true };
   const mctx = { player: fakeP, world: { bodies: level.bodies, gravity: 0 }, time, events: level.events };
   for (let i = 0; i < g.modifiers.length; i++)
-    applyModifier(g.modifiers[i], mctx, 0.016, level.modStates[i]);
+    applyModifier(g.modifiers[i], mctx, sdt, level.modStates[i]);
 
   spawnFromEvents(level.fx, level.events, cameraY, pos.tx);
-  stepEffects(level.fx, 0.016, cameraY, VIEW_H);
-  stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
-  const sh = shakeOffset(level.fx, time);
+  stepEffects(level.fx, sdt, cameraY, VIEW_H);
+  stepFx(level.pfx, dt, cameraY, { H: VIEW_H });
 
   const maxCam = Math.max(0, cl.rows[0] - VIEW_H + 40);
   cameraY = Math.max(0, Math.min(maxCam, pos.ty - VIEW_H * 0.55));
 
   // cedimento di un corpo debole: cade da solo e ti trascina giù
   if (cl.collapseEvent) {
-    const ev = cl.collapseEvent; cl.collapseEvent = null;
+    cl.collapseEvent = null;
     emitFx(level.pfx, 'ash', pos.tx, pos.ty + cameraY, { count: 10, spread: 3 });
     emitFx(level.pfx, 'blood', pos.tx, pos.ty + cameraY, { count: 4 });
-    renderer.post.glitch = 0.8; renderer.post.flash = 0.25;
+    impact(juice, 1.1, 0, 1); breakFlow(juice);
     level.events.push('quake');
   }
 
@@ -3754,20 +4000,27 @@ function loop() {
 
   if (cl.reached && state.phase === 'playing') {
     emitFx(level.pfx, 'shock', pos.tx, pos.ty + cameraY, { count: 1 });
-    renderer.post.flash = 0.6;
+    impact(juice, 1.6, 0, -1);
     state = advance(state, 'reachedTop');
   }
 
+  // camera: scossa (fx classici) + scossa juice + punch zoom
+  const sh = shakeOffset(level.fx, time);
+  const jsh = shakeOffsetJ(juice, time);
+  const z = punchZoom(juice);
   renderer.render(() => {
-    ctx.save(); ctx.translate(sh.x, sh.y);
+    ctx.save();
+    ctx.translate(VIEW_W / 2, VIEW_H / 2); ctx.scale(z, z); ctx.translate(-VIEW_W / 2, -VIEW_H / 2);
+    ctx.translate(sh.x + jsh.x, sh.y + jsh.y);
     drawWorld(level, cameraY);
     ctx.restore();
     if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+    drawChapterCard(ctx, g.title, level.chapter, VIEW_W, VIEW_H);
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
     ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
     drawMash(ctx, mash, VIEW_W, VIEW_H);
-  }, { post: applyPost('playing') });
+  }, { post: playingPost(dt, 0) });
 }
 
 // --- debug: ?g=NN ---
@@ -3782,7 +4035,7 @@ if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = idx;
   level = loadGirone(idx);
 }
-window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, doVerb };
+window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb };
 
 loop();
 

@@ -449,6 +449,103 @@ export function drawMash(ctx, m, W, H) {
 }
 
 // ---------------------------------------------------------------------------
+// LIRICHE KARAOKE — la frase appare quando viene CANTATA (sincronizzata all'audio).
+// `karaoke` = [[secondo, frase], ...]; `pos` = posizione audio in secondi.
+// Mostra la riga attiva (battuta a macchina), con eco della successiva.
+// ---------------------------------------------------------------------------
+export function drawKaraoke(ctx, karaoke, pos, time, W, H) {
+  if (!karaoke || !karaoke.length) return;
+  const beat = 0.5 + 0.5 * Math.sin(time * 5);
+  ctx.save();
+  ctx.textAlign = 'center';
+  // riga precedente (fantasma)
+  let idx = -1;
+  for (let i = 0; i < karaoke.length; i++) if (pos >= karaoke[i][0]) idx = i;
+  if (idx < 0) idx = 0;
+  const [t0, text] = karaoke[idx];
+  const next = karaoke[idx + 1];
+  // tempo dall'inizio della riga → battitura rapida
+  const since = Math.max(0, pos - t0);
+  const shown = Math.min(text.length, Math.ceil(since * 18) + 1);
+  const size = Math.max(7, Math.min(13, Math.floor((W * 0.9) / Math.max(1, text.length * 0.6))));
+  const y = H * 0.36;
+
+  // eco della riga precedente in alto
+  for (let i = Math.max(0, idx - 2); i < idx; i++) {
+    const oy = y - (idx - i) * 12;
+    ctx.globalAlpha = 0.10 * (i - idx + 3);
+    drawVert(ctx, karaoke[i][1], W / 2, oy, time, 0.5, 7, 0);
+  }
+  // riga attiva
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, y - size, W, size + 10);
+  ctx.globalAlpha = 0.95;
+  drawVert(ctx, text.slice(0, shown), W / 2, y, time, 0.95, size, 1);
+  // linea che pulsa a tempo
+  const half = (text.length * size * 0.6) / 2;
+  ctx.globalAlpha = 0.35 + 0.35 * beat;
+  ctx.fillStyle = C.red;
+  ctx.fillRect(W / 2 - half, y + 6, half * 2, 1);
+  // prossima riga, in eco in basso
+  if (next) { ctx.globalAlpha = 0.14; drawVert(ctx, next[1], W / 2, y + 26, time, 0.6, 7, 0); }
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------
+// CHAPTER CARD — titolo del brano che "sbatte" dentro all'inizio del girone.
+// ---------------------------------------------------------------------------
+export function drawChapterCard(ctx, title, k, W, H) {
+  if (k <= 0) return;
+  const ease = 1 - Math.pow(1 - Math.min(1, k * 2), 3);   // entra rapido
+  const slide = (1 - ease) * 30;
+  ctx.save();
+  // banda scura diagonale
+  ctx.globalAlpha = 0.7 * Math.min(1, k * 3);
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, H * 0.42, W, 30);
+  ctx.globalAlpha = 0.5 * Math.min(1, k * 3);
+  ctx.fillStyle = C.redDeep;
+  ctx.fillRect(0, H * 0.42, W, 1);
+  ctx.fillRect(0, H * 0.42 + 29, W, 1);
+  // titolo
+  const size = Math.max(11, Math.min(22, Math.floor((W * 0.9) / Math.max(1, title.length * 0.62))));
+  ctx.font = size + 'px monospace';
+  ctx.textAlign = 'center';
+  const tw = title.length * size * 0.62;
+  ctx.globalAlpha = Math.min(1, k * 2.5) * 0.8;
+  ctx.fillStyle = C.black; ctx.fillText(title, W / 2 + 1 - slide, H * 0.42 + 21 + 1);
+  ctx.globalAlpha = Math.min(1, k * 2.5);
+  ctx.fillStyle = C.redHot; ctx.fillText(title, W / 2 - slide, H * 0.42 + 21);
+  // freccia/dettaglio
+  ctx.globalAlpha = Math.min(1, k * 2) * 0.6;
+  ctx.fillStyle = C.red;
+  ctx.fillRect(W / 2 - tw / 2 - slide, H * 0.42 + 25, tw, 1);
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------
+// FLOW METER — barra che sale scalando in ritmo (intensifica i visual).
+// ---------------------------------------------------------------------------
+export function drawFlow(ctx, ratio, beat, W, H) {
+  if (ratio <= 0.01) return;
+  const bw = 60, bh = 3, bx = W / 2 - bw / 2, by = H - 10;
+  ctx.save();
+  ctx.globalAlpha = 0.4 + 0.4 * beat;
+  ctx.fillStyle = C.black; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+  ctx.fillStyle = ratio > 0.66 ? C.redHot : C.red;
+  ctx.fillRect(bx, by, Math.round(bw * ratio), bh);
+  if (ratio > 0.66) {
+    ctx.globalAlpha = 0.6 * beat;
+    ctx.fillStyle = C.white;
+    ctx.fillRect(bx + Math.round(bw * ratio) - 1, by - 1, 1, bh + 2);
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
 // ISCRIZIONE
 // ---------------------------------------------------------------------------
 export function drawInscription(ctx, text, W) {
