@@ -171,7 +171,7 @@ test('drawLyricsOverlay: riga attiva ben visibile (bianco alpha >= 0.9, banda >=
   assert.ok(band.length >= 1, 'banda scura sotto alpha 0.55');
 });
 
-test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + outline nero + banda)', () => {
+test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + alone nero, NIENTE banda full-width)', () => {
   const W = 320, H = 180;
   const ctx = recCtx();
   drawLyricsPixel(ctx, LINES, 6, 2, W, H);
@@ -180,10 +180,35 @@ test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + outline nero + ban
   const white = texts.filter(c => c.fill === C.white);
   assert.ok(white.length >= 1, 'nessun corpo bianco (il pixel deve essere leggibile)');
   assert.ok(white[white.length - 1].alpha >= 0.9, 'corpo troppo tenue: alpha ' + white[white.length - 1].alpha);
+  // alone scuro: >= 4 passaggi neri PER RIGA attiva (4 direzioni + diagonali)
   const black = texts.filter(c => c.fill === C.black);
-  assert.ok(black.length >= 3, 'outline nero insufficiente: ' + black.length);
-  const band = ctx.calls.filter(c => c.op === 'fillRect' && c.fill === C.black && c.alpha >= 0.5);
-  assert.ok(band.length >= 1, 'nessuna banda scura dietro la lirica');
+  assert.ok(black.length >= 4 * white.length,
+    'alone nero insufficiente: ' + black.length + ' passaggi per ' + white.length + ' righe');
+  // NIENTE banda scura a piena larghezza: un fillRect nero che copre ~tutta la
+  // larghezza (>= W*0.8) con alpha alto (>= 0.5) è VIETATO. Un piccolo backing
+  // scoped (width < W*0.8) con alpha <= 0.35 è ammesso, o nessun rettangolo.
+  const fullBand = ctx.calls.filter(c => c.op === 'fillRect' && c.fill === C.black
+    && c.w >= W * 0.8 && c.alpha >= 0.5);
+  assert.equal(fullBand.length, 0, 'banda scura full-width ancora presente: ' + JSON.stringify(fullBand));
+  const scoped = ctx.calls.filter(c => c.op === 'fillRect' && c.fill === C.black);
+  for (const b of scoped) {
+    assert.ok(b.w < W * 0.8, 'backing troppo largo (non scoped): w=' + b.w);
+    assert.ok(b.alpha <= 0.35, 'backing troppo opaco: alpha=' + b.alpha);
+  }
+});
+
+test('drawLyricsPixel: ombra morbida sotto il testo (copia nera offset, alpha ridotta)', () => {
+  const W = 320, H = 180;
+  const ctx = recCtx();
+  drawLyricsPixel(ctx, LINES, 6, 2, W, H);
+  const texts = ctx.calls.filter(c => c.op === 'fillText');
+  const white = texts.filter(c => c.fill === C.white);
+  const shadow = texts.filter(c => c.fill === C.black && c.alpha > 0 && c.alpha < 0.9);
+  assert.ok(shadow.length >= 1, 'nessuna ombra morbida (copia nera a alpha ridotta)');
+  // l'ombra è offsetta rispetto al corpo bianco (dx/dy != 0)
+  const body = white[white.length - 1];
+  const off = shadow.some(s => s.text === body.text && (s.x !== body.x || s.y !== body.y));
+  assert.ok(off, 'ombra non offsetta rispetto al corpo');
 });
 
 // La larghezza VERA dell'unità di testo disegnata deve entrare nello schermo.

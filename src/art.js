@@ -1106,10 +1106,10 @@ export function drawUIOverlay(ctx, S, W, H, o) {
   ctx.textAlign = 'left';
 }
 
-// Lirica di sfondo in PIXEL ART: SOLO backdrop atmosferico. La leggibilità è
-// Lirica PIXEL — PROTAGONISTA: corpo bianco + outline nero a 4 direzioni + banda
-// scura con capelli rossi. Vive nella scena (attraversa il post: resta pixel-art),
-// leggibile e mai fuori schermo. La riga precedente resta come fantasma rosso.
+// Lirica PIXEL — PROTAGONISTA: corpo bianco + alone nero a 8 direzioni (4
+// ortogonali + 4 diagonali) + ombra morbida offset. Il contrasto ABBRACCIA IL
+// TESTO (niente banda full-width, niente righe rosse): la lirica resta nella
+// scena, amalgamata, ma sempre leggibile. La riga precedente è un fantasma rosso.
 export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   if (!lines || !lines.length) return;
   const w = Number.isFinite(W) ? W : 320;
@@ -1175,30 +1175,31 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   }
 
   const step = size * 1.25;
-  const bandTop = y - ((rows.length - 1) / 2) * step - size - 3;
-  const bandH = (rows.length - 1) * step + size + 8;
-  // banda scura dimensionata sulla riga più larga + padding, clampata allo schermo
-  const wideW = Math.min(maxW + 8, Math.max(...rows.map(r => wid(r, size))) + 14);
-  const bandX = Math.max(0, Math.round((w - wideW) / 2));
-  ctx.globalAlpha = 0.72; ctx.fillStyle = C.black;
-  ctx.fillRect(bandX, Math.round(bandTop), Math.round(wideW), Math.round(bandH));
-  ctx.globalAlpha = 0.55; ctx.fillStyle = C.red;
-  ctx.fillRect(bandX, Math.round(bandTop), Math.round(wideW), 1);
-  ctx.fillRect(bandX, Math.round(bandTop + bandH) - 1, Math.round(wideW), 1);
-
   // riga attiva: misura e disegna la RIGA INTERA con lo stesso font (niente
   // avanzamento a passo fisso: così la larghezza disegnata == quella misurata).
+  // Contrasto che ABBRACCIA il testo: ombra morbida + alone nero a 8 direzioni,
+  // poi il corpo bianco. Nessuna banda rettangolare, nessuna riga rossa.
   ctx.font = font(size);
+  const cx = Math.round(w / 2);
   for (let li = 0; li < rows.length; li++) {
     const ln = rows[li];
     const ly = Math.round(y + (li - (rows.length - 1) / 2) * step);
+    // ombra morbida: copia nera offset down-right (1,2), alpha ridotta → profondità
+    ctx.globalAlpha = 0.45; ctx.fillStyle = C.black;
+    ctx.fillText(ln, cx + 1, ly + 2);
+    // alone solido: 4 ortogonali + 4 diagonali a 1px, tutto nero
     ctx.globalAlpha = 0.95; ctx.fillStyle = C.black;
-    ctx.fillText(ln, w / 2 - 1, ly);
-    ctx.fillText(ln, w / 2 + 1, ly);
-    ctx.fillText(ln, w / 2, ly - 1);
-    ctx.fillText(ln, w / 2, ly + 1);
+    ctx.fillText(ln, cx - 1, ly);
+    ctx.fillText(ln, cx + 1, ly);
+    ctx.fillText(ln, cx, ly - 1);
+    ctx.fillText(ln, cx, ly + 1);
+    ctx.fillText(ln, cx - 1, ly - 1);
+    ctx.fillText(ln, cx + 1, ly - 1);
+    ctx.fillText(ln, cx - 1, ly + 1);
+    ctx.fillText(ln, cx + 1, ly + 1);
+    // corpo: bianco pieno, il tono più leggibile della palette
     ctx.globalAlpha = 1; ctx.fillStyle = C.white;
-    ctx.fillText(ln, w / 2, ly);
+    ctx.fillText(ln, cx, ly);
   }
   ctx.restore();
   ctx.textAlign = 'left';
