@@ -9,7 +9,7 @@ import { STEP_Y, TOP_Y } from './gironi.js';
 
 export const REACH_TIME = 0.17;     // durata di un movimento di mano (s)
 export const HOLD_TIME = 0.20;      // tempo di recupero della presa dopo lo spostamento
-const HANG = 12;                    // quanto il bacino pende sotto le mani
+const HANG = 15;                    // quanto il bacino pende sotto le mani (corpo appeso)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
@@ -17,7 +17,9 @@ export function createClimb(g) {
   const cx = 160;
   const bottomY = Math.max(...g.bodies.map(b => b.y));
   const nRows = Math.max(2, Math.floor((bottomY - TOP_Y) / STEP_Y) + 1);
-  const cols = [40, 80, 120, 160, 200, 240, 280];
+  // appigli fitti (24px): così le braccia PROPORZIONATE raggiungono sempre la
+  // presa senza allungarsi, e la parete ha più "mani" a cui aggrapparsi.
+  const cols = [40, 64, 88, 112, 136, 160, 184, 208, 232, 256, 280];
   const rows = Array.from({ length: nRows }, (_, r) => bottomY - r * STEP_Y); // r=0 in basso
 
   const halfWidth = r => 120 - (r / Math.max(1, nRows - 1)) * 90;
@@ -27,10 +29,15 @@ export function createClimb(g) {
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
 
-  const c0 = 3;
+  const c0 = 5;   // centro (160): con 11 colonne fitte l'indice centrale è 5
   // posizione iniziale del bacino = centro presa + HANG
   const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
   const by0 = yOf(0) + HANG;
+  // appigli DEBOLI: ogni tanto un corpo cede mentre ci sali sopra (deterministico
+  // per girone, così è sempre lo stesso e testabile)
+  const weakRows = new Set();
+  const seed = String(g.id || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 5, 0);
+  for (let r = 4 + seed; r < nRows - 3; r += 8) weakRows.add(r);
   return {
     cols, rows, holds, has, xOf, yOf, nRows, cx,
     lh: { c: c0, r: 0 }, rh: { c: c0 + 1, r: 0 },
@@ -40,8 +47,24 @@ export function createClimb(g) {
     lead: 'l',                                      // quale mano sale per prossima
     reach: 0, reachDur: REACH_TIME,
     from: null, to: null, which: null,
+    weakRows, weakTimer: 0, collapsed: new Set(), collapseEvent: null,
     reached: false,
   };
+}
+
+// Sposta entrambe le mani di `dr` file (usato da aiuti e spinte). Torna la
+// differenza reale applicata, così il chiamante sa quanto sei salito/sceso.
+export function moveHands(cl, dr) {
+  const nr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r + dr));
+  const lc = nearestCol(cl, cl.lh.c, nr);
+  const rc = nearestCol(cl, cl.rh.c, nr);
+  const before = cl.lh.r;
+  if (lc !== null) cl.lh = { c: lc, r: nr };
+  if (rc !== null) cl.rh = { c: rc, r: nr };
+  cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
+  cl.reach = 0; cl.which = null;
+  cl.lhHold = 1; cl.rhHold = 1;
+  return cl.lh.r - before;
 }
 
 // Le posizioni correnti di mani e corpo (usate da disegno, camera, effetti).
@@ -161,6 +184,20 @@ export function stepClimb(cl, input, dt) {
   cl.bx += (mx - cl.bx) * k * 0.8;
   // non salire mai sopra le mani: il bacino resta appeso
   if (cl.by < my - 2) { cl.by = my - 2; cl.vby = Math.max(0, cl.vby); }
+
+  // CORPI DEBOLI: se ti stai aggrappando a una fila debole (o appena sopra),
+  // il corpo cede da solo dopo qualche secondo e ti fa cadere di 2-3 file.
+  if (cl.weakRows && cl.weakRows.has(Math.max(cl.lh.r, cl.rh.r))) {
+    cl.weakTimer += d;
+    if (cl.weakTimer > 1.4) {
+      cl.weakTimer = 0;
+      const fell = moveHands(cl, -3);
+      cl.vby = -40;                     // scossa di caduta
+      cl.collapseEvent = { fell, r: Math.max(cl.lh.r, cl.rh.r) };
+    }
+  } else {
+    cl.weakTimer = 0;
+  }
 
   if (cl.lh.r >= cl.nRows - 1 && cl.rh.r >= cl.nRows - 1) cl.reached = true;
 }

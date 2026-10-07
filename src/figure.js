@@ -163,7 +163,8 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const br = clamp(finiteOr(breathe, 0), 0, 1);
   const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br : 0;
   const handMidX = (lx + rx) / 2, handMidY = (ly + ry) / 2;
-  const hipX = finiteOr(bx, handMidX);
+  const swing = clamp(finiteOr(opts.swing, 0), -1, 1) * 3.2;
+  const hipX = finiteOr(bx, handMidX) + swing;
   const hipY = finiteOr(by, handMidY + h * 0.55) + breatheOff;
   const shHalf = Math.max(3, Math.round(h * 0.17));
   const shY = hipY - h * 0.46;
@@ -172,8 +173,8 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const shLx = shX - shHalf, shRx = shX + shHalf;
   const headX = shX + leanX * 0.6, headY = shY - h * 0.16;
   const hr = Math.max(1, Math.round(h * 0.085));
-  // portata del braccio: lunga abbastanza per le mani sopra la testa
-  const up = h * 0.75, lo = h * 0.75;
+  // portata del braccio: PROPORZIONATA al corpo (non più spropositata).
+  const up = h * 0.62, lo = h * 0.62;
   // leggera alternanza delle anche (dondolio) per il ritmo di salita
   const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
   // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.

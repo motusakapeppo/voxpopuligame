@@ -8,10 +8,11 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg } from './art.js';
-import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter } from './encounters.js';
-import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol } from './climb.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash } from './art.js';
+import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
+import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup } from './threats.js';
+import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone } from './mash.js';
 import { createRenderer } from './renderer.js';
 import { drawThemeBack, drawThemeFront } from './themes.js';
 import { createFx, emitFx, stepFx, drawFx } from './fx.js';
@@ -58,6 +59,7 @@ let time = 0;
 let loyalty = 0;
 let action = 'idle';
 let actionT = 0;
+let mash = createMash();
 
 const trackLabel = document.getElementById('track-label');
 const btnAudio = document.getElementById('btn-audio');
@@ -159,29 +161,43 @@ function setPrompt(txt) {
 }
 function doVerb(verb) {
   if (state.phase !== 'playing' || !level || !level.active) return;
+  const kind = level.active.kind;
+  if (isAutoKind(kind)) return;   // helper/grabber non si scelgono con Z/X
   const eff = resolveEncounter(level.active, verb);
   const cl = level.climb;
-  // l'esito sposta la scalata su/giù di una fila
-  const dr = Math.round(-eff.dy / 24);
-  if (dr !== 0) {
-    const nr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r + dr));
-    if (cl.has(cl.lh.c, nr)) cl.lh = { c: cl.lh.c, r: nr };
-    if (cl.has(cl.rh.c, nr)) cl.rh = { c: cl.rh.c, r: nr };
-    cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
-  }
+  // l'esito sposta la scalata su/giù
+  if (eff.dy) moveHands(cl, Math.round(-eff.dy / 24));
   loyalty += eff.loyal;
   action = verb === 'tendi' ? 'tendi' : 'spingi';
-  actionT = 0.6;
+  actionT = verb === 'tendi' ? 0.72 : 0.62;
 }
-if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); doVerb('tendi'); });
-if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); doVerb('spingi'); });
+
+// Martella durante il minigioco di lotta.
+function mashPress() {
+  if (mash.active) { mashHit(mash); action = 'spingi'; actionT = 0.2; }
+}
+if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('tendi'); });
+if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('spingi'); });
 if (btnCta) btnCta.addEventListener('pointerdown', ev => { ev.preventDefault(); goToCta(); });
 window.addEventListener('keydown', ev => {
-  if (ev.code === 'KeyZ') doVerb('tendi');
-  else if (ev.code === 'KeyX') doVerb('spingi');
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX' || ev.code === 'Space' || ev.code === 'ArrowUp') {
+    if (mash.active) { mashPress(); }
+    else if (ev.code === 'KeyZ') doVerb('tendi');
+    else if (ev.code === 'KeyX') doVerb('spingi');
+  }
 });
 
 const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').split(',').filter(Boolean));
+
+// Prompt in basso: cambia in base a chi incontri e al tipo di interazione.
+function updatePrompt() {
+  const a = level && level.active;
+  if (!a) { setPrompt(''); return; }
+  const d = KINDS[a.kind];
+  if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶');
+  else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]');
+  else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi');
+}
 
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
@@ -270,9 +286,65 @@ function loop() {
   // --- playing: arrampicata ---
   level.events.length = 0;
   const NONE = { left: false, right: false, up: false, down: false };
-  // L'incontro attivo FERMA il corpo: finché non scegli (tendi/spingi) non sali.
+  // Il mash blocca tutto: stai lottando.
+  if (mash.active) {
+    stepMash(mash, 0.016);
+    const mp = climbPos(cl);
+    if (mash.won) {
+      // hai vinto: butti giù l'avversario e sali di 3
+      moveHands(cl, +3); loyalty += 1;
+      emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 12, spread: 4 });
+      renderer.post.flash = 0.5;
+      if (level.active) { level.active.resolved = true; level.active.verb = 'spingi'; }
+      mash = createMash();
+    } else if (mash.lost) {
+      // perso: scendi di 4
+      moveHands(cl, -4);
+      emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 8 });
+      renderer.post.glitch = 0.9; renderer.post.flash = 0.5;
+      if (level.active) { level.active.resolved = true; level.active.verb = 'tendi'; }
+      mash = createMash();
+    }
+    stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
+    const pc = climbPos(cl);
+    cameraY = Math.max(0, Math.min(Math.max(0, cl.rows[0] - VIEW_H + 40), pc.by - VIEW_H * 0.55));
+    updatePrompt();
+    if (cl.reached && state.phase === 'playing') state = advance(state, 'reachedTop');
+    renderer.render(() => { drawWorld(level, cameraY); drawMash(ctx, mash, VIEW_W, VIEW_H, time); }, { post: applyPost('playing') });
+    return;
+  }
+
+  // L'incontro attivo FERMA il corpo: finché non scegli (o l'auto si risolve).
   level.active = encounterAt(cl, level.encounters);
-  const acts = level.active ? NONE : input.climbActions();
+  // helper: ti tira su da solo. grabber: parte la lotta a martello.
+  if (level.active && !level.active.triggered) {
+    const kind = level.active.kind;
+    if (kind === 'helper') {
+      level.active.triggered = true;
+      const mp = climbPos(cl);
+      level.autoHelp = 0.7;            // animazione: il salvatore ti tira
+      emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 8, spread: 3 });
+      renderer.post.flash = 0.3;
+    } else if (kind === 'grabber') {
+      level.active.triggered = true;
+      mash = startMash(createMash(), { kind: 'grabber', row: level.active.row });
+    }
+  }
+  if (!mash.active && level.active && level.active.triggered) {
+    const kind = level.active.kind;
+    if (kind === 'helper') {
+      // risolvi dopo un attimo (l'animazione del tiro su)
+      level.autoHelpT = (level.autoHelpT || 0) + 0.016;
+      if (level.autoHelpT > 0.5) {
+        level.active.resolved = true; level.active.verb = 'tendi';
+        moveHands(cl, +2); loyalty += 1;
+        level.autoHelp = 0; level.autoHelpT = 0;
+      }
+    } else if (kind === 'grabber') {
+      level.active.resolved = true;   // gestito dal mash (vinto/perso)
+    }
+  }
+  const acts = (level.active && !isAutoKind(level.active.kind)) ? NONE : input.climbActions();
   if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, 0.016);
 
   // scintille quando le mani si muovono
@@ -329,9 +401,17 @@ function loop() {
   const maxCam = Math.max(0, cl.rows[0] - VIEW_H + 40);
   cameraY = Math.max(0, Math.min(maxCam, pos.ty - VIEW_H * 0.55));
 
+  // cedimento di un corpo debole: cade da solo e ti trascina giù
+  if (cl.collapseEvent) {
+    const ev = cl.collapseEvent; cl.collapseEvent = null;
+    emitFx(level.pfx, 'ash', pos.tx, pos.ty + cameraY, { count: 10, spread: 3 });
+    emitFx(level.pfx, 'blood', pos.tx, pos.ty + cameraY, { count: 4 });
+    renderer.post.glitch = 0.8; renderer.post.flash = 0.25;
+    level.events.push('quake');
+  }
+
   level.active = encounterAt(cl, level.encounters);
-  if (level.active) setPrompt('◀ ' + KINDS[level.active.kind].prompt + ' ▶   [Z] tendi   [X] spingi');
-  else setPrompt('');
+  updatePrompt();
 
   if (cl.reached && state.phase === 'playing') {
     emitFx(level.pfx, 'shock', pos.tx, pos.ty + cameraY, { count: 1 });
@@ -347,6 +427,7 @@ function loop() {
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
     ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
+    drawMash(ctx, mash, VIEW_W, VIEW_H);
   }, { post: applyPost('playing') });
 }
 
@@ -362,7 +443,7 @@ if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = idx;
   level = loadGirone(idx);
 }
-window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, doVerb };
+window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, doVerb };
 
 loop();
 

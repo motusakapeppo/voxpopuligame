@@ -153,17 +153,21 @@ function thmAmbient(fx, plan, time, camY, W, H, seed) {
 // 01 INTRO — braci che salgono, dormienti, mare lontano.
 function thmIntroBack(P, camY, time, W, H) {
   const sy = thmTile(0, camY, 0.2, 420) - 70;
-  P.rect(0, sy, W, 26, C.redDeep, 0.5);
-  for (let i = 0; i < 8; i++) P.rect(i * 40, sy + Math.round(Math.sin(time * 1.2 + i) * 1.5), 40, 2, C.redDark, 0.5);
-  for (let i = 0; i < 4; i++) P.rect(30 + i * 80, sy + 4, 1, 18, C.black, 0.4);
+  // mare con onde animate (più vivo)
+  P.rect(0, sy, W, 30, C.redDeep, 0.5);
+  for (let i = 0; i < 12; i++)
+    P.rect(i * 28, sy + Math.round(Math.sin(time * 1.2 + i * 0.7) * 2), 28, 2, C.redDark, 0.5);
+  for (let i = 0; i < 5; i++) P.rect(24 + i * 70, sy + 5, 1, 22, C.black, 0.4);
   const gy = thmTile(140, camY, 0.5, 300) - 40;
-  for (let i = 0; i < 2; i++)
-    drawFigure(P.ctx, i === 0 ? 70 : 236, gy + 12, { h: 12, color: C.redDark, state: 'idle', phase: time * 0.7 + i * 2, alpha: 0.55 });
+  // dormienti (corpi a terra) + un albero spoglio
+  for (let i = 0; i < 3; i++)
+    drawFigure(P.ctx, i === 0 ? 60 : i === 1 ? 160 : 250, gy + 12, { h: 11, color: C.redDark, state: 'idle', phase: time * 0.5 + i * 2, alpha: 0.55 });
+  for (let i = 0; i < 4; i++) P.line(300, gy + 14, 300 - 6 + i * 4, gy + 14 - 12 - i * 3, C.redDeep, 0.5);
 }
 function thmIntroFront(P, camY, time, W, H) {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const yy = H - ((time * (14 + i * 3) + i * 40) % (H + 20));
-    P.dot(30 + i * 62 + Math.sin(time + i) * 6, yy, i % 2 ? C.redHot : C.red, 0.5);
+    P.dot(20 + i * 42 + Math.sin(time * 1.5 + i) * 6, yy, i % 2 ? C.redHot : C.red, 0.6);
   }
 }
 
@@ -176,16 +180,17 @@ function thmVentoBack(P, camY, time, W, H) {
     const base = thmTile(60 + layer * 80, camY, f, 300) - 40;
     for (let i = 0; i < 3; i++) {
       const dx = 20 + i * 100 + layer * 30;
-      const tilt = Math.round(Math.sin(time * 1.5 + i) * 1.5) + layer;
+      const tilt = Math.round(Math.sin(time * 1.5 + i) * 2) + layer;
       P.rect(dx, base + 14, 30, 10, col, al);
       P.rect(dx + 3 + tilt, base + 8, 24, 6, col, al);
       P.rect(dx + 8 + tilt * 2, base + 3, 14, 5, col, al);
       P.rect(dx + 12 + tilt * 3, base, 6, 3, col, al);
+      P.dot(dx + 15 + tilt * 3, base - 2, C.redMid, 0.5);
     }
     for (let i = 0; i < 3; i++)
       P.rect(((time * 40 + i * 90) % (W + 40)) - 20, base + 6 + i * 9, 30, 1, C.redMid, 0.35);
   }
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 14; i++) {
     const yy = (time * 90 + i * 37) % (H + 20);
     const xx = (i * 34 + time * 20) % (W + 10);
     P.rect(xx, yy, 1, 3, C.redMid, 0.5);
@@ -193,62 +198,65 @@ function thmVentoBack(P, camY, time, W, H) {
   }
 }
 function thmVentoFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.28, H * 0.82, { h: 15, color: C.redBright, state: 'push', phase: time * 2.4, alpha: 0.85 });
-  for (let i = 0; i < 3; i++)
-    P.rect((i * 90 + time * 30) % W, (time * 60 + i * 50) % (H + 10), 2, 1, C.redDark, 0.5);
+  drawFigure(P.ctx, W * 0.28, H * 0.82, { h: 15, color: C.redBright, state: 'push', phase: time * 2.4, alpha: 0.85, detail: true });
+  // foglie spazzate dal vento
+  for (let i = 0; i < 5; i++)
+    P.rect(((i * 90 + time * 50) % W), (time * 60 + i * 40) % (H + 10), 2, 1, C.redDark, 0.6);
 }
 
 // 03 COME I TUONI — lampi, crepe, madri separate.
 function thmTuoniBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  const f = thmPulse(time, 3.4, 0.14);
+  const f = thmPulse(time, 3.4, 0.16);
   if (f > 0) {
-    P.rect(0, 0, W, H, C.redHot, 0.10 * f);
+    P.rect(0, 0, W, H, C.redHot, 0.12 * f);
     let bx = W * 0.5 + Math.sin(time * 0.7) * 60, by = 0;
-    for (let i = 0; i < 6; i++) {
-      by += 12; bx += Math.round(Math.sin(i * 2.3 + time) * 5);
-      P.rect(bx, by, 1, 4, i < 2 ? C.white : C.redHot, 0.9 * f);
+    for (let i = 0; i < 8; i++) {
+      by += 10; bx += Math.round(Math.sin(i * 2.3 + time) * 6);
+      P.rect(bx, by, 1, 5, i < 2 ? C.white : C.redHot, 0.95 * f);
+      if (i > 1) P.dot(bx - 1, by + 3, C.redHot, 0.5 * f);
     }
   }
   const gy = thmTile(120, camY, 0.5, 280) - 30;
-  for (let i = 0; i < 3; i++) {
-    const cx0 = 30 + i * 110;
-    for (let j = 0; j < 4; j++) P.rect(cx0 + j * 3, gy + j * 4, 1, 2, C.redDark, 0.7);
+  // crepe nel terreno
+  for (let i = 0; i < 4; i++) {
+    const cx0 = 20 + i * 90;
+    for (let j = 0; j < 5; j++) P.rect(cx0 + j * 3 + (i % 2) * 2, gy + j * 3, 1, 2, C.redDark, 0.7);
   }
-  drawFigure(P.ctx, 110, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: 1, alpha: 0.7 });
-  drawFigure(P.ctx, 200, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: -1, alpha: 0.7 });
+  drawFigure(P.ctx, 110, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: 1, alpha: 0.75, detail: true });
+  drawFigure(P.ctx, 205, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: -1, alpha: 0.75, detail: true });
 }
 function thmTuoniFront(P, camY, time, W, H) {
-  const f = thmPulse(time, 3.4, 0.14);
-  if (f > 0) P.rect(0, 0, W, H, C.black, 0.25 * (1 - f));
+  const f = thmPulse(time, 3.4, 0.16);
+  if (f > 0) P.rect(0, 0, W, H, C.black, 0.3 * (1 - f));
 }
 
 // 04 BAGHDAD — fuoco, fumo, detriti, protesta repressa.
 function thmBaghdadBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const glow = thmTile(140, camY, 0.5, 320) - 20;
-  P.rect(0, glow, W, Math.max(0, H - glow), C.redMid, 0.18 + 0.06 * Math.sin(time * 6));
+  P.rect(0, glow, W, Math.max(0, H - glow), C.redMid, 0.18 + 0.08 * Math.sin(time * 6));
+  // bagliori di fuoco alla base
+  for (let i = 0; i < 6; i++) {
+    const fx = 16 + i * 54, fl = 8 + Math.round(Math.abs(Math.sin(time * 7 + i)) * 10);
+    P.rect(fx, glow - fl, 5, fl, C.redHot, 0.55);
+    P.rect(fx + 1, glow - fl - 3, 3, 3, C.red, 0.5);
+  }
   for (let i = 0; i < 3; i++) {
     const sx = 50 + i * 100;
-    for (let j = 0; j < 4; j++) {
+    for (let j = 0; j < 5; j++) {
       const yy = glow - j * 14 - ((time * 8) % 14);
-      P.rect(sx + Math.sin(time + j + i) * 3, yy, 10 + j * 2, 4, C.redDeep, Math.max(0, 0.4 - j * 0.06));
+      P.rect(sx + Math.sin(time + j + i) * 4, yy, 12 + j * 3, 4, C.redDeep, Math.max(0, 0.45 - j * 0.06));
     }
   }
-  for (let i = 0; i < 6; i++)
+  for (let i = 0; i < 7; i++)
     P.rect((i * 53 + 20) % W, (time * 50 + i * 40) % (H + 20), 2, 2, C.redDark, 0.7);
-  for (let i = 0; i < 5; i++) {
-    const fx = 20 + i * 60;
-    const hh = 9 + Math.round(Math.sin(time * 8 + i) * 3);
-    P.rect(fx, glow - hh, 4, hh, C.redHot, 0.7);
-    P.rect(fx + 1, glow - hh - 2, 2, 2, C.red, 0.6);
-  }
-  drawFigure(P.ctx, 90, glow + 24, { h: 12, color: C.redDark, state: 'scream', phase: time * 2.2, alpha: 0.7 });
-  drawFigure(P.ctx, 130, glow + 24, { h: 12, color: C.red, state: 'push', phase: time * 2.6, facing: -1, alpha: 0.8 });
+  drawFigure(P.ctx, 90, glow + 24, { h: 12, color: C.redDark, state: 'scream', phase: time * 2.2, alpha: 0.75, detail: true });
+  drawFigure(P.ctx, 130, glow + 24, { h: 12, color: C.red, state: 'push', phase: time * 2.6, facing: -1, alpha: 0.85, detail: true });
 }
 function thmBaghdadFront(P, camY, time, W, H) {
-  for (let i = 0; i < 4; i++)
-    P.rect((i * 80 + 40) % W, H - ((time * 30 + i * 30) % (H + 10)), 1, 1, C.redHot, 0.6);
+  for (let i = 0; i < 6; i++)
+    P.rect((i * 80 + 40) % W, H - ((time * 30 + i * 30) % (H + 10)), 1, 1, C.redHot, 0.7);
 }
 
 // 05 HO SONNO — buio che scende, sirene, ciclo di lavoro, specchio.
@@ -260,14 +268,16 @@ function thmHosonnoBack(P, camY, time, W, H) {
   for (let s = 0; s < 2; s++) {
     const dir = s === 0 ? 1 : -1;
     const ang = dir * (((time * 0.9 + s * 0.5) % 1) * 1.6 - 0.8);
-    for (let i = 0; i < 5; i++) P.rect(W / 2 + Math.sin(ang) * i * 14, 20 + i * 10, 6, 2, C.red, 0.14);
+    for (let i = 0; i < 6; i++) P.rect(W / 2 + Math.sin(ang) * i * 13, 18 + i * 9, 7, 2, C.red, 0.15);
   }
   const gy = thmTile(150, camY, 0.5, 320) - 30;
-  for (let i = 0; i < 2; i++) {
-    const xx = ((i * 150 + time * 18) % (W + 20)) - 10;
-    drawFigure(P.ctx, xx, gy + 14, { h: 12, color: C.redDark, state: 'walk', phase: time * 3 + i, alpha: 0.6 });
+  // ciclo di lavoro: figure su un nastro che si muovono in loop
+  for (let i = 0; i < 3; i++) {
+    const xx = ((i * 120 + time * 18) % (W + 20)) - 10;
+    drawFigure(P.ctx, xx, gy + 14, { h: 12, color: C.redDark, state: 'walk', phase: time * 3 + i, alpha: 0.6, detail: true });
   }
-  for (let i = 0; i < 3; i++) P.rect(W - 50 + i * 4, 40 + i * 6, 1, 20, C.redMid, 0.6);
+  // specchio incrinato
+  for (let i = 0; i < 4; i++) P.rect(W - 54 + i * 5, 30 + i * 8, 1, 24, C.redMid, 0.6);
 }
 function thmHosonnoFront(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 0.35 + 0.15 * Math.sin(time * 1.5));
@@ -279,16 +289,22 @@ function thmPrimopostoBack(P, camY, time, W, H) {
   const ty = thmTile(120, camY, 0.4, 300) - 30;
   P.rect(0, ty, W, 1, C.redDark, 0.5);
   P.rect(0, ty + 60, W, 1, C.redDark, 0.3);
+  // serpenti (sinusoidi)
   for (let s = 0; s < 2; s++) {
     const sy = ty + 30 + s * 40;
-    for (let i = 0; i < 10; i++) P.dot(i * 30, sy + Math.sin(time * 2 + i * 0.6 + s) * 6, C.redMid, 0.6);
+    for (let i = 0; i < 12; i++) {
+      const yy = sy + Math.sin(time * 2 + i * 0.6 + s) * 7;
+      P.dot(i * 26, yy, C.redMid, 0.6);
+      if (i % 3 === 0) P.dot(i * 26 + 1, yy - 1, C.red, 0.5);
+    }
   }
-  drawFigure(P.ctx, 120, ty + 20, { h: 13, color: C.red, state: 'climb', phase: time * 2.4, alpha: 0.75 });
-  drawFigure(P.ctx, 140, ty + 26, { h: 13, color: C.redDark, state: 'push', phase: time * 3, alpha: 0.8 });
+  // rivali che si scavalcano
+  drawFigure(P.ctx, 120, ty + 20, { h: 13, color: C.red, state: 'climb', phase: time * 2.4, alpha: 0.8, detail: true });
+  drawFigure(P.ctx, 138, ty + 27, { h: 13, color: C.redDark, state: 'push', phase: time * 3, alpha: 0.85, detail: true });
 }
 function thmPrimopostoFront(P, camY, time, W, H) {
   const xx = ((time * 60) % (W + 40)) - 20;
-  drawFigure(P.ctx, xx, H * 0.86, { h: 15, color: C.redBright, state: 'run', phase: time * 4, alpha: 0.9 });
+  drawFigure(P.ctx, xx, H * 0.86, { h: 15, color: C.redBright, state: 'run', phase: time * 4, alpha: 0.9, detail: true });
   for (let i = 0; i < 3; i++) P.rect(xx - 10 - i * 5, H * 0.8 + i * 2, 5, 1, C.redDark, 0.5);
 }
 
@@ -296,7 +312,8 @@ function thmPrimopostoFront(P, camY, time, W, H) {
 function thmTictacBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const ccx = W * 0.5, ccy = H * 0.4, R = 34;
-  P.ring(ccx, ccy, R, C.redDark, 0.7, 16);
+  P.ring(ccx, ccy, R, C.redDark, 0.75, 20);
+  P.ring(ccx, ccy, R - 4, C.redDeep, 0.4, 16);
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2;
     P.dot(ccx + Math.cos(a) * (R - 2), ccy + Math.sin(a) * (R - 2), C.redMid, 0.8);
@@ -304,86 +321,95 @@ function thmTictacBack(P, camY, time, W, H) {
   P.line(ccx, ccy, ccx + Math.sin(time * 0.6) * (R - 6), ccy - Math.cos(time * 0.6) * (R - 6), C.redHot, 0.9);
   P.line(ccx, ccy, ccx + Math.sin(time * 0.05) * (R - 14), ccy - Math.cos(time * 0.05) * (R - 14), C.redBright, 0.9);
   P.dot(ccx, ccy, C.white, 0.9);
-  const gx = 60, gy = H * 0.7;
-  P.ring(gx, gy, 12, C.redDark, 0.6, 10);
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + time * 1.2;
-    P.dot(gx + Math.cos(a) * 14, gy + Math.sin(a) * 14, C.redMid, 0.7);
+  // ingranaggi agli angoli
+  const gears = [[60, H * 0.72, 12], [250, H * 0.28, 10]];
+  for (const [gx, gy, gr] of gears) {
+    P.ring(gx, gy, gr, C.redDark, 0.6, 10);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + time * 1.2;
+      P.dot(gx + Math.cos(a) * (gr + 2), gy + Math.sin(a) * (gr + 2), C.redMid, 0.7);
+    }
   }
   const frac = 1 - ((time % 12) / 12);
   P.rect(W - 8, 12, 3, Math.max(1, Math.round(H * 0.5 * frac)), C.redHot, 0.7);
 }
 function thmTictacFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.75, H * 0.85, { h: 14, color: C.redBright, state: 'run', phase: time * 4.5, alpha: 0.85 });
+  drawFigure(P.ctx, W * 0.75, H * 0.85, { h: 14, color: C.redBright, state: 'run', phase: time * 4.5, alpha: 0.85, detail: true });
 }
 
 // 08 TUTTO FINTO — sipario, orchestra mascherata, fiamme finte, specchi.
 function thmTuttofintoBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  P.rect(0, 0, W, 40, C.redDeep, 0.6);
-  for (let i = 0; i < 6; i++)
-    P.rect(i * (W / 6) + Math.sin(time * 1.5 + i) * 2, 0, 2, 44, C.redDark, 0.6);
+  P.rect(0, 0, W, 44, C.redDeep, 0.6);
+  for (let i = 0; i < 8; i++)
+    P.rect(i * (W / 8) + Math.sin(time * 1.5 + i) * 2, 0, 2, 48, C.redDark, 0.6);
   const oy = H * 0.72;
-  for (let i = 0; i < 2; i++) {
-    drawFigure(P.ctx, 80 + i * 140, oy, { h: 11, color: C.redDark, state: 'idle', phase: time * 2 + i, alpha: 0.6 });
-    P.rect(76 + i * 140, oy - 10, 8, 3, C.black, 0.8);
+  for (let i = 0; i < 3; i++) {
+    drawFigure(P.ctx, 70 + i * 90, oy, { h: 11, color: C.redDark, state: 'idle', phase: time * 2 + i, alpha: 0.6, detail: true });
+    P.rect(66 + i * 90, oy - 10, 8, 3, C.black, 0.85);   // maschera
   }
   for (let i = 0; i < 4; i++) {
-    const fx = 20 + i * 90, hh = 7 + Math.round(Math.sin(time * 7 + i) * 2);
-    P.rect(fx, oy + 8 - hh, 3, hh, C.red, 0.55);
+    const fx = 20 + i * 90, fl = 7 + Math.round(Math.abs(Math.sin(time * 7 + i)) * 6);
+    P.rect(fx, oy + 8 - fl, 3, fl, C.red, 0.55);
+    P.rect(fx + 1, oy + 8 - fl - 2, 1, 2, C.redHot, 0.5);
   }
-  for (let i = 0; i < 3; i++) P.rect(W - 30 - i * 6, 50 + i * 10, 8, 2, C.redMid, 0.4);
+  for (let i = 0; i < 3; i++) P.rect(W - 34 - i * 6, 54 + i * 10, 8, 2, C.redMid, 0.45);
 }
 function thmTuttofintoFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.5, H * 0.88, { h: 15, color: C.redDark, state: 'idle', phase: time * 1.4, alpha: 0.5 });
+  drawFigure(P.ctx, W * 0.5, H * 0.88, { h: 15, color: C.redDark, state: 'idle', phase: time * 1.4, alpha: 0.5, detail: true });
   P.rect(0, H - 4, W, 4, C.black, 0.5);
 }
 
 // 09 EDERA — edera che cresce, serpenti, il doppio.
 function thmEderaBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  const grow = Math.min(1, (time % 14) / 8);
+  const grow = Math.min(1, (time % 16) / 10);
   let vy = H + 10;
-  for (let i = 0; i < 14; i++) {
-    vy -= 16 * grow;
-    const vx = 46 + Math.sin(i * 0.8 + time) * 26;
+  for (let i = 0; i < 18; i++) {
+    vy -= 15 * grow;
+    const vx = 46 + Math.sin(i * 0.8 + time) * 30;
     P.dot(vx, vy, C.redDark, 0.7);
-    if (i % 2 === 0) P.dot(vx + 2, vy + 1, C.redMid, 0.5);
+    if (i % 2 === 0) { P.dot(vx + 2, vy + 1, C.redMid, 0.5); P.dot(vx - 2, vy - 1, C.red, 0.4); }
   }
   for (let s = 0; s < 2; s++) {
     const sy = H * 0.6 + s * 30;
-    for (let i = 0; i < 8; i++) P.dot(40 + i * 22, sy + Math.sin(time * 2 + i * 0.7) * 5, C.redMid, 0.5);
+    for (let i = 0; i < 10; i++) P.dot(40 + i * 20, sy + Math.sin(time * 2 + i * 0.7) * 6, C.redMid, 0.5);
   }
-  drawFigure(P.ctx, 130, H * 0.8, { h: 13, color: C.red, state: 'climb', phase: time * 2, alpha: 0.7 });
-  drawFigure(P.ctx, 170, H * 0.8, { h: 13, color: C.redDark, state: 'climb', phase: time * 2, facing: -1, alpha: 0.7 });
+  drawFigure(P.ctx, 130, H * 0.8, { h: 13, color: C.red, state: 'climb', phase: time * 2, alpha: 0.75, detail: true });
+  drawFigure(P.ctx, 170, H * 0.8, { h: 13, color: C.redDark, state: 'climb', phase: time * 2, facing: -1, alpha: 0.75, detail: true });
 }
 function thmEderaFront(P, camY, time, W, H) {
-  for (let i = 0; i < 8; i++) {
-    P.dot(260 + Math.sin(i * 0.9 + time * 0.5) * 12, i * 22, C.redDark, 0.5);
-    if (i % 2 === 0) P.dot(262 + Math.sin(i * 0.9 + time * 0.5) * 12, i * 22 + 2, C.redMid, 0.4);
+  for (let i = 0; i < 10; i++) {
+    P.dot(258 + Math.sin(i * 0.9 + time * 0.5) * 14, i * 20, C.redDark, 0.5);
+    if (i % 2 === 0) P.dot(260 + Math.sin(i * 0.9 + time * 0.5) * 14, i * 20 + 2, C.redMid, 0.4);
   }
 }
 
 // 10 SCENDI — pioggia, folla bagnata, pugni alzati.
 function thmScendiBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 20; i++) {
     const yy = (time * 120 + i * 31) % (H + 20);
     P.rect((i * 21 + time * 10) % W, yy, 1, 3, C.redMid, 0.45);
   }
   const cy = thmTile(150, camY, 0.5, 320) - 30;
-  for (let i = 0; i < 2; i++)
-    drawFigure(P.ctx, 70 + i * 120, cy + 16, { h: 12, color: C.redDark, state: i ? 'walk' : 'idle', phase: time * 2.6 + i, alpha: 0.6 });
-  for (let i = 0; i < 3; i++) P.rect(30 + i * 100, cy + 22, 30, 1, C.redMid, 0.4);
+  for (let i = 0; i < 3; i++)
+    drawFigure(P.ctx, 60 + i * 80, cy + 16, { h: 12, color: C.redDark, state: i ? 'walk' : 'idle', phase: time * 2.6 + i, alpha: 0.65, detail: true });
+  // pugni alzati tra la folla
+  for (let i = 0; i < 3; i++) {
+    const px = 80 + i * 70, py = cy + 2 + Math.sin(time * 2 + i) * 2;
+    P.line(px, py, px, py - 8, C.redBright, 0.6);
+    P.rect(px - 2, py - 11, 4, 4, C.redHot, 0.8);
+  }
 }
 function thmScendiFront(P, camY, time, W, H) {
-  for (let i = 0; i < 2; i++) {
-    const xx = i === 0 ? 40 : W - 50;
+  for (let i = 0; i < 3; i++) {
+    const xx = 40 + i * 110;
     const yy = H * 0.8 + Math.sin(time * 3 + i) * 2;
-    P.line(xx, yy, xx, yy - 10, C.redBright, 0.8);
+    P.line(xx, yy, xx, yy - 10, C.redBright, 0.7);
     P.rect(xx - 2, yy - 13, 4, 4, C.redHot, 0.9);
   }
-  for (let i = 0; i < 5; i++)
+  for (let i = 0; i < 6; i++)
     P.rect((i * 70 + time * 6) % W, (time * 100 + i * 40) % (H + 10), 1, 3, C.redMid, 0.4);
 }
 
@@ -391,41 +417,42 @@ function thmScendiFront(P, camY, time, W, H) {
 function thmLfineBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const wl = H - ((time * 6) % (H + 60));
-  P.rect(0, wl, W, Math.max(0, H - wl), C.redDeep, 0.35);
-  for (let i = 0; i < 5; i++) P.dot(i * 64, wl + Math.sin(time * 3 + i) * 1.5, C.redMid, 0.6);
-  for (let i = 0; i < 4; i++) P.rect(20 + i * 70, wl + 8, 1, 10, C.redDark, 0.4);
+  P.rect(0, wl, W, Math.max(0, H - wl), C.redDeep, 0.4);
+  for (let i = 0; i < 8; i++) P.dot(i * 42, wl + Math.sin(time * 3 + i) * 2, C.redMid, 0.6);
+  for (let i = 0; i < 5; i++) P.rect(16 + i * 70, wl + 8, 1, 12, C.redDark, 0.4);
   const sh = ((time * 4) % (H + 80)) - 40;
   P.rect(0, 0, W, Math.max(0, sh), C.black, 0.9);
   P.rect(0, sh, W, 1, C.redDark, 0.5);
-  for (let i = 0; i < 3; i++) {
-    const fx = 60 + i * 80;
+  for (let i = 0; i < 4; i++) {
+    const fx = 50 + i * 70;
     const droop = Math.round(Math.sin(time * 1.5 + i) * 2) + 2;
-    P.line(fx, wl - 6, fx + droop, wl - 14, C.redDark, 0.7);
-    P.dot(fx + droop, wl - 15, C.red, 0.7);
+    P.line(fx, wl - 6, fx + droop, wl - 15, C.redDark, 0.7);
+    P.dot(fx + droop, wl - 16, C.red, 0.7);
+    P.dot(fx + droop + 1, wl - 14, C.redMid, 0.4);
   }
 }
 function thmLfineFront(P, camY, time, W, H) {
   const wl = H - ((time * 6) % (H + 60));
-  for (let i = 0; i < 8; i++) P.dot(i * 40, wl + Math.sin(time * 2 + i * 0.7) * 2, C.red, 0.4);
+  for (let i = 0; i < 10; i++) P.dot(i * 33, wl + Math.sin(time * 2 + i * 0.7) * 2, C.red, 0.4);
 }
 
 // 12 MARANATHA — coro, mani tese, popoli in cammino.
 function thmMaranathaBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   P.rect(0, H * 0.4, W, 3, C.redDeep, 0.5);
-  P.rect(0, H * 0.4 + 3, W, 20, C.redDeep, 0.2);
+  P.rect(0, H * 0.4 + 3, W, 24, C.redDeep, 0.22);
   const gy = thmTile(130, camY, 0.4, 320) - 20;
   for (let i = 0; i < 2; i++)
-    drawFigure(P.ctx, 60 + i * 120, gy + 18, { h: 12, color: C.red, state: 'walk', phase: time * 2 + i, alpha: 0.65 });
-  for (let i = 0; i < 4; i++) {
-    const hx = 40 + i * 70, hy = gy + 6;
-    P.line(hx, hy, hx, hy - 8, C.redBright, 0.6);
-    P.dot(hx, hy - 10, C.redHot, 0.7);
+    drawFigure(P.ctx, 70 + i * 130, gy + 18, { h: 12, color: C.red, state: 'walk', phase: time * 2 + i, alpha: 0.7 });
+  for (let i = 0; i < 5; i++) {
+    const hx = 34 + i * 60, hy = gy + 6 + Math.sin(time * 2 + i) * 1.5;
+    P.line(hx, hy, hx, hy - 9, C.redBright, 0.6);
+    P.dot(hx, hy - 11, C.redHot, 0.7);
   }
 }
 function thmMaranathaFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.5, H * 0.9, { h: 15, color: C.redBright, state: 'tendi', phase: time * 1.8, alpha: 0.85 });
-  for (let i = 0; i < 3; i++) P.dot(80 + i * 60, H * 0.5 + Math.sin(time + i) * 4, C.redHot, 0.5);
+  drawFigure(P.ctx, W * 0.5, H * 0.9, { h: 15, color: C.redBright, state: 'tendi', phase: time * 1.8, alpha: 0.9 });
+  for (let i = 0; i < 4; i++) P.dot(70 + i * 55, H * 0.5 + Math.sin(time + i) * 5, C.redHot, 0.5);
 }
 
 // 13 OUTRO — alba sulla cima, figura sola, lento dissolversi.
@@ -433,16 +460,25 @@ function thmOutroBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const gy = thmTile(90, camY, 0.3, 300) - 30;
   P.rect(0, gy, W, 30, C.redDeep, 0.4);
-  if (camY < 220) {
-    const sx = W * 0.5, sy = gy - 10, R = 18;
-    P.ring(sx, sy, R, C.red, 0.6, 16);
-    for (let i = 0; i < 6; i++) P.dot(sx + Math.cos(i) * 6, sy + Math.sin(i) * 6, C.redDark, 0.6);
-    P.dot(sx, sy, C.white, 0.9);
+  // cima montuosa
+  for (let i = 0; i < 8; i++) {
+    const mx = i * 46, mh = 10 + i % 3 * 6;
+    for (let j = 0; j < mh; j++) P.rect(mx + j, gy - j, mh * 2 - j * 2, 1, C.redDeep, 0.5);
   }
-  drawFigure(P.ctx, W * 0.5, gy + 16, { h: 14, color: C.redBright, state: 'idle', phase: time * 1.2, alpha: 0.8 });
+  if (camY < 220) {
+    const sx = W * 0.5, sy = gy - 14, R = 18;
+    for (let i = 0; i < 3; i++) P.ring(sx, sy, R - i * 3, C.red, 0.35 - i * 0.08, 18);
+    P.dot(sx, sy, C.white, 0.9);
+    // raggi
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + time * 0.2;
+      P.dot(sx + Math.cos(a) * 24, sy + Math.sin(a) * 24, C.redHot, 0.4);
+    }
+  }
+  drawFigure(P.ctx, W * 0.5, gy + 16, { h: 15, color: C.redBright, state: 'idle', phase: time * 1.2, alpha: 0.85, detail: true });
 }
 function thmOutroFront(P, camY, time, W, H) {
-  P.rect(0, 0, W, H, C.black, 0.20 + 0.15 * (0.5 + 0.5 * Math.sin(time * 0.6)));
+  P.rect(0, 0, W, H, C.black, 0.22 + 0.16 * (0.5 + 0.5 * Math.sin(time * 0.6)));
 }
 
 // default — braci su nero (ripiego).

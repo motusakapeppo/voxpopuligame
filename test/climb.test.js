@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClimb, stepClimb, climbPos, climbProgress, centerCol, rowCols, encounterAt } from '../src/climb.js';
+import { createClimb, stepClimb, climbPos, climbProgress, centerCol, rowCols, encounterAt, moveHands } from '../src/climb.js';
 import { GIRONI } from '../src/gironi.js';
 
 // Il bot di scalata: muove le mani verso l'alto finchÃ© non raggiunge la cima.
@@ -109,4 +109,29 @@ test('encounterAt ignora gli incontri giÃ  risolti', () => {
   const encs = [{ row: 5, resolved: true, kind: 'hand' }];
   cl.lh = { c: 3, r: 5 }; cl.rh = { c: 4, r: 5 };
   assert.equal(encounterAt(cl, encs), null, 'un incontro risolto Ã¨ stato riattivato');
+});
+
+test('moveHands sposta entrambe le mani e ritorna la differenza reale', () => {
+  const cl = createClimb(GIRONI[0]);
+  const d1 = moveHands(cl, +3);
+  assert.equal(d1, 3);
+  assert.equal(cl.lh.r, 3);
+  const d2 = moveHands(cl, -5);       // non può scendere sotto 0
+  assert.equal(cl.lh.r, 0);
+  assert.equal(d2, -3);
+});
+
+test('i corpi deboli causano un cedimento se sosti sulla loro fila', () => {
+  const cl = createClimb(GIRONI[0]);
+  // porta le mani su una fila debole
+  const weak = [...cl.weakRows][0];
+  moveHands(cl, weak);
+  assert.ok(cl.weakRows.has(cl.lh.r), 'setup: non sono su una fila debole');
+  let collapsed = false;
+  for (let i = 0; i < 200; i++) {
+    stepClimb(cl, { left:false, right:false, up:false, down:false }, 0.016);
+    if (cl.collapseEvent) { collapsed = true; break; }
+  }
+  assert.ok(collapsed, 'il corpo debole non è mai ceduto');
+  assert.ok(cl.lh.r < weak, 'non sono caduto dopo il cedimento');
 });

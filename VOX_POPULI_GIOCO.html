@@ -378,7 +378,7 @@ function validateGironi(list) {
 // ============================================================================
 const REACH_TIME = 0.17;     // durata di un movimento di mano (s)
 const HOLD_TIME = 0.20;      // tempo di recupero della presa dopo lo spostamento
-const HANG = 12;                    // quanto il bacino pende sotto le mani
+const HANG = 15;                    // quanto il bacino pende sotto le mani (corpo appeso)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
@@ -386,7 +386,9 @@ function createClimb(g) {
   const cx = 160;
   const bottomY = Math.max(...g.bodies.map(b => b.y));
   const nRows = Math.max(2, Math.floor((bottomY - TOP_Y) / STEP_Y) + 1);
-  const cols = [40, 80, 120, 160, 200, 240, 280];
+  // appigli fitti (24px): così le braccia PROPORZIONATE raggiungono sempre la
+  // presa senza allungarsi, e la parete ha più "mani" a cui aggrapparsi.
+  const cols = [40, 64, 88, 112, 136, 160, 184, 208, 232, 256, 280];
   const rows = Array.from({ length: nRows }, (_, r) => bottomY - r * STEP_Y); // r=0 in basso
 
   const halfWidth = r => 120 - (r / Math.max(1, nRows - 1)) * 90;
@@ -396,10 +398,15 @@ function createClimb(g) {
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
 
-  const c0 = 3;
+  const c0 = 5;   // centro (160): con 11 colonne fitte l'indice centrale è 5
   // posizione iniziale del bacino = centro presa + HANG
   const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
   const by0 = yOf(0) + HANG;
+  // appigli DEBOLI: ogni tanto un corpo cede mentre ci sali sopra (deterministico
+  // per girone, così è sempre lo stesso e testabile)
+  const weakRows = new Set();
+  const seed = String(g.id || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 5, 0);
+  for (let r = 4 + seed; r < nRows - 3; r += 8) weakRows.add(r);
   return {
     cols, rows, holds, has, xOf, yOf, nRows, cx,
     lh: { c: c0, r: 0 }, rh: { c: c0 + 1, r: 0 },
@@ -409,8 +416,24 @@ function createClimb(g) {
     lead: 'l',                                      // quale mano sale per prossima
     reach: 0, reachDur: REACH_TIME,
     from: null, to: null, which: null,
+    weakRows, weakTimer: 0, collapsed: new Set(), collapseEvent: null,
     reached: false,
   };
+}
+
+// Sposta entrambe le mani di `dr` file (usato da aiuti e spinte). Torna la
+// differenza reale applicata, così il chiamante sa quanto sei salito/sceso.
+function moveHands(cl, dr) {
+  const nr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r + dr));
+  const lc = nearestCol(cl, cl.lh.c, nr);
+  const rc = nearestCol(cl, cl.rh.c, nr);
+  const before = cl.lh.r;
+  if (lc !== null) cl.lh = { c: lc, r: nr };
+  if (rc !== null) cl.rh = { c: rc, r: nr };
+  cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
+  cl.reach = 0; cl.which = null;
+  cl.lhHold = 1; cl.rhHold = 1;
+  return cl.lh.r - before;
 }
 
 // Le posizioni correnti di mani e corpo (usate da disegno, camera, effetti).
@@ -530,6 +553,20 @@ function stepClimb(cl, input, dt) {
   // non salire mai sopra le mani: il bacino resta appeso
   if (cl.by < my - 2) { cl.by = my - 2; cl.vby = Math.max(0, cl.vby); }
 
+  // CORPI DEBOLI: se ti stai aggrappando a una fila debole (o appena sopra),
+  // il corpo cede da solo dopo qualche secondo e ti fa cadere di 2-3 file.
+  if (cl.weakRows && cl.weakRows.has(Math.max(cl.lh.r, cl.rh.r))) {
+    cl.weakTimer += d;
+    if (cl.weakTimer > 1.4) {
+      cl.weakTimer = 0;
+      const fell = moveHands(cl, -3);
+      cl.vby = -40;                     // scossa di caduta
+      cl.collapseEvent = { fell, r: Math.max(cl.lh.r, cl.rh.r) };
+    }
+  } else {
+    cl.weakTimer = 0;
+  }
+
   if (cl.lh.r >= cl.nRows - 1 && cl.rh.r >= cl.nRows - 1) cl.reached = true;
 }
 
@@ -549,6 +586,53 @@ function encounterAt(cl, encounters) {
   }
   return null;
 }
+
+
+// --- mash.js ---
+// ============================================================================
+// MASH — minigioco di lotta. Quando qualcuno ti afferra per buttarti giù,
+// devi MARTELLARE il tasto (Z/X/Spazio/↑) per vincere: se riempi la barra
+// prima che scada il tempo, lo butti giù tu e sali; altrimenti scendi.
+// Logica pura e deterministica: nessun DOM, nessun Math.random.
+// ============================================================================
+const MASH_DUR = 4.0;      // secondi per vincere
+const DECAY = 0.11;               // la barra cala da sola (l'avversario spinge)
+const GAIN = 0.14;                // quanto riempie ogni "colpo"
+function createMash() {
+  return { active: false, progress: 0, timeLeft: 0, won: false, lost: false, rival: null, hits: 0 };
+}
+
+// Inizia una lotta contro `rival` (una descrizione, es. { kind, row }).
+function startMash(m, rival, dur = MASH_DUR) {
+  m.active = true; m.progress = 0.35; m.timeLeft = dur;
+  m.won = false; m.lost = false; m.rival = rival || null; m.hits = 0;
+  return m;
+}
+
+// Un colpo del giocatore.
+function mashHit(m) {
+  if (!m.active) return m;
+  m.hits++;
+  m.progress = Math.min(1, m.progress + GAIN);
+  if (m.progress >= 1) { m.won = true; m.active = false; }
+  return m;
+}
+
+// Avanza: il tempo scorre, la barra cala. Ritorna true se la lotta è finita.
+function stepMash(m, dt) {
+  if (!m.active) return false;
+  const d = Number.isFinite(dt) ? dt : 0.016;
+  m.timeLeft -= d;
+  m.progress -= d * DECAY;
+  if (m.progress >= 1) { m.won = true; m.active = false; }
+  else if (m.timeLeft <= 0 || m.progress <= 0) { m.lost = true; m.timeLeft = 0; m.progress = 0; m.active = false; }
+  return !m.active;
+}
+function mashRatio(m) {
+  const p = Number.isFinite(m && m.progress) ? m.progress : 0;
+  return p < 0 ? 0 : p > 1 ? 1 : p;
+}
+function mashDone(m) { return m.won || m.lost; }
 
 
 // --- modifiers.js ---
@@ -952,23 +1036,44 @@ const KINDS = {
     tendi:  { dy: -24, loyal: +2, event: 'joined', fall: false },
     spingi: { dy: 0,   loyal: -1, event: 'ignored', fall: false },
   },
+  // TI AIUTA: ti porge la mano e ti tira su. Non devi fare nulla.
+  helper: {
+    prompt: 'ti porge la mano e ti tira su',
+    auto: true,
+    tendi:  { dy: -24, loyal: +1, event: 'helped', fall: false },
+    spingi: { dy: 0,   loyal: -1, event: 'ignored', fall: false },
+  },
+  // TI AFFERRA: cerca di buttarti giù. Parte il minigioco di lotta (mash).
+  grabber: {
+    prompt: 'ti afferra per buttarti giù — martella!',
+    mash: true,
+    tendi:  { dy: 0,   loyal: +1, event: 'resisted', fall: false },
+    spingi: { dy: -24, loyal: -1, event: 'threwDown', fall: true },
+  },
 };
+
+// Gli incontri "automatici" non chiedono una scelta Z/X: o ti aiutano da soli
+// (helper) o avviano la lotta a martello (grabber).
+function isAutoKind(kind) {
+  const d = KINDS[kind];
+  return !!(d && (d.auto || d.mash));
+}
 
 // Quanti incontri per girone e di che tipo (in ordine di scalata).
 // Ogni girone è monotono: non "spam" di tipi, ma una progressione tematica.
 const GIRONE_ENCOUNTERS = {
-  '01': ['sleeper', 'sleeper', 'hand'],
-  '02': ['hand', 'falling', 'pusher'],
-  '03': ['rival', 'hand', 'falling'],
-  '04': ['falling', 'falling', 'pusher'],
-  '05': ['siren', 'siren', 'hand'],
-  '06': ['rival', 'rival', 'hand'],
-  '07': ['rival', 'falling', 'hand'],
-  '08': ['fake', 'fake', 'hand'],
-  '09': ['self', 'self', 'falling'],
-  '10': ['pusher', 'pusher', 'hand'],
-  '11': ['falling', 'pusher', 'hand'],
-  '12': ['chorus', 'chorus', 'hand'],
+  '01': ['sleeper', 'helper', 'hand'],
+  '02': ['hand', 'grabber', 'pusher'],
+  '03': ['rival', 'helper', 'falling'],
+  '04': ['falling', 'grabber', 'pusher'],
+  '05': ['siren', 'helper', 'hand'],
+  '06': ['rival', 'grabber', 'hand'],
+  '07': ['rival', 'falling', 'grabber'],
+  '08': ['fake', 'helper', 'hand'],
+  '09': ['self', 'grabber', 'falling'],
+  '10': ['pusher', 'grabber', 'hand'],
+  '11': ['falling', 'grabber', 'helper'],
+  '12': ['chorus', 'helper', 'hand'],
   '13': ['hand'],
 };
 
@@ -1527,17 +1632,21 @@ function thmAmbient(fx, plan, time, camY, W, H, seed) {
 // 01 INTRO — braci che salgono, dormienti, mare lontano.
 function thmIntroBack(P, camY, time, W, H) {
   const sy = thmTile(0, camY, 0.2, 420) - 70;
-  P.rect(0, sy, W, 26, C.redDeep, 0.5);
-  for (let i = 0; i < 8; i++) P.rect(i * 40, sy + Math.round(Math.sin(time * 1.2 + i) * 1.5), 40, 2, C.redDark, 0.5);
-  for (let i = 0; i < 4; i++) P.rect(30 + i * 80, sy + 4, 1, 18, C.black, 0.4);
+  // mare con onde animate (più vivo)
+  P.rect(0, sy, W, 30, C.redDeep, 0.5);
+  for (let i = 0; i < 12; i++)
+    P.rect(i * 28, sy + Math.round(Math.sin(time * 1.2 + i * 0.7) * 2), 28, 2, C.redDark, 0.5);
+  for (let i = 0; i < 5; i++) P.rect(24 + i * 70, sy + 5, 1, 22, C.black, 0.4);
   const gy = thmTile(140, camY, 0.5, 300) - 40;
-  for (let i = 0; i < 2; i++)
-    drawFigure(P.ctx, i === 0 ? 70 : 236, gy + 12, { h: 12, color: C.redDark, state: 'idle', phase: time * 0.7 + i * 2, alpha: 0.55 });
+  // dormienti (corpi a terra) + un albero spoglio
+  for (let i = 0; i < 3; i++)
+    drawFigure(P.ctx, i === 0 ? 60 : i === 1 ? 160 : 250, gy + 12, { h: 11, color: C.redDark, state: 'idle', phase: time * 0.5 + i * 2, alpha: 0.55 });
+  for (let i = 0; i < 4; i++) P.line(300, gy + 14, 300 - 6 + i * 4, gy + 14 - 12 - i * 3, C.redDeep, 0.5);
 }
 function thmIntroFront(P, camY, time, W, H) {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const yy = H - ((time * (14 + i * 3) + i * 40) % (H + 20));
-    P.dot(30 + i * 62 + Math.sin(time + i) * 6, yy, i % 2 ? C.redHot : C.red, 0.5);
+    P.dot(20 + i * 42 + Math.sin(time * 1.5 + i) * 6, yy, i % 2 ? C.redHot : C.red, 0.6);
   }
 }
 
@@ -1550,16 +1659,17 @@ function thmVentoBack(P, camY, time, W, H) {
     const base = thmTile(60 + layer * 80, camY, f, 300) - 40;
     for (let i = 0; i < 3; i++) {
       const dx = 20 + i * 100 + layer * 30;
-      const tilt = Math.round(Math.sin(time * 1.5 + i) * 1.5) + layer;
+      const tilt = Math.round(Math.sin(time * 1.5 + i) * 2) + layer;
       P.rect(dx, base + 14, 30, 10, col, al);
       P.rect(dx + 3 + tilt, base + 8, 24, 6, col, al);
       P.rect(dx + 8 + tilt * 2, base + 3, 14, 5, col, al);
       P.rect(dx + 12 + tilt * 3, base, 6, 3, col, al);
+      P.dot(dx + 15 + tilt * 3, base - 2, C.redMid, 0.5);
     }
     for (let i = 0; i < 3; i++)
       P.rect(((time * 40 + i * 90) % (W + 40)) - 20, base + 6 + i * 9, 30, 1, C.redMid, 0.35);
   }
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 14; i++) {
     const yy = (time * 90 + i * 37) % (H + 20);
     const xx = (i * 34 + time * 20) % (W + 10);
     P.rect(xx, yy, 1, 3, C.redMid, 0.5);
@@ -1567,62 +1677,65 @@ function thmVentoBack(P, camY, time, W, H) {
   }
 }
 function thmVentoFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.28, H * 0.82, { h: 15, color: C.redBright, state: 'push', phase: time * 2.4, alpha: 0.85 });
-  for (let i = 0; i < 3; i++)
-    P.rect((i * 90 + time * 30) % W, (time * 60 + i * 50) % (H + 10), 2, 1, C.redDark, 0.5);
+  drawFigure(P.ctx, W * 0.28, H * 0.82, { h: 15, color: C.redBright, state: 'push', phase: time * 2.4, alpha: 0.85, detail: true });
+  // foglie spazzate dal vento
+  for (let i = 0; i < 5; i++)
+    P.rect(((i * 90 + time * 50) % W), (time * 60 + i * 40) % (H + 10), 2, 1, C.redDark, 0.6);
 }
 
 // 03 COME I TUONI — lampi, crepe, madri separate.
 function thmTuoniBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  const f = thmPulse(time, 3.4, 0.14);
+  const f = thmPulse(time, 3.4, 0.16);
   if (f > 0) {
-    P.rect(0, 0, W, H, C.redHot, 0.10 * f);
+    P.rect(0, 0, W, H, C.redHot, 0.12 * f);
     let bx = W * 0.5 + Math.sin(time * 0.7) * 60, by = 0;
-    for (let i = 0; i < 6; i++) {
-      by += 12; bx += Math.round(Math.sin(i * 2.3 + time) * 5);
-      P.rect(bx, by, 1, 4, i < 2 ? C.white : C.redHot, 0.9 * f);
+    for (let i = 0; i < 8; i++) {
+      by += 10; bx += Math.round(Math.sin(i * 2.3 + time) * 6);
+      P.rect(bx, by, 1, 5, i < 2 ? C.white : C.redHot, 0.95 * f);
+      if (i > 1) P.dot(bx - 1, by + 3, C.redHot, 0.5 * f);
     }
   }
   const gy = thmTile(120, camY, 0.5, 280) - 30;
-  for (let i = 0; i < 3; i++) {
-    const cx0 = 30 + i * 110;
-    for (let j = 0; j < 4; j++) P.rect(cx0 + j * 3, gy + j * 4, 1, 2, C.redDark, 0.7);
+  // crepe nel terreno
+  for (let i = 0; i < 4; i++) {
+    const cx0 = 20 + i * 90;
+    for (let j = 0; j < 5; j++) P.rect(cx0 + j * 3 + (i % 2) * 2, gy + j * 3, 1, 2, C.redDark, 0.7);
   }
-  drawFigure(P.ctx, 110, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: 1, alpha: 0.7 });
-  drawFigure(P.ctx, 200, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: -1, alpha: 0.7 });
+  drawFigure(P.ctx, 110, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: 1, alpha: 0.75, detail: true });
+  drawFigure(P.ctx, 205, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: -1, alpha: 0.75, detail: true });
 }
 function thmTuoniFront(P, camY, time, W, H) {
-  const f = thmPulse(time, 3.4, 0.14);
-  if (f > 0) P.rect(0, 0, W, H, C.black, 0.25 * (1 - f));
+  const f = thmPulse(time, 3.4, 0.16);
+  if (f > 0) P.rect(0, 0, W, H, C.black, 0.3 * (1 - f));
 }
 
 // 04 BAGHDAD — fuoco, fumo, detriti, protesta repressa.
 function thmBaghdadBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const glow = thmTile(140, camY, 0.5, 320) - 20;
-  P.rect(0, glow, W, Math.max(0, H - glow), C.redMid, 0.18 + 0.06 * Math.sin(time * 6));
+  P.rect(0, glow, W, Math.max(0, H - glow), C.redMid, 0.18 + 0.08 * Math.sin(time * 6));
+  // bagliori di fuoco alla base
+  for (let i = 0; i < 6; i++) {
+    const fx = 16 + i * 54, fl = 8 + Math.round(Math.abs(Math.sin(time * 7 + i)) * 10);
+    P.rect(fx, glow - fl, 5, fl, C.redHot, 0.55);
+    P.rect(fx + 1, glow - fl - 3, 3, 3, C.red, 0.5);
+  }
   for (let i = 0; i < 3; i++) {
     const sx = 50 + i * 100;
-    for (let j = 0; j < 4; j++) {
+    for (let j = 0; j < 5; j++) {
       const yy = glow - j * 14 - ((time * 8) % 14);
-      P.rect(sx + Math.sin(time + j + i) * 3, yy, 10 + j * 2, 4, C.redDeep, Math.max(0, 0.4 - j * 0.06));
+      P.rect(sx + Math.sin(time + j + i) * 4, yy, 12 + j * 3, 4, C.redDeep, Math.max(0, 0.45 - j * 0.06));
     }
   }
-  for (let i = 0; i < 6; i++)
+  for (let i = 0; i < 7; i++)
     P.rect((i * 53 + 20) % W, (time * 50 + i * 40) % (H + 20), 2, 2, C.redDark, 0.7);
-  for (let i = 0; i < 5; i++) {
-    const fx = 20 + i * 60;
-    const hh = 9 + Math.round(Math.sin(time * 8 + i) * 3);
-    P.rect(fx, glow - hh, 4, hh, C.redHot, 0.7);
-    P.rect(fx + 1, glow - hh - 2, 2, 2, C.red, 0.6);
-  }
-  drawFigure(P.ctx, 90, glow + 24, { h: 12, color: C.redDark, state: 'scream', phase: time * 2.2, alpha: 0.7 });
-  drawFigure(P.ctx, 130, glow + 24, { h: 12, color: C.red, state: 'push', phase: time * 2.6, facing: -1, alpha: 0.8 });
+  drawFigure(P.ctx, 90, glow + 24, { h: 12, color: C.redDark, state: 'scream', phase: time * 2.2, alpha: 0.75, detail: true });
+  drawFigure(P.ctx, 130, glow + 24, { h: 12, color: C.red, state: 'push', phase: time * 2.6, facing: -1, alpha: 0.85, detail: true });
 }
 function thmBaghdadFront(P, camY, time, W, H) {
-  for (let i = 0; i < 4; i++)
-    P.rect((i * 80 + 40) % W, H - ((time * 30 + i * 30) % (H + 10)), 1, 1, C.redHot, 0.6);
+  for (let i = 0; i < 6; i++)
+    P.rect((i * 80 + 40) % W, H - ((time * 30 + i * 30) % (H + 10)), 1, 1, C.redHot, 0.7);
 }
 
 // 05 HO SONNO — buio che scende, sirene, ciclo di lavoro, specchio.
@@ -1634,14 +1747,16 @@ function thmHosonnoBack(P, camY, time, W, H) {
   for (let s = 0; s < 2; s++) {
     const dir = s === 0 ? 1 : -1;
     const ang = dir * (((time * 0.9 + s * 0.5) % 1) * 1.6 - 0.8);
-    for (let i = 0; i < 5; i++) P.rect(W / 2 + Math.sin(ang) * i * 14, 20 + i * 10, 6, 2, C.red, 0.14);
+    for (let i = 0; i < 6; i++) P.rect(W / 2 + Math.sin(ang) * i * 13, 18 + i * 9, 7, 2, C.red, 0.15);
   }
   const gy = thmTile(150, camY, 0.5, 320) - 30;
-  for (let i = 0; i < 2; i++) {
-    const xx = ((i * 150 + time * 18) % (W + 20)) - 10;
-    drawFigure(P.ctx, xx, gy + 14, { h: 12, color: C.redDark, state: 'walk', phase: time * 3 + i, alpha: 0.6 });
+  // ciclo di lavoro: figure su un nastro che si muovono in loop
+  for (let i = 0; i < 3; i++) {
+    const xx = ((i * 120 + time * 18) % (W + 20)) - 10;
+    drawFigure(P.ctx, xx, gy + 14, { h: 12, color: C.redDark, state: 'walk', phase: time * 3 + i, alpha: 0.6, detail: true });
   }
-  for (let i = 0; i < 3; i++) P.rect(W - 50 + i * 4, 40 + i * 6, 1, 20, C.redMid, 0.6);
+  // specchio incrinato
+  for (let i = 0; i < 4; i++) P.rect(W - 54 + i * 5, 30 + i * 8, 1, 24, C.redMid, 0.6);
 }
 function thmHosonnoFront(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 0.35 + 0.15 * Math.sin(time * 1.5));
@@ -1653,16 +1768,22 @@ function thmPrimopostoBack(P, camY, time, W, H) {
   const ty = thmTile(120, camY, 0.4, 300) - 30;
   P.rect(0, ty, W, 1, C.redDark, 0.5);
   P.rect(0, ty + 60, W, 1, C.redDark, 0.3);
+  // serpenti (sinusoidi)
   for (let s = 0; s < 2; s++) {
     const sy = ty + 30 + s * 40;
-    for (let i = 0; i < 10; i++) P.dot(i * 30, sy + Math.sin(time * 2 + i * 0.6 + s) * 6, C.redMid, 0.6);
+    for (let i = 0; i < 12; i++) {
+      const yy = sy + Math.sin(time * 2 + i * 0.6 + s) * 7;
+      P.dot(i * 26, yy, C.redMid, 0.6);
+      if (i % 3 === 0) P.dot(i * 26 + 1, yy - 1, C.red, 0.5);
+    }
   }
-  drawFigure(P.ctx, 120, ty + 20, { h: 13, color: C.red, state: 'climb', phase: time * 2.4, alpha: 0.75 });
-  drawFigure(P.ctx, 140, ty + 26, { h: 13, color: C.redDark, state: 'push', phase: time * 3, alpha: 0.8 });
+  // rivali che si scavalcano
+  drawFigure(P.ctx, 120, ty + 20, { h: 13, color: C.red, state: 'climb', phase: time * 2.4, alpha: 0.8, detail: true });
+  drawFigure(P.ctx, 138, ty + 27, { h: 13, color: C.redDark, state: 'push', phase: time * 3, alpha: 0.85, detail: true });
 }
 function thmPrimopostoFront(P, camY, time, W, H) {
   const xx = ((time * 60) % (W + 40)) - 20;
-  drawFigure(P.ctx, xx, H * 0.86, { h: 15, color: C.redBright, state: 'run', phase: time * 4, alpha: 0.9 });
+  drawFigure(P.ctx, xx, H * 0.86, { h: 15, color: C.redBright, state: 'run', phase: time * 4, alpha: 0.9, detail: true });
   for (let i = 0; i < 3; i++) P.rect(xx - 10 - i * 5, H * 0.8 + i * 2, 5, 1, C.redDark, 0.5);
 }
 
@@ -1670,7 +1791,8 @@ function thmPrimopostoFront(P, camY, time, W, H) {
 function thmTictacBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const ccx = W * 0.5, ccy = H * 0.4, R = 34;
-  P.ring(ccx, ccy, R, C.redDark, 0.7, 16);
+  P.ring(ccx, ccy, R, C.redDark, 0.75, 20);
+  P.ring(ccx, ccy, R - 4, C.redDeep, 0.4, 16);
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2;
     P.dot(ccx + Math.cos(a) * (R - 2), ccy + Math.sin(a) * (R - 2), C.redMid, 0.8);
@@ -1678,86 +1800,95 @@ function thmTictacBack(P, camY, time, W, H) {
   P.line(ccx, ccy, ccx + Math.sin(time * 0.6) * (R - 6), ccy - Math.cos(time * 0.6) * (R - 6), C.redHot, 0.9);
   P.line(ccx, ccy, ccx + Math.sin(time * 0.05) * (R - 14), ccy - Math.cos(time * 0.05) * (R - 14), C.redBright, 0.9);
   P.dot(ccx, ccy, C.white, 0.9);
-  const gx = 60, gy = H * 0.7;
-  P.ring(gx, gy, 12, C.redDark, 0.6, 10);
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + time * 1.2;
-    P.dot(gx + Math.cos(a) * 14, gy + Math.sin(a) * 14, C.redMid, 0.7);
+  // ingranaggi agli angoli
+  const gears = [[60, H * 0.72, 12], [250, H * 0.28, 10]];
+  for (const [gx, gy, gr] of gears) {
+    P.ring(gx, gy, gr, C.redDark, 0.6, 10);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + time * 1.2;
+      P.dot(gx + Math.cos(a) * (gr + 2), gy + Math.sin(a) * (gr + 2), C.redMid, 0.7);
+    }
   }
   const frac = 1 - ((time % 12) / 12);
   P.rect(W - 8, 12, 3, Math.max(1, Math.round(H * 0.5 * frac)), C.redHot, 0.7);
 }
 function thmTictacFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.75, H * 0.85, { h: 14, color: C.redBright, state: 'run', phase: time * 4.5, alpha: 0.85 });
+  drawFigure(P.ctx, W * 0.75, H * 0.85, { h: 14, color: C.redBright, state: 'run', phase: time * 4.5, alpha: 0.85, detail: true });
 }
 
 // 08 TUTTO FINTO — sipario, orchestra mascherata, fiamme finte, specchi.
 function thmTuttofintoBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  P.rect(0, 0, W, 40, C.redDeep, 0.6);
-  for (let i = 0; i < 6; i++)
-    P.rect(i * (W / 6) + Math.sin(time * 1.5 + i) * 2, 0, 2, 44, C.redDark, 0.6);
+  P.rect(0, 0, W, 44, C.redDeep, 0.6);
+  for (let i = 0; i < 8; i++)
+    P.rect(i * (W / 8) + Math.sin(time * 1.5 + i) * 2, 0, 2, 48, C.redDark, 0.6);
   const oy = H * 0.72;
-  for (let i = 0; i < 2; i++) {
-    drawFigure(P.ctx, 80 + i * 140, oy, { h: 11, color: C.redDark, state: 'idle', phase: time * 2 + i, alpha: 0.6 });
-    P.rect(76 + i * 140, oy - 10, 8, 3, C.black, 0.8);
+  for (let i = 0; i < 3; i++) {
+    drawFigure(P.ctx, 70 + i * 90, oy, { h: 11, color: C.redDark, state: 'idle', phase: time * 2 + i, alpha: 0.6, detail: true });
+    P.rect(66 + i * 90, oy - 10, 8, 3, C.black, 0.85);   // maschera
   }
   for (let i = 0; i < 4; i++) {
-    const fx = 20 + i * 90, hh = 7 + Math.round(Math.sin(time * 7 + i) * 2);
-    P.rect(fx, oy + 8 - hh, 3, hh, C.red, 0.55);
+    const fx = 20 + i * 90, fl = 7 + Math.round(Math.abs(Math.sin(time * 7 + i)) * 6);
+    P.rect(fx, oy + 8 - fl, 3, fl, C.red, 0.55);
+    P.rect(fx + 1, oy + 8 - fl - 2, 1, 2, C.redHot, 0.5);
   }
-  for (let i = 0; i < 3; i++) P.rect(W - 30 - i * 6, 50 + i * 10, 8, 2, C.redMid, 0.4);
+  for (let i = 0; i < 3; i++) P.rect(W - 34 - i * 6, 54 + i * 10, 8, 2, C.redMid, 0.45);
 }
 function thmTuttofintoFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.5, H * 0.88, { h: 15, color: C.redDark, state: 'idle', phase: time * 1.4, alpha: 0.5 });
+  drawFigure(P.ctx, W * 0.5, H * 0.88, { h: 15, color: C.redDark, state: 'idle', phase: time * 1.4, alpha: 0.5, detail: true });
   P.rect(0, H - 4, W, 4, C.black, 0.5);
 }
 
 // 09 EDERA — edera che cresce, serpenti, il doppio.
 function thmEderaBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  const grow = Math.min(1, (time % 14) / 8);
+  const grow = Math.min(1, (time % 16) / 10);
   let vy = H + 10;
-  for (let i = 0; i < 14; i++) {
-    vy -= 16 * grow;
-    const vx = 46 + Math.sin(i * 0.8 + time) * 26;
+  for (let i = 0; i < 18; i++) {
+    vy -= 15 * grow;
+    const vx = 46 + Math.sin(i * 0.8 + time) * 30;
     P.dot(vx, vy, C.redDark, 0.7);
-    if (i % 2 === 0) P.dot(vx + 2, vy + 1, C.redMid, 0.5);
+    if (i % 2 === 0) { P.dot(vx + 2, vy + 1, C.redMid, 0.5); P.dot(vx - 2, vy - 1, C.red, 0.4); }
   }
   for (let s = 0; s < 2; s++) {
     const sy = H * 0.6 + s * 30;
-    for (let i = 0; i < 8; i++) P.dot(40 + i * 22, sy + Math.sin(time * 2 + i * 0.7) * 5, C.redMid, 0.5);
+    for (let i = 0; i < 10; i++) P.dot(40 + i * 20, sy + Math.sin(time * 2 + i * 0.7) * 6, C.redMid, 0.5);
   }
-  drawFigure(P.ctx, 130, H * 0.8, { h: 13, color: C.red, state: 'climb', phase: time * 2, alpha: 0.7 });
-  drawFigure(P.ctx, 170, H * 0.8, { h: 13, color: C.redDark, state: 'climb', phase: time * 2, facing: -1, alpha: 0.7 });
+  drawFigure(P.ctx, 130, H * 0.8, { h: 13, color: C.red, state: 'climb', phase: time * 2, alpha: 0.75, detail: true });
+  drawFigure(P.ctx, 170, H * 0.8, { h: 13, color: C.redDark, state: 'climb', phase: time * 2, facing: -1, alpha: 0.75, detail: true });
 }
 function thmEderaFront(P, camY, time, W, H) {
-  for (let i = 0; i < 8; i++) {
-    P.dot(260 + Math.sin(i * 0.9 + time * 0.5) * 12, i * 22, C.redDark, 0.5);
-    if (i % 2 === 0) P.dot(262 + Math.sin(i * 0.9 + time * 0.5) * 12, i * 22 + 2, C.redMid, 0.4);
+  for (let i = 0; i < 10; i++) {
+    P.dot(258 + Math.sin(i * 0.9 + time * 0.5) * 14, i * 20, C.redDark, 0.5);
+    if (i % 2 === 0) P.dot(260 + Math.sin(i * 0.9 + time * 0.5) * 14, i * 20 + 2, C.redMid, 0.4);
   }
 }
 
 // 10 SCENDI — pioggia, folla bagnata, pugni alzati.
 function thmScendiBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 20; i++) {
     const yy = (time * 120 + i * 31) % (H + 20);
     P.rect((i * 21 + time * 10) % W, yy, 1, 3, C.redMid, 0.45);
   }
   const cy = thmTile(150, camY, 0.5, 320) - 30;
-  for (let i = 0; i < 2; i++)
-    drawFigure(P.ctx, 70 + i * 120, cy + 16, { h: 12, color: C.redDark, state: i ? 'walk' : 'idle', phase: time * 2.6 + i, alpha: 0.6 });
-  for (let i = 0; i < 3; i++) P.rect(30 + i * 100, cy + 22, 30, 1, C.redMid, 0.4);
+  for (let i = 0; i < 3; i++)
+    drawFigure(P.ctx, 60 + i * 80, cy + 16, { h: 12, color: C.redDark, state: i ? 'walk' : 'idle', phase: time * 2.6 + i, alpha: 0.65, detail: true });
+  // pugni alzati tra la folla
+  for (let i = 0; i < 3; i++) {
+    const px = 80 + i * 70, py = cy + 2 + Math.sin(time * 2 + i) * 2;
+    P.line(px, py, px, py - 8, C.redBright, 0.6);
+    P.rect(px - 2, py - 11, 4, 4, C.redHot, 0.8);
+  }
 }
 function thmScendiFront(P, camY, time, W, H) {
-  for (let i = 0; i < 2; i++) {
-    const xx = i === 0 ? 40 : W - 50;
+  for (let i = 0; i < 3; i++) {
+    const xx = 40 + i * 110;
     const yy = H * 0.8 + Math.sin(time * 3 + i) * 2;
-    P.line(xx, yy, xx, yy - 10, C.redBright, 0.8);
+    P.line(xx, yy, xx, yy - 10, C.redBright, 0.7);
     P.rect(xx - 2, yy - 13, 4, 4, C.redHot, 0.9);
   }
-  for (let i = 0; i < 5; i++)
+  for (let i = 0; i < 6; i++)
     P.rect((i * 70 + time * 6) % W, (time * 100 + i * 40) % (H + 10), 1, 3, C.redMid, 0.4);
 }
 
@@ -1765,41 +1896,42 @@ function thmScendiFront(P, camY, time, W, H) {
 function thmLfineBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const wl = H - ((time * 6) % (H + 60));
-  P.rect(0, wl, W, Math.max(0, H - wl), C.redDeep, 0.35);
-  for (let i = 0; i < 5; i++) P.dot(i * 64, wl + Math.sin(time * 3 + i) * 1.5, C.redMid, 0.6);
-  for (let i = 0; i < 4; i++) P.rect(20 + i * 70, wl + 8, 1, 10, C.redDark, 0.4);
+  P.rect(0, wl, W, Math.max(0, H - wl), C.redDeep, 0.4);
+  for (let i = 0; i < 8; i++) P.dot(i * 42, wl + Math.sin(time * 3 + i) * 2, C.redMid, 0.6);
+  for (let i = 0; i < 5; i++) P.rect(16 + i * 70, wl + 8, 1, 12, C.redDark, 0.4);
   const sh = ((time * 4) % (H + 80)) - 40;
   P.rect(0, 0, W, Math.max(0, sh), C.black, 0.9);
   P.rect(0, sh, W, 1, C.redDark, 0.5);
-  for (let i = 0; i < 3; i++) {
-    const fx = 60 + i * 80;
+  for (let i = 0; i < 4; i++) {
+    const fx = 50 + i * 70;
     const droop = Math.round(Math.sin(time * 1.5 + i) * 2) + 2;
-    P.line(fx, wl - 6, fx + droop, wl - 14, C.redDark, 0.7);
-    P.dot(fx + droop, wl - 15, C.red, 0.7);
+    P.line(fx, wl - 6, fx + droop, wl - 15, C.redDark, 0.7);
+    P.dot(fx + droop, wl - 16, C.red, 0.7);
+    P.dot(fx + droop + 1, wl - 14, C.redMid, 0.4);
   }
 }
 function thmLfineFront(P, camY, time, W, H) {
   const wl = H - ((time * 6) % (H + 60));
-  for (let i = 0; i < 8; i++) P.dot(i * 40, wl + Math.sin(time * 2 + i * 0.7) * 2, C.red, 0.4);
+  for (let i = 0; i < 10; i++) P.dot(i * 33, wl + Math.sin(time * 2 + i * 0.7) * 2, C.red, 0.4);
 }
 
 // 12 MARANATHA — coro, mani tese, popoli in cammino.
 function thmMaranathaBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   P.rect(0, H * 0.4, W, 3, C.redDeep, 0.5);
-  P.rect(0, H * 0.4 + 3, W, 20, C.redDeep, 0.2);
+  P.rect(0, H * 0.4 + 3, W, 24, C.redDeep, 0.22);
   const gy = thmTile(130, camY, 0.4, 320) - 20;
   for (let i = 0; i < 2; i++)
-    drawFigure(P.ctx, 60 + i * 120, gy + 18, { h: 12, color: C.red, state: 'walk', phase: time * 2 + i, alpha: 0.65 });
-  for (let i = 0; i < 4; i++) {
-    const hx = 40 + i * 70, hy = gy + 6;
-    P.line(hx, hy, hx, hy - 8, C.redBright, 0.6);
-    P.dot(hx, hy - 10, C.redHot, 0.7);
+    drawFigure(P.ctx, 70 + i * 130, gy + 18, { h: 12, color: C.red, state: 'walk', phase: time * 2 + i, alpha: 0.7 });
+  for (let i = 0; i < 5; i++) {
+    const hx = 34 + i * 60, hy = gy + 6 + Math.sin(time * 2 + i) * 1.5;
+    P.line(hx, hy, hx, hy - 9, C.redBright, 0.6);
+    P.dot(hx, hy - 11, C.redHot, 0.7);
   }
 }
 function thmMaranathaFront(P, camY, time, W, H) {
-  drawFigure(P.ctx, W * 0.5, H * 0.9, { h: 15, color: C.redBright, state: 'tendi', phase: time * 1.8, alpha: 0.85 });
-  for (let i = 0; i < 3; i++) P.dot(80 + i * 60, H * 0.5 + Math.sin(time + i) * 4, C.redHot, 0.5);
+  drawFigure(P.ctx, W * 0.5, H * 0.9, { h: 15, color: C.redBright, state: 'tendi', phase: time * 1.8, alpha: 0.9 });
+  for (let i = 0; i < 4; i++) P.dot(70 + i * 55, H * 0.5 + Math.sin(time + i) * 5, C.redHot, 0.5);
 }
 
 // 13 OUTRO — alba sulla cima, figura sola, lento dissolversi.
@@ -1807,16 +1939,25 @@ function thmOutroBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const gy = thmTile(90, camY, 0.3, 300) - 30;
   P.rect(0, gy, W, 30, C.redDeep, 0.4);
-  if (camY < 220) {
-    const sx = W * 0.5, sy = gy - 10, R = 18;
-    P.ring(sx, sy, R, C.red, 0.6, 16);
-    for (let i = 0; i < 6; i++) P.dot(sx + Math.cos(i) * 6, sy + Math.sin(i) * 6, C.redDark, 0.6);
-    P.dot(sx, sy, C.white, 0.9);
+  // cima montuosa
+  for (let i = 0; i < 8; i++) {
+    const mx = i * 46, mh = 10 + i % 3 * 6;
+    for (let j = 0; j < mh; j++) P.rect(mx + j, gy - j, mh * 2 - j * 2, 1, C.redDeep, 0.5);
   }
-  drawFigure(P.ctx, W * 0.5, gy + 16, { h: 14, color: C.redBright, state: 'idle', phase: time * 1.2, alpha: 0.8 });
+  if (camY < 220) {
+    const sx = W * 0.5, sy = gy - 14, R = 18;
+    for (let i = 0; i < 3; i++) P.ring(sx, sy, R - i * 3, C.red, 0.35 - i * 0.08, 18);
+    P.dot(sx, sy, C.white, 0.9);
+    // raggi
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + time * 0.2;
+      P.dot(sx + Math.cos(a) * 24, sy + Math.sin(a) * 24, C.redHot, 0.4);
+    }
+  }
+  drawFigure(P.ctx, W * 0.5, gy + 16, { h: 15, color: C.redBright, state: 'idle', phase: time * 1.2, alpha: 0.85, detail: true });
 }
 function thmOutroFront(P, camY, time, W, H) {
-  P.rect(0, 0, W, H, C.black, 0.20 + 0.15 * (0.5 + 0.5 * Math.sin(time * 0.6)));
+  P.rect(0, 0, W, H, C.black, 0.22 + 0.16 * (0.5 + 0.5 * Math.sin(time * 0.6)));
 }
 
 // default — braci su nero (ripiego).
@@ -2524,7 +2665,8 @@ function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const br = clamp(finiteOr(breathe, 0), 0, 1);
   const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br : 0;
   const handMidX = (lx + rx) / 2, handMidY = (ly + ry) / 2;
-  const hipX = finiteOr(bx, handMidX);
+  const swing = clamp(finiteOr(opts.swing, 0), -1, 1) * 3.2;
+  const hipX = finiteOr(bx, handMidX) + swing;
   const hipY = finiteOr(by, handMidY + h * 0.55) + breatheOff;
   const shHalf = Math.max(3, Math.round(h * 0.17));
   const shY = hipY - h * 0.46;
@@ -2533,8 +2675,8 @@ function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const shLx = shX - shHalf, shRx = shX + shHalf;
   const headX = shX + leanX * 0.6, headY = shY - h * 0.16;
   const hr = Math.max(1, Math.round(h * 0.085));
-  // portata del braccio: lunga abbastanza per le mani sopra la testa
-  const up = h * 0.75, lo = h * 0.75;
+  // portata del braccio: PROPORZIONATA al corpo (non più spropositata).
+  const up = h * 0.62, lo = h * 0.62;
   // leggera alternanza delle anche (dondolio) per il ritmo di salita
   const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
   // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.
@@ -2689,8 +2831,7 @@ function drawFigure(ctx, x, y, opts = {}) {
 // ============================================================================
 // ART — VOX POPULI. Figure rosse animate su nero, come la copertina.
 // Tutto il disegno delle persone passa da figure.js (scheletro animato).
-// ============================================================================
-
+// ============================================================================
 
 // ---------------------------------------------------------------------------
 // LIRICHE ANIMATE — i versi del brano scorrono sullo sfondo, stile dark.
@@ -2768,8 +2909,7 @@ function rng(seed) {
 
 // ---------------------------------------------------------------------------
 // SFONDO
-// ---------------------------------------------------------------------------
-function drawBackground(ctx, g, cameraY, time, W, H) {
+// ---------------------------------------------------------------------------function drawBackground(ctx, g, cameraY, time, W, H) {
   ctx.fillStyle = C.black;
   ctx.fillRect(0, 0, W, H);
 
@@ -2831,11 +2971,17 @@ function drawBackground(ctx, g, cameraY, time, W, H) {
     // nervature: piccoli corpi incastrati (texture "muro di persone")
     const span = x1 - x0;
     const n = Math.max(3, Math.round(span / 16));
+    // reazione fisica: i corpi nella zona delle mani si comprimono
+    const gRow = Math.max(climb.lh.r, climb.rh.r);
+    const rowDist = Math.abs(r - gRow);
+    const press = rowDist <= 1 ? (1 - rowDist) : 0;
     for (let i = 0; i < n; i++) {
       const fx = x0 + (i + 0.5) * (span / n);
       const ph = time * 1.2 + (fx + r * 7) * 0.2;
       const st = Math.sin(ph * 1.3) > 0.5 ? 'idle' : 'climb';
-      drawFigure(ctx, fx, y + stepY * 0.7, { h: 11, color: C.redDeep, state: st, phase: ph, alpha: 0.5 });
+      // schiacciamento verso il basso sotto la presa (squash)
+      const stretch = -press * 0.4;
+      drawFigure(ctx, fx, y + stepY * 0.7 + press * 2, { h: 11, color: C.redDeep, state: st, phase: ph, alpha: 0.5, stretch, detail: press > 0.5 });
     }
     // 2) GLI APPIGLI: teste che emergono dove il giocatore può aggrapparsi
     for (let c = 0; c < climb.cols.length; c++) {
@@ -2864,70 +3010,83 @@ function drawBackground(ctx, g, cameraY, time, W, H) {
   const ph = time;
   const reachK = cl.reach > 0 && cl.reachDur ? Math.max(0, cl.reach / cl.reachDur) : 0;
   const breathe = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(time * 2));
+  // pendolo: il corpo oscilla in base alla velocità del bacino (fisica)
+  const swing = Math.max(-1, Math.min(1, (cl.vby || 0) * 0.03 + Math.sin(time * 2.2) * 0.12));
 
-  // Animazioni di INTERAZIONE (Z = tendi, X = spingi): gesture chiare.
-  // tendi = braccio teso verso l'alto/avanti (offerta); spingi = braccio che
-  // spinge in basso/avanti e busto che si torce.
+  // Animazioni di INTERAZIONE (Z = tendi, X = spingi): gesture multi-fase.
+  // Ogni gesto ha ANTICIPAZIONE → COLPO → RITORNO, così si legge chiaramente.
+  const dur = action === 'tendi' ? 0.72 : 0.62;
   const t = (action === 'tendi' || action === 'spingi') ? Math.max(0, actionT) : 0;
-  const actK = t > 0 ? Math.min(1, t / 0.55) : 0;
+  const prog = t > 0 ? Math.min(1, (dur - t) / dur) : 0;       // 0→1 nello svolgersi
+  // curva: 0 → 1 → 0 con un picco rapido a metà
+  const bell = prog <= 0 ? 0 : prog < 0.5 ? Math.sin(prog * Math.PI) : Math.sin((1 - prog) * Math.PI);
+  const actK = action === 'tendi' || action === 'spingi' ? Math.max(0, bell) : 0;
+
   let lx = p.lx, lyy = ly, rx = p.rx, ryy = ry;
   let hipX = p.bx, hipYOff = 0, lean = 0;
-  if (actK > 0 && action === 'tendi') {
-    rx += 4 * actK; ryy -= 5 * actK;        // braccio destro teso verso l'alto
-    hipYOff = -1.5 * actK;
-    lean = -0.25 * actK;
-  } else if (actK > 0 && action === 'spingi') {
-    rx += 6 * actK; ryy += 4 * actK;        // braccio che spinge via
-    lx -= 2 * actK;
-    hipX += 2 * actK;
-    lean = 0.35 * actK;
+  // scie multiple del gesto (comete) + particelle d'impatto al colpo
+  const trail = [];
+  if (action === 'tendi') {
+    // braccio destro teso in alto-avanti: offerta
+    rx += 7 * actK; ryy -= 9 * actK; lx -= 1 * actK;
+    hipYOff = -2 * actK; lean = -0.35 * actK;
+    for (let i = 1; i <= 4; i++) trail.push([p.rx + 7 * actK * (1 - i * 0.18), ly - 9 * actK * (1 - i * 0.18) + i * 1.6, i]);
+  } else if (action === 'spingi') {
+    // spinta in basso-avanti: torso che si torce, gamba che spinge
+    rx += 9 * actK; ryy += 6 * actK; lx -= 3 * actK;
+    hipX += 3 * actK; hipYOff = 1 * actK; lean = 0.5 * actK;
+    for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
-  // alone caldo pulsante (ti fa trovare a colpo d'occhio)
+  // alone caldo pulsante (ti fa trovare a colpo d'occhio); più acceso sull'azione
   ctx.save();
-  ctx.globalAlpha = 0.22 + 0.10 * Math.sin(time * 5);
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.redHot, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff });
-  ctx.restore();
-  // corpo acceso con dettagli (chele, ciuffo, rim) + contorno scuro netto
-  const col = (action === 'tendi' || action === 'spingi') ? C.redHot : C.redBright;
-  // riempimento acceso
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 20,
-    bx: hipX, by: byc + hipYOff, breathe, detail: true });
-  // contorno nero sottile attorno (stacca dalla parete)
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff });
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 20,
-    bx: hipX, by: byc + hipYOff, breathe, detail: true, rim: true, lean });
-
-  // mani evidenziate: dove sei aggrappato. La mano che si sta muovendo lampeggia.
-  ctx.save();
-  ctx.globalAlpha = 0.85;
-  ctx.fillStyle = C.white;
-  if (cl.lhHold >= 1) ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3);
-  else { ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(time * 20)); ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3); }
-  ctx.globalAlpha = 0.85; ctx.fillStyle = C.white;
-  if (cl.rhHold >= 1) ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3);
-  else { ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(time * 20)); ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3); }
+  ctx.globalAlpha = (0.22 + 0.10 * Math.sin(time * 5)) + 0.3 * actK;
+  const auraCol = action === 'spingi' ? C.redHot : C.redHot;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: auraCol, phase: ph, thickness: 5 + Math.round(2 * actK), h: 20, bx: hipX, by: byc + hipYOff, swing });
   ctx.restore();
 
-  // scia del gesto durante l'interazione
-  if (actK > 0) {
+  // scie del gesto
+  if (trail.length) {
     ctx.save();
-    ctx.globalAlpha = 0.5 * actK;
     ctx.fillStyle = action === 'spingi' ? C.redHot : C.red;
-    const gx = action === 'spingi' ? rx : rx, gy = action === 'spingi' ? ryy + 4 : ryy - 4;
-    for (let i = 0; i < 3; i++) ctx.fillRect(Math.round(rx + (action === 'spingi' ? i * 3 : i * 2)) - 1, Math.round(gy) + i, 2, 1);
+    for (const [tx0, ty0, i] of trail) {
+      ctx.globalAlpha = 0.55 * actK * (1 - i / 5);
+      ctx.fillRect(Math.round(tx0) - 1, Math.round(ty0) - 1, 2, 2);
+    }
+    ctx.restore();
+  }
+
+  // corpo acceso con dettagli (chele, ciuffo, rim) + contorno scuro netto
+  const col = actK > 0.1 ? C.redHot : C.redBright;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 20,
+    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true });
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff, swing });
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 20,
+    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
+
+  // impatto al culmine del gesto: particelle di colpo (quadrati rossi dal centro)
+  if (actK > 0.7) {
+    const k = (actK - 0.7) / 0.3;
+    ctx.save();
+    ctx.globalAlpha = 0.7 * k;
+    ctx.fillStyle = C.redHot;
+    const ox = action === 'tendi' ? rx : rx, oy = action === 'tendi' ? ryy - 4 : ryy;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + time;
+      ctx.fillRect(Math.round(ox + Math.cos(a) * (4 + 5 * k)), Math.round(oy + Math.sin(a) * (4 + 5 * k)), 1, 1);
+    }
     ctx.restore();
   }
 }
 
 // ---------------------------------------------------------------------------
-// INCONTRI
+// INCONTRI — ogni tipo ha il suo GESTO, leggibile e diverso dagli altri.
 // ---------------------------------------------------------------------------
 const ENC_STATE = {
   hand: 'reach', rival: 'climb', falling: 'fall', sleeper: 'idle', siren: 'tendi',
   pusher: 'push', fake: 'idle', self: 'climb', chorus: 'scream',
-};
-function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
+  helper: 'tendi', grabber: 'spingi',
+};function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
   const x = climb.xOf(e.c);
   const y = climb.yOf(e.row) - cameraY;
   if (y < -24 || y > ART_VIEW_H + 24) return;
@@ -2953,7 +3112,6 @@ function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
     ctx.globalAlpha = 0.14 + 0.10 * Math.sin(time * 6);
     drawFigure(ctx, x, feetY, { h: 20, color: C.redHot, state: st, phase: ph, thickness: 4 });
     ctx.restore();
-    // cornice lampeggiante sull'appiglio
     ctx.save();
     ctx.globalAlpha = 0.5 + 0.4 * Math.sin(time * 8);
     ctx.fillStyle = C.redHot;
@@ -2961,8 +3119,81 @@ function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
     ctx.fillRect(Math.round(x) - 7, Math.round(y) + 8, 14, 1);
     ctx.restore();
   }
-  // figura dettagliata (chele/ciuffo/rim) e con respiro
+  // figura dettagliata + GESTO specifico del tipo
   drawFigure(ctx, x, feetY, { h: 18, color: col, state: st, phase: ph, detail: true, rim: true });
+  drawEncounterFlourish(ctx, e.kind, x, feetY, time, isActive);
+}
+
+// Extra visivo per rendere ogni tipo di incontro immediatamente riconoscibile.
+function drawEncounterFlourish(ctx, kind, x, y, time, isActive) {
+  const k = isActive ? 1 : 0.55;
+  ctx.save();
+  ctx.globalAlpha = k;
+  if (kind === 'hand' || kind === 'chorus') {
+    // mano/mani tese verso di te (punto acceso)
+    ctx.fillStyle = C.redHot;
+    const ox = 6 + Math.sin(time * 3) * 1.5;
+    ctx.fillRect(Math.round(x + ox), Math.round(y - 12), 2, 2);
+    ctx.fillRect(Math.round(x + ox + 2), Math.round(y - 14), 1, 1);
+  } else if (kind === 'rival') {
+    // freccia di sorpasso che sale
+    ctx.fillStyle = C.red;
+    const oy = 8 * ((time * 0.8) % 1) - 4;
+    ctx.fillRect(Math.round(x + 7), Math.round(y - 6 - oy), 3, 1);
+    ctx.fillRect(Math.round(x + 9), Math.round(y - 7 - oy), 1, 3);
+  } else if (kind === 'falling') {
+    // scia di caduta verso il basso
+    ctx.fillStyle = C.redDark;
+    for (let i = 1; i <= 5; i++) ctx.fillRect(Math.round(x), Math.round(y + i * 3), 1, 1);
+  } else if (kind === 'sleeper') {
+    // "zZ" del sonno
+    ctx.fillStyle = C.red;
+    const off = (time * 6) % 10;
+    ctx.fillRect(Math.round(x + 8), Math.round(y - 16 - off), 3, 1);
+    ctx.fillRect(Math.round(x + 9), Math.round(y - 14 - off), 1, 1);
+    ctx.fillRect(Math.round(x + 8), Math.round(y - 13 - off), 3, 1);
+  } else if (kind === 'siren') {
+    // onde concentriche (canto ammaliatore)
+    ctx.fillStyle = C.redHot;
+    for (let i = 1; i <= 3; i++) {
+      const r = i * 3 + (time * 8) % 3;
+      ctx.globalAlpha = k * (0.5 - i * 0.12);
+      ctx.fillRect(Math.round(x - r), Math.round(y - 12), 1, 1);
+      ctx.fillRect(Math.round(x + r), Math.round(y - 12), 1, 1);
+    }
+  } else if (kind === 'pusher') {
+    // spinta verso il basso (impatto)
+    ctx.fillStyle = C.redHot;
+    const oy = (time * 10) % 6;
+    ctx.fillRect(Math.round(x), Math.round(y - 18 + oy), 4, 1);
+    ctx.fillRect(Math.round(x + 1), Math.round(y - 17 + oy), 2, 1);
+  } else if (kind === 'fake') {
+    // doppio contorno tremolante (illusione)
+    if (Math.sin(time * 12) > 0) {
+      ctx.globalAlpha = k * 0.5;
+      drawFigure(ctx, x + 2, y, { h: 18, color: C.redDark, state: 'idle', phase: time * 2 });
+    }
+  } else if (kind === 'self') {
+    // specchio: figura identica ribaltata
+    ctx.globalAlpha = k * 0.5;
+    drawFigure(ctx, x - 12, y, { h: 18, color: C.redDark, state: 'climb', phase: time * 2, facing: -1 });
+  } else if (kind === 'helper') {
+    // mano tesa verso di te, luminosa (ti tira su)
+    ctx.globalAlpha = k;
+    ctx.fillStyle = C.white;
+    const oy = Math.sin(time * 4) * 2;
+    ctx.fillRect(Math.round(x + 5), Math.round(y - 13 + oy), 3, 3);
+    ctx.fillStyle = C.redHot;
+    ctx.fillRect(Math.round(x + 8), Math.round(y - 14 + oy), 2, 2);
+  } else if (kind === 'grabber') {
+    // artiglio che ti afferra (dita chiuse, vibra)
+    ctx.globalAlpha = k;
+    ctx.fillStyle = C.redHot;
+    const gx = Math.sin(time * 18) * 1;
+    for (let i = -1; i <= 1; i++) ctx.fillRect(Math.round(x + gx), Math.round(y - 12 + i * 3), 3, 2);
+    ctx.fillRect(Math.round(x - 2 + gx), Math.round(y - 14), 7, 2);
+  }
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -3004,9 +3235,37 @@ function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
 }
 
 // ---------------------------------------------------------------------------
-// ISCRIZIONE
+// MASH — barra del minigioco di lotta: riempila martellando prima che scada.
+// ---------------------------------------------------------------------------function drawMash(ctx, m, W, H) {
+  if (!m || (!m.active && !m.won && !m.lost)) return;
+  const bw = 120, bh = 8, bx = (W - bw) / 2, by = H - 34;
+  ctx.save();
+  // cornice
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = C.black; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+  ctx.fillStyle = C.redDeep; ctx.fillRect(bx, by, bw, bh);
+  // barra che si riempie (pulsante)
+  const r = Math.max(0, Math.min(1, m.progress));
+  const pulse = 0.7 + 0.3 * Math.abs(Math.sin((m.hits || 0) * 1.1));
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = r > 0.66 ? C.redHot : C.redBright;
+  ctx.fillRect(bx, by, Math.round(bw * r), bh);
+  // tacca del traguardo
+  ctx.globalAlpha = 0.9; ctx.fillStyle = C.white;
+  ctx.fillRect(bx + bw - 2, by - 2, 2, bh + 4);
+  // messaggio
+  ctx.globalAlpha = 1;
+  ctx.font = '7px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = C.black; ctx.fillText('TI AFFERRA — MARTELLA!', W / 2 + 1, by - 6);
+  ctx.fillStyle = m.won ? C.redHot : m.lost ? C.redDark : C.white;
+  ctx.fillText('TI AFFERRA — MARTELLA!', W / 2, by - 7);
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
 // ---------------------------------------------------------------------------
-function drawInscription(ctx, text, W) {
+// ISCRIZIONE
+// ---------------------------------------------------------------------------function drawInscription(ctx, text, W) {
   ctx.font = '7px monospace';
   ctx.fillStyle = C.black; ctx.fillText(text, 9, 11);
   ctx.fillStyle = C.redHot; ctx.fillText(text, 8, 10);
@@ -3015,21 +3274,26 @@ function drawInscription(ctx, text, W) {
 
 // ---------------------------------------------------------------------------
 // TITOLO — la cover animata: piramide di figure che si arrampicano.
-// ---------------------------------------------------------------------------
-function drawTitle(ctx, W, H, time) {
+// ---------------------------------------------------------------------------function drawTitle(ctx, W, H, time) {
   ctx.fillStyle = C.black; ctx.fillRect(0, 0, W, H);
 
-  const cx = W / 2, rows = 7, baseY = H - 8;
+  // PIRAMIDE COMPLETA — dalla base larga alla PUNTA di un solo corpo.
+  const cx = W / 2, rows = 11, baseY = H - 6, stepY = 10;
+  const baseSpan = 150;
   for (let row = 0; row < rows; row++) {
-    const y = baseY - row * 11;
-    const span = 116 - row * 11;
-    const count = Math.max(1, Math.round(span / 9));
+    const y = baseY - row * stepY;
+    const t = row / (rows - 1);                 // 0 base → 1 punta
+    const span = baseSpan * (1 - t) + 7;        // si restringe fino a ~1 corpo
+    const count = Math.max(1, Math.round(span / 8));
     for (let i = 0; i < count; i++) {
-      const x = cx - span / 2 + (i * span) / Math.max(1, count);
-      const st = row === 0 ? 'climb' : (i % 4 === 0) ? 'reach' : (i % 5 === 0) ? 'climb' : 'idle';
+      const x = count === 1 ? cx : cx - span / 2 + (i * span) / (count - 1);
+      // la punta è una figura che si arrampica/raggiunge in cima
+      const st = row === 0 ? 'climb'
+        : row >= rows - 2 ? 'reach'
+        : (i % 4 === 0) ? 'reach' : (i % 5 === 0) ? 'climb' : 'idle';
       const ph = time * 1.8 + i * 1.3 + row * 0.7;
-      const col = depthRed(0.4 + (row / rows) * 0.5);
-      drawFigure(ctx, x, y, { h: 15 + row * 0.4, color: col, state: st, phase: ph, facing: i % 2 ? 1 : -1 });
+      const col = depthRed(0.45 + t * 0.55);
+      drawFigure(ctx, x, y, { h: 14, color: col, state: st, phase: ph, facing: i % 2 ? 1 : -1 });
     }
   }
   const grad = ctx.createLinearGradient(0, 0, 0, H * 0.5);
@@ -3037,6 +3301,7 @@ function drawTitle(ctx, W, H, time) {
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H * 0.5);
 
   ctx.font = '20px monospace';
+  ctx.textAlign = 'left';
   ctx.fillStyle = C.black;  ctx.fillText('VOX POPULI', 93, 45);
   ctx.fillStyle = C.redHot; ctx.fillText('VOX POPULI', 92, 44);
   ctx.font = '7px monospace';
@@ -3089,7 +3354,7 @@ function advance(state, event) {
 
 
 
-
+
 
 const canvas = document.getElementById('game');
 let ctx = canvas.getContext('2d');   // riassegnato al contesto offscreen del renderer
@@ -3133,6 +3398,7 @@ let time = 0;
 let loyalty = 0;
 let action = 'idle';
 let actionT = 0;
+let mash = createMash();
 
 const trackLabel = document.getElementById('track-label');
 const btnAudio = document.getElementById('btn-audio');
@@ -3234,29 +3500,43 @@ function setPrompt(txt) {
 }
 function doVerb(verb) {
   if (state.phase !== 'playing' || !level || !level.active) return;
+  const kind = level.active.kind;
+  if (isAutoKind(kind)) return;   // helper/grabber non si scelgono con Z/X
   const eff = resolveEncounter(level.active, verb);
   const cl = level.climb;
-  // l'esito sposta la scalata su/giù di una fila
-  const dr = Math.round(-eff.dy / 24);
-  if (dr !== 0) {
-    const nr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r + dr));
-    if (cl.has(cl.lh.c, nr)) cl.lh = { c: cl.lh.c, r: nr };
-    if (cl.has(cl.rh.c, nr)) cl.rh = { c: cl.rh.c, r: nr };
-    cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
-  }
+  // l'esito sposta la scalata su/giù
+  if (eff.dy) moveHands(cl, Math.round(-eff.dy / 24));
   loyalty += eff.loyal;
   action = verb === 'tendi' ? 'tendi' : 'spingi';
-  actionT = 0.6;
+  actionT = verb === 'tendi' ? 0.72 : 0.62;
 }
-if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); doVerb('tendi'); });
-if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); doVerb('spingi'); });
+
+// Martella durante il minigioco di lotta.
+function mashPress() {
+  if (mash.active) { mashHit(mash); action = 'spingi'; actionT = 0.2; }
+}
+if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('tendi'); });
+if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('spingi'); });
 if (btnCta) btnCta.addEventListener('pointerdown', ev => { ev.preventDefault(); goToCta(); });
 window.addEventListener('keydown', ev => {
-  if (ev.code === 'KeyZ') doVerb('tendi');
-  else if (ev.code === 'KeyX') doVerb('spingi');
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX' || ev.code === 'Space' || ev.code === 'ArrowUp') {
+    if (mash.active) { mashPress(); }
+    else if (ev.code === 'KeyZ') doVerb('tendi');
+    else if (ev.code === 'KeyX') doVerb('spingi');
+  }
 });
 
 const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').split(',').filter(Boolean));
+
+// Prompt in basso: cambia in base a chi incontri e al tipo di interazione.
+function updatePrompt() {
+  const a = level && level.active;
+  if (!a) { setPrompt(''); return; }
+  const d = KINDS[a.kind];
+  if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶');
+  else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]');
+  else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi');
+}
 
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
@@ -3345,9 +3625,65 @@ function loop() {
   // --- playing: arrampicata ---
   level.events.length = 0;
   const NONE = { left: false, right: false, up: false, down: false };
-  // L'incontro attivo FERMA il corpo: finché non scegli (tendi/spingi) non sali.
+  // Il mash blocca tutto: stai lottando.
+  if (mash.active) {
+    stepMash(mash, 0.016);
+    const mp = climbPos(cl);
+    if (mash.won) {
+      // hai vinto: butti giù l'avversario e sali di 3
+      moveHands(cl, +3); loyalty += 1;
+      emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 12, spread: 4 });
+      renderer.post.flash = 0.5;
+      if (level.active) { level.active.resolved = true; level.active.verb = 'spingi'; }
+      mash = createMash();
+    } else if (mash.lost) {
+      // perso: scendi di 4
+      moveHands(cl, -4);
+      emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 8 });
+      renderer.post.glitch = 0.9; renderer.post.flash = 0.5;
+      if (level.active) { level.active.resolved = true; level.active.verb = 'tendi'; }
+      mash = createMash();
+    }
+    stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
+    const pc = climbPos(cl);
+    cameraY = Math.max(0, Math.min(Math.max(0, cl.rows[0] - VIEW_H + 40), pc.by - VIEW_H * 0.55));
+    updatePrompt();
+    if (cl.reached && state.phase === 'playing') state = advance(state, 'reachedTop');
+    renderer.render(() => { drawWorld(level, cameraY); drawMash(ctx, mash, VIEW_W, VIEW_H, time); }, { post: applyPost('playing') });
+    return;
+  }
+
+  // L'incontro attivo FERMA il corpo: finché non scegli (o l'auto si risolve).
   level.active = encounterAt(cl, level.encounters);
-  const acts = level.active ? NONE : input.climbActions();
+  // helper: ti tira su da solo. grabber: parte la lotta a martello.
+  if (level.active && !level.active.triggered) {
+    const kind = level.active.kind;
+    if (kind === 'helper') {
+      level.active.triggered = true;
+      const mp = climbPos(cl);
+      level.autoHelp = 0.7;            // animazione: il salvatore ti tira
+      emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 8, spread: 3 });
+      renderer.post.flash = 0.3;
+    } else if (kind === 'grabber') {
+      level.active.triggered = true;
+      mash = startMash(createMash(), { kind: 'grabber', row: level.active.row });
+    }
+  }
+  if (!mash.active && level.active && level.active.triggered) {
+    const kind = level.active.kind;
+    if (kind === 'helper') {
+      // risolvi dopo un attimo (l'animazione del tiro su)
+      level.autoHelpT = (level.autoHelpT || 0) + 0.016;
+      if (level.autoHelpT > 0.5) {
+        level.active.resolved = true; level.active.verb = 'tendi';
+        moveHands(cl, +2); loyalty += 1;
+        level.autoHelp = 0; level.autoHelpT = 0;
+      }
+    } else if (kind === 'grabber') {
+      level.active.resolved = true;   // gestito dal mash (vinto/perso)
+    }
+  }
+  const acts = (level.active && !isAutoKind(level.active.kind)) ? NONE : input.climbActions();
   if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, 0.016);
 
   // scintille quando le mani si muovono
@@ -3404,9 +3740,17 @@ function loop() {
   const maxCam = Math.max(0, cl.rows[0] - VIEW_H + 40);
   cameraY = Math.max(0, Math.min(maxCam, pos.ty - VIEW_H * 0.55));
 
+  // cedimento di un corpo debole: cade da solo e ti trascina giù
+  if (cl.collapseEvent) {
+    const ev = cl.collapseEvent; cl.collapseEvent = null;
+    emitFx(level.pfx, 'ash', pos.tx, pos.ty + cameraY, { count: 10, spread: 3 });
+    emitFx(level.pfx, 'blood', pos.tx, pos.ty + cameraY, { count: 4 });
+    renderer.post.glitch = 0.8; renderer.post.flash = 0.25;
+    level.events.push('quake');
+  }
+
   level.active = encounterAt(cl, level.encounters);
-  if (level.active) setPrompt('◀ ' + KINDS[level.active.kind].prompt + ' ▶   [Z] tendi   [X] spingi');
-  else setPrompt('');
+  updatePrompt();
 
   if (cl.reached && state.phase === 'playing') {
     emitFx(level.pfx, 'shock', pos.tx, pos.ty + cameraY, { count: 1 });
@@ -3422,6 +3766,7 @@ function loop() {
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
     ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
+    drawMash(ctx, mash, VIEW_W, VIEW_H);
   }, { post: applyPost('playing') });
 }
 
@@ -3437,7 +3782,7 @@ if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = idx;
   level = loadGirone(idx);
 }
-window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, doVerb };
+window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, doVerb };
 
 loop();
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KINDS, GIRONE_ENCOUNTERS, createEncounters, activeEncounter, resolveEncounter } from '../src/encounters.js';
+import { KINDS, GIRONE_ENCOUNTERS, createEncounters, activeEncounter, resolveEncounter, isAutoKind } from '../src/encounters.js';
 import { GIRONI } from '../src/gironi.js';
 
 test('ogni girone ha incontri definiti e ogni incontro ha i due verbi', () => {
@@ -46,4 +46,23 @@ test('activeEncounter trova solo l\'incontro vicino e non risolto', () => {
 test('tutti i tipi sono usati almeno una volta nei 13 gironi', () => {
   const used = new Set(Object.values(GIRONE_ENCOUNTERS).flat());
   for (const k of Object.keys(KINDS)) assert.ok(used.has(k), 'tipo mai usato: ' + k);
+});
+
+test('i nuovi tipi helper/grabber esistono ed hanno entrambi i verbi', () => {
+  for (const k of ['helper', 'grabber']) {
+    assert.ok(KINDS[k], 'manca ' + k);
+    assert.ok(KINDS[k].tendi && KINDS[k].spingi, k + ' senza entrambi i verbi');
+  }
+  assert.equal(isAutoKind('helper'), true);
+  assert.equal(isAutoKind('grabber'), true);
+  assert.equal(isAutoKind('hand'), false);
+  assert.equal(isAutoKind('pusher'), false);
+});
+
+test('ogni girone ha almeno un incontro automatico o un pericolo specifico', () => {
+  for (const g of GIRONI) {
+    const kinds = GIRONE_ENCOUNTERS[g.id] || [];
+    assert.ok(kinds.length >= 1, g.id + ' senza incontri');
+    for (const k of kinds) assert.ok(KINDS[k], g.id + ': tipo sconosciuto ' + k);
+  }
 });

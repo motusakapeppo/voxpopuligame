@@ -67,23 +67,44 @@ export const KINDS = {
     tendi:  { dy: -24, loyal: +2, event: 'joined', fall: false },
     spingi: { dy: 0,   loyal: -1, event: 'ignored', fall: false },
   },
+  // TI AIUTA: ti porge la mano e ti tira su. Non devi fare nulla.
+  helper: {
+    prompt: 'ti porge la mano e ti tira su',
+    auto: true,
+    tendi:  { dy: -24, loyal: +1, event: 'helped', fall: false },
+    spingi: { dy: 0,   loyal: -1, event: 'ignored', fall: false },
+  },
+  // TI AFFERRA: cerca di buttarti giù. Parte il minigioco di lotta (mash).
+  grabber: {
+    prompt: 'ti afferra per buttarti giù — martella!',
+    mash: true,
+    tendi:  { dy: 0,   loyal: +1, event: 'resisted', fall: false },
+    spingi: { dy: -24, loyal: -1, event: 'threwDown', fall: true },
+  },
 };
+
+// Gli incontri "automatici" non chiedono una scelta Z/X: o ti aiutano da soli
+// (helper) o avviano la lotta a martello (grabber).
+export function isAutoKind(kind) {
+  const d = KINDS[kind];
+  return !!(d && (d.auto || d.mash));
+}
 
 // Quanti incontri per girone e di che tipo (in ordine di scalata).
 // Ogni girone è monotono: non "spam" di tipi, ma una progressione tematica.
 export const GIRONE_ENCOUNTERS = {
-  '01': ['sleeper', 'sleeper', 'hand'],
-  '02': ['hand', 'falling', 'pusher'],
-  '03': ['rival', 'hand', 'falling'],
-  '04': ['falling', 'falling', 'pusher'],
-  '05': ['siren', 'siren', 'hand'],
-  '06': ['rival', 'rival', 'hand'],
-  '07': ['rival', 'falling', 'hand'],
-  '08': ['fake', 'fake', 'hand'],
-  '09': ['self', 'self', 'falling'],
-  '10': ['pusher', 'pusher', 'hand'],
-  '11': ['falling', 'pusher', 'hand'],
-  '12': ['chorus', 'chorus', 'hand'],
+  '01': ['sleeper', 'helper', 'hand'],
+  '02': ['hand', 'grabber', 'pusher'],
+  '03': ['rival', 'helper', 'falling'],
+  '04': ['falling', 'grabber', 'pusher'],
+  '05': ['siren', 'helper', 'hand'],
+  '06': ['rival', 'grabber', 'hand'],
+  '07': ['rival', 'falling', 'grabber'],
+  '08': ['fake', 'helper', 'hand'],
+  '09': ['self', 'grabber', 'falling'],
+  '10': ['pusher', 'grabber', 'hand'],
+  '11': ['falling', 'grabber', 'helper'],
+  '12': ['chorus', 'helper', 'hand'],
   '13': ['hand'],
 };
 
