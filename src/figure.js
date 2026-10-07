@@ -166,19 +166,20 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const swing = clamp(finiteOr(opts.swing, 0), -1, 1) * 3.2;
   const hipX = finiteOr(bx, handMidX) + swing;
   const hipY = finiteOr(by, handMidY + h * 0.55) + breatheOff;
-  const shHalf = Math.max(3, Math.round(h * 0.16));
-  // TRONCO: le spalle stanno 0.38h sopra il bacino. Le mani sono ~13px sopra il
-  // bacino, quindi le spalle restano ben sotto le mani: le braccia salgono con i
-  // gomiti CHIARAMENTE PIEGATI (posa da arrampicata leggibile).
-  const shY = hipY - h * 0.38;
-  const leanX = Math.sin(clamp(finiteOr(lean, 0), -0.6, 0.6)) * h * 0.14;
+  const shHalf = Math.max(2, Math.round(h * 0.14));
+  // TORSO: spalle 0.20h sopra il bacino (foto reali: bacino 0.50h, spalle 0.70h
+  // sull'altezza totale). Testa a ~0.13h sopra le spalle.
+  const shY = hipY - h * 0.20;
+  const leanX = Math.sin(clamp(finiteOr(lean, 0), -0.6, 0.6)) * h * 0.10;
   const shX = hipX + leanX;
   const shLx = shX - shHalf, shRx = shX + shHalf;
-  const headX = shX + leanX * 0.6, headY = shY - h * 0.14 + h * 0.06;
-  const hr = Math.max(1, Math.round(h * 0.09));
-  // BRACCIA: ~0.24h per segmento. Le spalle sono ~0.38h sotto le mani → le
-  // braccia si PIEGANO di ~90° ai gomiti. Posa da scalata, non tentacoli.
-  const up = h * 0.26, lo = h * 0.26;
+  const headX = shX + leanX * 0.6, headY = shY - h * 0.13;
+  const hr = Math.max(1, Math.round(h * 0.07));
+  // BRACCIA: ~0.16h per segmento (0.32h totali). Il bacino pende ~0.45h sotto le
+  // mani (HANG in climb.js), quindi le braccia arrivano QUASI DISTESE in alto:
+  // è la posa "X" reale ("straight arms are happy arms"), col gomito comunque
+  // visibile. NIENTE gomiti a 90° sparati di lato.
+  const up = h * 0.17, lo = h * 0.17;
   // leggera alternanza delle anche (dondolio) per il ritmo di salita
   const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
   // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.
@@ -210,23 +211,19 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   line(ctx, shX, shY, headX, headY + h * 0.05, t);
   disc(ctx, headX, headY, hr);
 
-  // GAMBE: proporzionate alle braccia (coscia+stinco 0.27h ciascuno: da umani le
-  // gambe sono un filo più lunghe). I piedi stanno SULLA PARETE sotto il bacino,
-  // ginocchia piegate verso l'esterno/avanti; una gamba sale (ginocchio alto,
-  // piede su una presa più in alto) mentre l'altra spinge (più distesa), e si
-  // ALTERNANO col ciclo di salita — così le gambe contribuiscono davvero.
-  const thigh = h * 0.27, shin = h * 0.27;
+  // GAMBE: coscia e stinco ~0.24h ciascuno (gambe ~1.5× le braccia, come da
+  // anatomia). I piedi stanno SULLA PARETE sotto il bacino. Una gamba SPINGE
+  // (quasi distesa in basso) e l'altra SALE (ginocchio piegato in alto, piede più
+  // su) — pattern contro-laterale: si alterna col ciclo. Il ginocchio piega verso
+  // l'esterno/avanti, mai simmetrico "a rana".
+  const thigh = h * 0.24, shin = h * 0.24;
   const cyc = Math.sin(finiteOr(phase, 0) * 2.4);
   for (const side of [-1, 1]) {
-    // i piedi premono la parete VICINO al corpo; il ginocchio si piega verso
-    // l'esterno. Una gamba sale (ginocchio alto, piede più in alto) e l'altra
-    // spinge (più distesa in basso); si alternano col ciclo di salita.
-    const step = side * cyc;                       // +1 = in salita, -1 = in spinta
-    const footX = hipX + side * h * 0.10;
-    // bias di base: la gamba "destra" sta più in alto (piegata in salita), la
-    // sinistra più in basso (in spinta). Il ciclo le alterna sopra la bias, così
-    // non c'è mai l'istante simmetrico (che leggeva come uno squat).
-    const footY = hipY + h * 0.38 - side * h * 0.11 - step * h * 0.13;
+    const step = side * cyc;                        // +1 = in salita, -1 = in spinta
+    const footX = hipX + side * h * 0.12;
+    // base: il piede destro più alto (in salita), il sinistro più basso (spinge);
+    // il ciclo li alterna sopra la base → mai l'istante simmetrico.
+    const footY = hipY + h * 0.42 - side * h * 0.07 - step * h * 0.15;
     const lg = ik2(hipX, hipY, footX, footY, thigh, shin, -side);
     line(ctx, hipX, hipY, lg.ex, lg.ey, t);
     line(ctx, lg.ex, lg.ey, lg.hx, lg.hy, t);
