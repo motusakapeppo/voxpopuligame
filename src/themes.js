@@ -146,12 +146,89 @@ function thmAmbient(fx, plan, time, camY, W, H, seed) {
   emitFx(fx, type, x, y, { count: 1 });
 }
 
+// ---------------------------------------------------------------------------
+// PARALLASSE + NEBBIA — strati di creste silhouette dietro il motivo del tema.
+// Ogni strato scorre con la camera a velocità diversa (più lontano = più lento)
+// e usa un rosso più freddo (depthRed). Forma da LCG seminato: mai Math.random.
+// ---------------------------------------------------------------------------
+
+// Costruttore di strato: colore SEMPRE coerente con depthRed(depth).
+function thmLayer(depth, speed) {
+  return { depth, speed, color: depthRed(depth) };
+}
+
+// Strati per tema: >=2, profondità e colori distinti. Il fallback copre gli ignoti.
+const THM_LAYERS = {
+  '01-intro': [thmLayer(0.0, 0.12), thmLayer(0.4, 0.30), thmLayer(0.8, 0.55)],
+  '02-vento': [thmLayer(0.0, 0.18), thmLayer(0.4, 0.40), thmLayer(0.8, 0.70)],
+  '03-tuoni': [thmLayer(0.2, 0.15), thmLayer(0.6, 0.35), thmLayer(1.0, 0.60)],
+  '04-baghdad': [thmLayer(0.0, 0.20), thmLayer(0.4, 0.45), thmLayer(0.8, 0.75)],
+  '05-hosonno': [thmLayer(0.0, 0.10), thmLayer(0.4, 0.28), thmLayer(0.8, 0.50)],
+  '06-primoposto': [thmLayer(0.2, 0.25), thmLayer(0.6, 0.50), thmLayer(1.0, 0.80)],
+  '07-tictac': [thmLayer(0.0, 0.12), thmLayer(0.4, 0.32), thmLayer(0.8, 0.58)],
+  '08-tuttofinto': [thmLayer(0.2, 0.15), thmLayer(0.6, 0.38), thmLayer(1.0, 0.65)],
+  '09-edera': [thmLayer(0.0, 0.14), thmLayer(0.4, 0.34), thmLayer(0.8, 0.60)],
+  '10-scendi': [thmLayer(0.0, 0.22), thmLayer(0.4, 0.48), thmLayer(0.8, 0.78)],
+  '11-lafinedelmondo': [thmLayer(0.0, 0.10), thmLayer(0.4, 0.30), thmLayer(0.8, 0.55)],
+  '12-maranatha': [thmLayer(0.2, 0.16), thmLayer(0.6, 0.40), thmLayer(1.0, 0.68)],
+  '13-outro': [thmLayer(0.0, 0.08), thmLayer(0.4, 0.25), thmLayer(0.8, 0.45)],
+  'default': [thmLayer(0.0, 0.15), thmLayer(0.4, 0.35), thmLayer(0.8, 0.60)],
+};
+
+// Pura: copia degli strati del tema (ignoti → fallback). Mai il riferimento interno.
+export function themeLayers(audioId) {
+  const src = THM_LAYERS[themeFor(audioId)] || THM_LAYERS[THEME_FALLBACK];
+  return src.map((l) => ({ depth: l.depth, speed: l.speed, color: l.color }));
+}
+
+// Disegna gli strati come creste silhouette. Ogni strato: posizione verticale
+// scorsa dalla camera alla sua velocità, forma da LCG(seed ^ indice), coordinate
+// intere. Lo strato vicino copre i lontani (occlusione naturale).
+function thmParallax(P, camY, time, W, H, layers, seed) {
+  if (!Array.isArray(layers) || !layers.length) return;
+  const cy = thmNum(camY, 0), t = thmNum(time, 0);
+  const sd = thmNum(seed, 1) >>> 0;
+  for (let i = 0; i < layers.length; i++) {
+    const L = layers[i];
+    if (!L) continue;
+    const depth = thmNum(L.depth, 0);
+    const speed = thmNum(L.speed, 0.3);
+    const color = typeof L.color === 'string' ? L.color : depthRed(depth);
+    const period = 200 + i * 24;
+    const raw = thmTile(20 + i * 50, cy, speed, period);
+    const base = Math.round((raw / period) * (H * 0.55) + H * 0.15) + i * 12;
+    const r = thmLcg((sd ^ Math.imul(i + 1, 2654435761)) >>> 0);
+    const step = 10;
+    for (let x = 0; x < W; x += step) {
+      const hh = Math.round(6 + r() * 26);
+      const y = Math.round(base - hh + Math.sin(t * 0.5 + x * 0.05 + i) * 1.5);
+      P.rect(x, y, step, H - y, color, 0.26 + 0.13 * i);
+    }
+  }
+}
+
+// Nebbia atmosferica: bande orizzontali rosso-scuro/nero a bassa alpha che
+// unificano gli strati. Scorre lentamente con la camera.
+function thmFog(P, camY, time, W, H, opts) {
+  const o = opts || {};
+  const bands = Math.max(2, Math.min(10, Math.round(thmNum(o.bands, 5))));
+  const t = thmNum(time, 0), cy = thmNum(camY, 0);
+  const bh = H / bands;
+  const off = (((cy * 0.05) % bh) + bh) % bh;
+  for (let i = -1; i < bands; i++) {
+    const y = Math.round(i * bh + off + Math.sin(t * 0.35 + i * 1.9) * 3);
+    const a = thmNum(o.alpha, 0.06) + 0.04 * ((i + 1) / bands);
+    P.rect(0, y, W, Math.ceil(bh) + 1, i % 2 ? C.redDeep : C.black, a);
+  }
+}
+
 // ===========================================================================
 // I 13 TEMI (+ default). Firma: (P, camY, time, W, H, fx)
 // ===========================================================================
 
 // 01 INTRO — braci che salgono, dormienti, mare lontano.
 function thmIntroBack(P, camY, time, W, H) {
+  thmParallax(P, camY, time, W, H, THM_LAYERS['01-intro'], thmHash('01-intro'));
   const sy = thmTile(0, camY, 0.2, 420) - 70;
   // mare con onde animate (più vivo)
   P.rect(0, sy, W, 30, C.redDeep, 0.5);
@@ -163,6 +240,7 @@ function thmIntroBack(P, camY, time, W, H) {
   for (let i = 0; i < 3; i++)
     drawFigure(P.ctx, i === 0 ? 60 : i === 1 ? 160 : 250, gy + 12, { h: 11, color: C.redDark, state: 'idle', phase: time * 0.5 + i * 2, alpha: 0.55 });
   for (let i = 0; i < 4; i++) P.line(300, gy + 14, 300 - 6 + i * 4, gy + 14 - 12 - i * 3, C.redDeep, 0.5);
+  thmFog(P, camY, time, W, H);
 }
 function thmIntroFront(P, camY, time, W, H) {
   for (let i = 0; i < 7; i++) {
@@ -173,6 +251,7 @@ function thmIntroFront(P, camY, time, W, H) {
 
 // 02 IL VENTO DAL SUD — case a cupola sbilenche + pioggia obliqua.
 function thmVentoBack(P, camY, time, W, H) {
+  thmParallax(P, camY, time, W, H, THM_LAYERS['02-vento'], thmHash('02-vento'));
   for (let layer = 0; layer < 2; layer++) {
     const f = layer === 0 ? 0.2 : 0.5;
     const col = layer === 0 ? C.redDeep : C.redDark;
@@ -196,6 +275,7 @@ function thmVentoBack(P, camY, time, W, H) {
     P.rect(xx, yy, 1, 3, C.redMid, 0.5);
     P.rect(xx - 1, yy + 3, 1, 3, C.redMid, 0.4);
   }
+  thmFog(P, camY, time, W, H);
 }
 function thmVentoFront(P, camY, time, W, H) {
   drawFigure(P.ctx, W * 0.28, H * 0.82, { h: 15, color: C.redBright, state: 'push', phase: time * 2.4, alpha: 0.85, detail: true });
@@ -207,6 +287,7 @@ function thmVentoFront(P, camY, time, W, H) {
 // 03 COME I TUONI — lampi, crepe, madri separate.
 function thmTuoniBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['03-tuoni'], thmHash('03-tuoni'));
   const f = thmPulse(time, 3.4, 0.16);
   if (f > 0) {
     P.rect(0, 0, W, H, C.redHot, 0.12 * f);
@@ -225,6 +306,7 @@ function thmTuoniBack(P, camY, time, W, H) {
   }
   drawFigure(P.ctx, 110, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: 1, alpha: 0.75, detail: true });
   drawFigure(P.ctx, 205, gy + 20, { h: 14, color: C.red, state: 'tendi', phase: time * 1.6, facing: -1, alpha: 0.75, detail: true });
+  thmFog(P, camY, time, W, H);
 }
 function thmTuoniFront(P, camY, time, W, H) {
   const f = thmPulse(time, 3.4, 0.16);
@@ -234,6 +316,7 @@ function thmTuoniFront(P, camY, time, W, H) {
 // 04 BAGHDAD — fuoco, fumo, detriti, protesta repressa.
 function thmBaghdadBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['04-baghdad'], thmHash('04-baghdad'));
   const glow = thmTile(140, camY, 0.5, 320) - 20;
   P.rect(0, glow, W, Math.max(0, H - glow), C.redMid, 0.18 + 0.08 * Math.sin(time * 6));
   // bagliori di fuoco alla base
@@ -253,6 +336,7 @@ function thmBaghdadBack(P, camY, time, W, H) {
     P.rect((i * 53 + 20) % W, (time * 50 + i * 40) % (H + 20), 2, 2, C.redDark, 0.7);
   drawFigure(P.ctx, 90, glow + 24, { h: 12, color: C.redDark, state: 'scream', phase: time * 2.2, alpha: 0.75, detail: true });
   drawFigure(P.ctx, 130, glow + 24, { h: 12, color: C.red, state: 'push', phase: time * 2.6, facing: -1, alpha: 0.85, detail: true });
+  thmFog(P, camY, time, W, H, { bands: 7, alpha: 0.07 });
 }
 function thmBaghdadFront(P, camY, time, W, H) {
   for (let i = 0; i < 6; i++)
@@ -262,6 +346,7 @@ function thmBaghdadFront(P, camY, time, W, H) {
 // 05 HO SONNO — buio che scende, sirene, ciclo di lavoro, specchio.
 function thmHosonnoBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['05-hosonno'], thmHash('05-hosonno'));
   const darkH = (time * 10) % (H + 60);
   P.rect(0, 0, W, darkH, C.black, 0.45);
   P.rect(0, darkH, W, 2, C.redDeep, 0.5);
@@ -278,6 +363,7 @@ function thmHosonnoBack(P, camY, time, W, H) {
   }
   // specchio incrinato
   for (let i = 0; i < 4; i++) P.rect(W - 54 + i * 5, 30 + i * 8, 1, 24, C.redMid, 0.6);
+  thmFog(P, camY, time, W, H, { bands: 6, alpha: 0.08 });
 }
 function thmHosonnoFront(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 0.16 + 0.08 * Math.sin(time * 1.5));
@@ -286,6 +372,7 @@ function thmHosonnoFront(P, camY, time, W, H) {
 // 06 PRIMO POSTO — rivali che si scavalcano, serpenti, corsa.
 function thmPrimopostoBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['06-primoposto'], thmHash('06-primoposto'));
   const ty = thmTile(120, camY, 0.4, 300) - 30;
   P.rect(0, ty, W, 1, C.redDark, 0.5);
   P.rect(0, ty + 60, W, 1, C.redDark, 0.3);
@@ -301,6 +388,7 @@ function thmPrimopostoBack(P, camY, time, W, H) {
   // rivali che si scavalcano
   drawFigure(P.ctx, 120, ty + 20, { h: 13, color: C.red, state: 'climb', phase: time * 2.4, alpha: 0.8, detail: true });
   drawFigure(P.ctx, 138, ty + 27, { h: 13, color: C.redDark, state: 'push', phase: time * 3, alpha: 0.85, detail: true });
+  thmFog(P, camY, time, W, H);
 }
 function thmPrimopostoFront(P, camY, time, W, H) {
   const xx = ((time * 60) % (W + 40)) - 20;
@@ -311,6 +399,7 @@ function thmPrimopostoFront(P, camY, time, W, H) {
 // 07 TIC-TAC — orologio, ingranaggi, conto alla rovescia.
 function thmTictacBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['07-tictac'], thmHash('07-tictac'));
   const ccx = W * 0.5, ccy = H * 0.4, R = 34;
   P.ring(ccx, ccy, R, C.redDark, 0.75, 20);
   P.ring(ccx, ccy, R - 4, C.redDeep, 0.4, 16);
@@ -332,6 +421,7 @@ function thmTictacBack(P, camY, time, W, H) {
   }
   const frac = 1 - ((time % 12) / 12);
   P.rect(W - 8, 12, 3, Math.max(1, Math.round(H * 0.5 * frac)), C.redHot, 0.7);
+  thmFog(P, camY, time, W, H);
 }
 function thmTictacFront(P, camY, time, W, H) {
   drawFigure(P.ctx, W * 0.75, H * 0.85, { h: 14, color: C.redBright, state: 'run', phase: time * 4.5, alpha: 0.85, detail: true });
@@ -340,6 +430,7 @@ function thmTictacFront(P, camY, time, W, H) {
 // 08 TUTTO FINTO — sipario, orchestra mascherata, fiamme finte, specchi.
 function thmTuttofintoBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['08-tuttofinto'], thmHash('08-tuttofinto'));
   P.rect(0, 0, W, 44, C.redDeep, 0.6);
   for (let i = 0; i < 8; i++)
     P.rect(i * (W / 8) + Math.sin(time * 1.5 + i) * 2, 0, 2, 48, C.redDark, 0.6);
@@ -354,6 +445,7 @@ function thmTuttofintoBack(P, camY, time, W, H) {
     P.rect(fx + 1, oy + 8 - fl - 2, 1, 2, C.redHot, 0.5);
   }
   for (let i = 0; i < 3; i++) P.rect(W - 34 - i * 6, 54 + i * 10, 8, 2, C.redMid, 0.45);
+  thmFog(P, camY, time, W, H);
 }
 function thmTuttofintoFront(P, camY, time, W, H) {
   drawFigure(P.ctx, W * 0.5, H * 0.88, { h: 15, color: C.redDark, state: 'idle', phase: time * 1.4, alpha: 0.5, detail: true });
@@ -363,6 +455,7 @@ function thmTuttofintoFront(P, camY, time, W, H) {
 // 09 EDERA — edera che cresce, serpenti, il doppio.
 function thmEderaBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['09-edera'], thmHash('09-edera'));
   const grow = Math.min(1, (time % 16) / 10);
   let vy = H + 10;
   for (let i = 0; i < 18; i++) {
@@ -377,6 +470,7 @@ function thmEderaBack(P, camY, time, W, H) {
   }
   drawFigure(P.ctx, 130, H * 0.8, { h: 13, color: C.red, state: 'climb', phase: time * 2, alpha: 0.75, detail: true });
   drawFigure(P.ctx, 170, H * 0.8, { h: 13, color: C.redDark, state: 'climb', phase: time * 2, facing: -1, alpha: 0.75, detail: true });
+  thmFog(P, camY, time, W, H);
 }
 function thmEderaFront(P, camY, time, W, H) {
   for (let i = 0; i < 10; i++) {
@@ -388,6 +482,7 @@ function thmEderaFront(P, camY, time, W, H) {
 // 10 SCENDI — pioggia, folla bagnata, pugni alzati.
 function thmScendiBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['10-scendi'], thmHash('10-scendi'));
   for (let i = 0; i < 20; i++) {
     const yy = (time * 120 + i * 31) % (H + 20);
     P.rect((i * 21 + time * 10) % W, yy, 1, 3, C.redMid, 0.45);
@@ -401,6 +496,7 @@ function thmScendiBack(P, camY, time, W, H) {
     P.line(px, py, px, py - 8, C.redBright, 0.6);
     P.rect(px - 2, py - 11, 4, 4, C.redHot, 0.8);
   }
+  thmFog(P, camY, time, W, H);
 }
 function thmScendiFront(P, camY, time, W, H) {
   for (let i = 0; i < 3; i++) {
@@ -416,6 +512,7 @@ function thmScendiFront(P, camY, time, W, H) {
 // 11 LA FINE DEL MONDO — acqua che sale, fiori appassiti, lenzuolo nero.
 function thmLfineBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['11-lafinedelmondo'], thmHash('11-lafinedelmondo'));
   const wl = H - ((time * 6) % (H + 60));
   P.rect(0, wl, W, Math.max(0, H - wl), C.redDeep, 0.4);
   for (let i = 0; i < 8; i++) P.dot(i * 42, wl + Math.sin(time * 3 + i) * 2, C.redMid, 0.6);
@@ -430,6 +527,7 @@ function thmLfineBack(P, camY, time, W, H) {
     P.dot(fx + droop, wl - 16, C.red, 0.7);
     P.dot(fx + droop + 1, wl - 14, C.redMid, 0.4);
   }
+  thmFog(P, camY, time, W, H, { bands: 6, alpha: 0.06 });
 }
 function thmLfineFront(P, camY, time, W, H) {
   const wl = H - ((time * 6) % (H + 60));
@@ -439,6 +537,7 @@ function thmLfineFront(P, camY, time, W, H) {
 // 12 MARANATHA — coro, mani tese, popoli in cammino.
 function thmMaranathaBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['12-maranatha'], thmHash('12-maranatha'));
   P.rect(0, H * 0.4, W, 3, C.redDeep, 0.5);
   P.rect(0, H * 0.4 + 3, W, 24, C.redDeep, 0.22);
   const gy = thmTile(130, camY, 0.4, 320) - 20;
@@ -449,6 +548,7 @@ function thmMaranathaBack(P, camY, time, W, H) {
     P.line(hx, hy, hx, hy - 9, C.redBright, 0.6);
     P.dot(hx, hy - 11, C.redHot, 0.7);
   }
+  thmFog(P, camY, time, W, H);
 }
 function thmMaranathaFront(P, camY, time, W, H) {
   drawFigure(P.ctx, W * 0.5, H * 0.9, { h: 15, color: C.redBright, state: 'tendi', phase: time * 1.8, alpha: 0.9 });
@@ -458,6 +558,7 @@ function thmMaranathaFront(P, camY, time, W, H) {
 // 13 OUTRO — alba sulla cima, figura sola, lento dissolversi.
 function thmOutroBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['13-outro'], thmHash('13-outro'));
   const gy = thmTile(90, camY, 0.3, 300) - 30;
   P.rect(0, gy, W, 30, C.redDeep, 0.4);
   // cima montuosa
@@ -476,6 +577,7 @@ function thmOutroBack(P, camY, time, W, H) {
     }
   }
   drawFigure(P.ctx, W * 0.5, gy + 16, { h: 15, color: C.redBright, state: 'idle', phase: time * 1.2, alpha: 0.85, detail: true });
+  thmFog(P, camY, time, W, H);
 }
 function thmOutroFront(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 0.12 + 0.1 * (0.5 + 0.5 * Math.sin(time * 0.6)));
@@ -484,7 +586,9 @@ function thmOutroFront(P, camY, time, W, H) {
 // default — braci su nero (ripiego).
 function thmDefaultBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
+  thmParallax(P, camY, time, W, H, THM_LAYERS['default'], thmHash('default'));
   P.rect(0, H - 10, W, 10, C.redDeep, 0.3);
+  thmFog(P, camY, time, W, H);
 }
 function thmDefaultFront(P, camY, time, W, H) {
   for (let i = 0; i < 4; i++) P.dot(40 + i * 70, H - ((time * 16 + i * 40) % (H + 10)), C.red, 0.4);
@@ -531,5 +635,3 @@ export function drawThemeFront(ctx, audioId, camY, time, W, H, fx) {
     ctx.globalAlpha = 1;
   } catch { /* idem */ }
 }
-
-
