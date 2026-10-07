@@ -26,11 +26,13 @@ export function createJuice() {
 }
 
 // Un impatto: congela, spinge la camera, scuote, lampeggia.
+// Valori allineati alla ricerca (guida §6): hit-stop base ~20ms all'impatto
+// (Nijman: "20 milliseconds or something"); shake 2–4px a 320×180 (era 10px).
 export function impact(j, power = 1, dx = 0, dy = 0) {
   const p = Number.isFinite(power) ? power : 1;
-  j.hitstop = Math.max(j.hitstop, Math.min(0.11, 0.045 * p));
+  j.hitstop = Math.max(j.hitstop, Math.min(0.05, 0.020 * p));
   punch(j, Math.min(0.14, 0.06 * p));
-  j.shake = Math.max(j.shake, Math.min(10, 4 * p));
+  j.shake = Math.max(j.shake, Math.min(6, 2.2 * p));
   j.dirX = Number.isFinite(dx) ? dx : 0;
   j.dirY = Number.isFinite(dy) ? dy : 0;
   j.flash = Math.max(j.flash, Math.min(0.7, 0.3 * p));

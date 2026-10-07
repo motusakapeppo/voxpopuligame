@@ -252,7 +252,7 @@ function playingPost(dt, glitch) {
   post.grain = 0.06 + flow * 0.05;
   post.vignette = 0.40 - beat * 0.06;
   post.flash = juflash();
-  post.glitch = Math.max(glitch || 0, juice.shake > 6 ? 0.5 : 0) * 0.9;
+  post.glitch = Math.max(glitch || 0, juice.shake > 3 ? 0.5 : 0) * 0.9;
   return post;
 }
 function juflash() { return Math.max(0, juice.flash); }

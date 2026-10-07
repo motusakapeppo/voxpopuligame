@@ -88,6 +88,26 @@ visibile, con fallback se non supportato.
 
 ---
 
+## Ciclo 5 — Hit-stop e shake ai valori di ricerca
+**Data:** 2026-10-07 · **Commit:** *(vedi git)*
+
+**Problema:** hit-stop 45ms (ricerca ~20ms) e shake max 10px (ricerca 2–4px a questa
+risoluzione) → impatti troppo "morbidi" e scossa sproporzionata.
+
+**Regole applicate** (guida §6, Nijman *Art of Screenshake*):
+- hit-stop base 20ms (era 45ms), cap 50ms.
+- shake base 2.2px (era 4px), cap 6px (era 10px).
+- glitch threshold abbassata da `shake > 6` a `shake > 3` (ora raggiungibile).
+- Test aggiornati: nuovo test blocca 20ms/2.2px.
+
+**Verifica:** 119/119 test · FPS 60 · zero errori.
+
+**Esito:** KEEP.
+
+**File:** `src/juice.js` (`impact`), `src/main.js` (glitch), `test/juice.test.js`.
+
+---
+
 ## Prossimi cicli (backlog prioritizzato dalla ricerca)
 
 1. **Parete che respira** — la folla dietro è caotica; ridurre densità/scurire per far

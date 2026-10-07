@@ -16,15 +16,22 @@ test('createJuice parte neutro', () => {
 test('impact attiva hitstop, shake e flash e resta limitato', () => {
   const j = createJuice();
   impact(j, 2, 1, 0);
-  assert.ok(j.hitstop > 0 && j.hitstop <= 0.11, 'hitstop fuori range');
-  assert.ok(j.shake > 0 && j.shake <= 10, 'shake fuori range');
+  assert.ok(j.hitstop > 0 && j.hitstop <= 0.05, 'hitstop fuori range');
+  assert.ok(j.shake > 0 && j.shake <= 6, 'shake fuori range');
   assert.ok(j.flash > 0 && j.flash <= 0.7, 'flash fuori range');
+});
+
+test('impact usa i valori di ricerca: ~20ms hitstop, 2-4px shake', () => {
+  const j = createJuice();
+  impact(j, 1, 1, 0);
+  assert.equal(j.hitstop, 0.02, 'hitstop base deve essere 20ms (guida §6)');
+  assert.equal(j.shake, 2.2, 'shake base ~2.2px a 320×180 (guida §6)');
 });
 
 test('impact con potenza enorme/NaN resta sicuro', () => {
   const j = createJuice();
   impact(j, 1e9, NaN, NaN);
-  assert.ok(Number.isFinite(j.shake) && j.shake <= 10);
+  assert.ok(Number.isFinite(j.shake) && j.shake <= 6);
   impact(j, NaN);
   assert.ok(Number.isFinite(j.hitstop));
 });
