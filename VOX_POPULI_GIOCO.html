@@ -378,7 +378,7 @@ function validateGironi(list) {
 // ============================================================================
 const REACH_TIME = 0.11;     // durata di un movimento di mano (s) — più veloce
 const HOLD_TIME = 0.14;      // recupero della presa dopo lo spostamento
-const HANG = 16;                    // quanto il bacino pende sotto le mani (corpo appeso)
+const HANG = 20;                    // quanto il bacino pende sotto le mani (corpo appeso)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
@@ -2823,17 +2823,27 @@ function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   line(ctx, shX, shY, headX, headY + h * 0.05, t);
   disc(ctx, headX, headY, hr);
 
-  // GAMBE: pendono sotto il corpo (stance stretta), appena piegate. Un piede
-  // cerca la presa e l'altro spinge, alternandosi col ciclo di salita.
-  const thigh = h * 0.22, shin = h * 0.22;
+  // GAMBE: proporzionate alle braccia (coscia+stinco 0.27h ciascuno: da umani le
+  // gambe sono un filo più lunghe). I piedi stanno SULLA PARETE sotto il bacino,
+  // ginocchia piegate verso l'esterno/avanti; una gamba sale (ginocchio alto,
+  // piede su una presa più in alto) mentre l'altra spinge (più distesa), e si
+  // ALTERNANO col ciclo di salita — così le gambe contribuiscono davvero.
+  const thigh = h * 0.27, shin = h * 0.27;
   const cyc = Math.sin(finiteOr(phase, 0) * 2.4);
   for (const side of [-1, 1]) {
-    const footX = hipX + side * h * 0.15;
-    const footY = hipY + h * 0.40 - side * cyc * h * 0.05;
-    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, side);
+    // i piedi premono la parete VICINO al corpo; il ginocchio si piega verso
+    // l'esterno. Una gamba sale (ginocchio alto, piede più in alto) e l'altra
+    // spinge (più distesa in basso); si alternano col ciclo di salita.
+    const step = side * cyc;                       // +1 = in salita, -1 = in spinta
+    const footX = hipX + side * h * 0.10;
+    // bias di base: la gamba "destra" sta più in alto (piegata in salita), la
+    // sinistra più in basso (in spinta). Il ciclo le alterna sopra la bias, così
+    // non c'è mai l'istante simmetrico (che leggeva come uno squat).
+    const footY = hipY + h * 0.38 - side * h * 0.11 - step * h * 0.13;
+    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, -side);
     line(ctx, hipX, hipY, lg.ex, lg.ey, t);
     line(ctx, lg.ex, lg.ey, lg.hx, lg.hy, t);
-    // piede: piccola tacca piantata sulla parete
+    // piede: tacca piantata sulla parete (la punta preme la roccia)
     ctx.fillRect(Math.round(lg.hx) - 1, Math.round(lg.hy), 3, 1);
   }
 
