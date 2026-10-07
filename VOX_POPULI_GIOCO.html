@@ -1718,6 +1718,10 @@ const THEME_FALLBACK = 'default';
 
 const THM_SET = new Set(THEME_IDS);
 
+// S-REND: contatori di debug (solo lettura) per verificare il riuso delle
+// allocazioni per-frame. Non influenzano il disegno.
+const __thmDebug = { paintersCreated: 0, lcgCreated: 0 };
+
 // Pura: audioId noto → se stesso; altrimenti il tema di ripiego (braci).
 function themeFor(audioId) {
   return THM_SET.has(audioId) ? audioId : THEME_FALLBACK;
@@ -1767,6 +1771,22 @@ function thmLcg(seed) {
   return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
 }
 
+// S-REND: LCG per strato riusato. Il seed è finito (hash tema ^ indice strato),
+// quindi la cache è limitata. Ad ogni uso lo stato è riportato al seed: la
+// sequenza di valori è IDENTICA a thmLcg(seed) appena creato.
+const THM_LCG_CACHE = new Map();
+function thmLayerLcg(seed) {
+  const key = seed >>> 0;
+  let e = THM_LCG_CACHE.get(key);
+  if (!e) {
+    e = { s: key, next() { return (e.s = (e.s * 1664525 + 1013904223) >>> 0) / 4294967296; } };
+    THM_LCG_CACHE.set(key, e);
+    __thmDebug.lcgCreated++;
+  }
+  e.s = key;
+  return e.next;
+}
+
 // Coordinata "a fisarmonica": ripete un elemento lungo la salita.
 function thmTile(y, camY, f, period) {
   const v = y - camY * f;
@@ -1780,8 +1800,13 @@ function thmPulse(time, period, dur) {
 }
 
 // Painter: ogni primitiva è clampata al viewport. Mai un pixel fuori.
+// S-REND: il painter è creato UNA volta per ctx (WeakMap) e riusato ad ogni
+// frame; W/H sono aggiornati sul posto. Output identico, zero alloc per frame.
+const THM_PAINTERS = new WeakMap();
 function thmMakePainter(ctx, W, H) {
-  const P = {
+  let P = THM_PAINTERS.get(ctx);
+  if (P) { P.W = W; P.H = H; return P; }
+  P = {
     ctx, W, H,
     rect(x, y, w, h, color, alpha) {
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
@@ -1790,7 +1815,7 @@ function thmMakePainter(ctx, W, H) {
       if (x1 < x0) { const t = x0; x0 = x1; x1 = t; }
       if (y1 < y0) { const t = y0; y0 = y1; y1 = t; }
       x0 = Math.max(0, x0); y0 = Math.max(0, y0);
-      x1 = Math.min(W, x1); y1 = Math.min(H, y1);
+      x1 = Math.min(P.W, x1); y1 = Math.min(P.H, y1);
       if (x1 <= x0 || y1 <= y0) return;
       ctx.globalAlpha = Number.isFinite(alpha) ? (alpha < 0 ? 0 : alpha > 1 ? 1 : alpha) : 1;
       ctx.fillStyle = color;
@@ -1820,6 +1845,8 @@ function thmMakePainter(ctx, W, H) {
       }
     },
   };
+  THM_PAINTERS.set(ctx, P);
+  __thmDebug.paintersCreated++;
   return P;
 }
 
@@ -1893,7 +1920,7 @@ function thmParallax(P, camY, time, W, H, layers, seed) {
     const period = 200 + i * 24;
     const raw = thmTile(20 + i * 50, cy, speed, period);
     const base = Math.round((raw / period) * (H * 0.55) + H * 0.15) + i * 12;
-    const r = thmLcg((sd ^ Math.imul(i + 1, 2654435761)) >>> 0);
+    const r = thmLayerLcg((sd ^ Math.imul(i + 1, 2654435761)) >>> 0);
     const step = 10;
     for (let x = 0; x < W; x += step) {
       const hh = Math.round(6 + r() * 26);
@@ -2799,20 +2826,32 @@ function createRenderer(canvas, W, H) {
   const supportsOverlay = rdrSupportsOp(outCtx, 'overlay');
   const rng = rdrLcg(1);
   let scale = 1;
+  // Cache: dimensione del canvas visibile (evita di rileggere/ricalcolare la
+  // scala a ogni frame) e stringa rgb della soglia bloom (evita di allocarla).
+  let cw = -1, ch = -1;
+  let lastGv = -1, lastGvStr = '';
+  // Legge un parametro post SENZA allocare un oggetto per frame: opts.post
+  // vince se la chiave è propria, altrimenti fallback su api.post (stessa
+  // semantica di Object.assign({}, api.post, opts.post), zero allocazioni).
+  const hasOwn = Object.prototype.hasOwnProperty;
+  const postVal = (o, key) => (o && hasOwn.call(o, key)) ? o[key] : api.post[key];
 
   const api = {
     W: w, H: h, scene, glow, out,
     post: createPostDefaults(),
 
     resize() {
-      const cw = rdrNum(canvas.width, 0), ch = rdrNum(canvas.height, 0);
-      scale = Math.max(1, Math.floor(Math.min(cw / w, ch / h)));
+      const nw = rdrNum(canvas.width, 0), nh = rdrNum(canvas.height, 0);
+      if (nw !== cw || nh !== ch) {
+        cw = nw; ch = nh;
+        scale = Math.max(1, Math.floor(Math.min(cw / w, ch / h)));
+      }
       return scale;
     },
 
     render(paint, opts) {
       api.resize();
-      const o = (opts && opts.post) ? Object.assign({}, api.post, opts.post) : api.post;
+      const o = opts?.post ?? null;
 
       // 1. scena
       sceneCtx.globalCompositeOperation = 'source-over';
@@ -2831,7 +2870,7 @@ function createRenderer(canvas, W, H) {
       outCtx.drawImage(scene, 0, 0);
 
       // 3. bloom (glow a metà risoluzione, bloom additivo)
-      const bloom = rdrClamp01(o.bloom);
+      const bloom = rdrClamp01(postVal(o, 'bloom'));
       if (bloom > 0.001) {
         glowCtx.globalCompositeOperation = 'source-over';
         glowCtx.globalAlpha = 1;
@@ -2852,11 +2891,12 @@ function createRenderer(canvas, W, H) {
           glowCtx.drawImage(scratch, 0, -1);
         }
         // soglia: color-burn (vera soglia) o multiply (fallback)
-        const thr = rdrClamp01(o.bloomThreshold);
+        const thr = rdrClamp01(postVal(o, 'bloomThreshold'));
         const gv = Math.round(255 * (1 - thr));
+        if (gv !== lastGv) { lastGv = gv; lastGvStr = `rgb(${gv},${gv},${gv})`; }
         glowCtx.globalCompositeOperation = supportsColorBurn ? 'color-burn' : 'multiply';
         glowCtx.globalAlpha = 1;
-        glowCtx.fillStyle = `rgb(${gv},${gv},${gv})`;
+        glowCtx.fillStyle = lastGvStr;
         glowCtx.fillRect(0, 0, gw, gh);
         // composita il glow su out
         outCtx.globalCompositeOperation = 'lighter';
@@ -2867,7 +2907,7 @@ function createRenderer(canvas, W, H) {
       }
 
       // 4. aberrazione cromatica: fantasma rosso a destra, ciano a sinistra
-      const chroma = rdrClamp01(o.chroma);
+      const chroma = rdrClamp01(postVal(o, 'chroma'));
       const dx = Math.round(chroma * 3);
       if (dx > 0) {
         outCtx.globalCompositeOperation = 'lighter';
@@ -2885,14 +2925,14 @@ function createRenderer(canvas, W, H) {
       }
 
       // 5. scanline + grana
-      const scanA = rdrClamp01(o.scan);
+      const scanA = rdrClamp01(postVal(o, 'scan'));
       if (scanA > 0.001 && scanPattern) {
         outCtx.globalCompositeOperation = 'source-over';
         outCtx.globalAlpha = scanA;
         outCtx.fillStyle = scanPattern;
         outCtx.fillRect(0, 0, w, h);
       }
-      const grain = rdrClamp01(o.grain);
+      const grain = rdrClamp01(postVal(o, 'grain'));
       if (grain > 0.001 && noisePattern) {
         const gx = Math.floor(rng() * 64), gy = Math.floor(rng() * 64);
         outCtx.globalCompositeOperation = supportsOverlay ? 'overlay' : 'source-over';
@@ -2905,7 +2945,7 @@ function createRenderer(canvas, W, H) {
       }
 
       // 6. vignettatura
-      const vig = rdrClamp01(o.vignette);
+      const vig = rdrClamp01(postVal(o, 'vignette'));
       if (vig > 0.001 && vignette) {
         outCtx.globalCompositeOperation = 'source-over';
         outCtx.globalAlpha = vig;
@@ -2914,7 +2954,7 @@ function createRenderer(canvas, W, H) {
       }
 
       // 7. glitch: fette orizzontali spostate
-      const glitch = rdrClamp01(o.glitch);
+      const glitch = rdrClamp01(postVal(o, 'glitch'));
       if (glitch > 0.001) {
         tmpCtx.globalCompositeOperation = 'source-over';
         tmpCtx.globalAlpha = 1;
@@ -2938,7 +2978,7 @@ function createRenderer(canvas, W, H) {
       }
 
       // 8. flash
-      const flash = rdrClamp01(o.flash);
+      const flash = rdrClamp01(postVal(o, 'flash'));
       if (flash > 0.001) {
         outCtx.globalCompositeOperation = 'lighter';
         outCtx.globalAlpha = flash;
@@ -2949,14 +2989,15 @@ function createRenderer(canvas, W, H) {
         outCtx.fillRect(w * 0.3, h * 0.3, w * 0.4, h * 0.4);
       }
 
-      // 9. blit scalato sul canvas visibile
+      // 9. blit scalato sul canvas visibile (usa la cache di resize: qui non
+      // si rileggono canvas.width/height)
       outCtx.globalCompositeOperation = 'source-over';
       outCtx.globalAlpha = 1;
       visibleCtx.globalCompositeOperation = 'source-over';
       visibleCtx.globalAlpha = 1;
       visibleCtx.imageSmoothingEnabled = false;
-      const cw = rdrNum(canvas.width, w * scale), ch = rdrNum(canvas.height, h * scale);
-      visibleCtx.clearRect(0, 0, cw, ch);
+      const bw = cw > 0 ? cw : w * scale, bh = ch > 0 ? ch : h * scale;
+      visibleCtx.clearRect(0, 0, bw, bh);
       visibleCtx.drawImage(out, 0, 0, w, h, 0, 0, w * scale, h * scale);
     },
   };
@@ -3469,6 +3510,44 @@ function pose(state, phase) {
 }
 
 // ---------------------------------------------------------------------------
+// POSE INTERP — fonde due pose (stateA,phaseA) e (stateB,phaseB) con peso k.
+// k=0 → A esatta, k=1 → B esatta (ritorno diretto: nessun drift in virgola
+// mobile), k∈(0,1) → interpolazione lineare di ogni giunto. k non finito o
+// fuori [0,1] viene limitato: mai NaN in uscita. Stessa forma di pose().
+// ---------------------------------------------------------------------------
+function poseInterp(stateA, phaseA, stateB, phaseB, k) {
+  const A = pose(stateA, phaseA);
+  const B = pose(stateB, phaseB);
+  const kk = clamp(finiteOr(k, 0), 0, 1);
+  if (kk === 0) return A;
+  if (kk === 1) return B;
+  const mix = (a, b) => a + (b - a) * kk;
+  const mixPair = (a, b) => [mix(a[0], b[0]), mix(a[1], b[1])];
+  return {
+    lean: mix(A.lean, B.lean),
+    bob: mix(A.bob, B.bob),
+    aL: mixPair(A.aL, B.aL),
+    aR: mixPair(A.aR, B.aR),
+    lL: mixPair(A.lL, B.lL),
+    lR: mixPair(A.lR, B.lR),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// POSTURE SPRING — forza dell'"active ragdoll": 1 a t=0, decade linearmente a 0
+// per t>=decay. Usata per far IRRIGIDIRE le membra di una figura appena
+// lanciata (brace) invece di farla crollare subito floscia. Sempre finita:
+// t o decay degeneri ricadono su valori sicuri.
+// ---------------------------------------------------------------------------
+function postureSpring(t, decay = 0.4) {
+  const d = (Number.isFinite(decay) && decay > 0) ? decay : 0.4;
+  const tt = finiteOr(t, 0);
+  if (tt <= 0) return 1;
+  if (tt >= d) return 0;
+  return 1 - tt / d;
+}
+
+// ---------------------------------------------------------------------------
 // IK A 2 SEGMENTI — dato l'attacco (sx,sy) e il bersaglio (tx,ty) con lunghezze
 // FISSE l1,l2, restituisce gomito e mano. La mano non supera MAI la portata:
 // così le braccia si PIEGANO invece di allungarsi come tentacoli.
@@ -3605,23 +3684,35 @@ function drawRagdoll(ctx, fig, opts = {}) {
   const {
     h = 14, color = C.red, thickness = 1, alpha = 1,
     dust = null,   // opzionale: {x,y} punto d'impatto per un lampo di polvere
+    posture = 0,   // S-ANAT: età (s) della figura → molla di postura "active ragdoll"
   } = opts;
   const parts = fig && fig.parts;
   if (!parts || parts.length < 5) return;
   const [hip, sh, head, footL, footR] = parts;
   if (!Number.isFinite(hip.x) || !Number.isFinite(head.y)) return;
   const t = Math.max(1, Math.min(2, thickness));
+  // forza del brace: 0 = disattivato (default storico), >0 = irrigidisce le membra
+  const brace = posture > 0 ? postureSpring(posture) : 0;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
 
-  // gambe: bacino → piedi (una linea ciascuna, spessore pieno)
-  line(ctx, hip.x, hip.y, footL.x, footL.y, t);
-  line(ctx, hip.x, hip.y, footR.x, footR.y, t);
+  // gambe: bacino → piedi (una linea ciascuna, spessore pieno).
+  // Con brace>0 i piedi vengono RACCOLTI sotto il bacino (posa di appoggio),
+  // invece di restare divaricati: la figura "si prepara" prima di cedere.
+  let fLx = footL.x, fLy = footL.y, fRx = footR.x, fRy = footR.y;
+  if (brace > 0) {
+    fLx = footL.x + (hip.x + (footL.x - hip.x) * 0.55 - footL.x) * brace;
+    fLy = footL.y + (hip.y + (footL.y - hip.y) * 0.75 - footL.y) * brace;
+    fRx = footR.x + (hip.x + (footR.x - hip.x) * 0.55 - footR.x) * brace;
+    fRy = footR.y + (hip.y + (footR.y - hip.y) * 0.75 - footR.y) * brace;
+  }
+  line(ctx, hip.x, hip.y, fLx, fLy, t);
+  line(ctx, hip.x, hip.y, fRx, fRy, t);
   // piedi: tacca di 2px sotto ogni caviglia
-  ctx.fillRect(Math.round(footL.x) - 1, Math.round(footL.y), 2, 1);
-  ctx.fillRect(Math.round(footR.x) - 1, Math.round(footR.y), 2, 1);
+  ctx.fillRect(Math.round(fLx) - 1, Math.round(fLy), 2, 1);
+  ctx.fillRect(Math.round(fRx) - 1, Math.round(fRy), 2, 1);
 
   // tronco bacino → spalle (spessore +1: il corpo)
   line(ctx, hip.x, hip.y, sh.x, sh.y, t + 1);
@@ -3644,8 +3735,17 @@ function drawRagdoll(ctx, fig, opts = {}) {
   for (const side of [-1, 1]) {
     const wob = Math.sin((hip.x + hip.y) * 1.7 + side) * 0.35 * (1 - swing);
     const a = baseA + side * (0.5 + swing * 1.1) + wob;
-    const hx = sh.x + Math.cos(a) * armLen;
-    const hy = sh.y + Math.sin(a) * armLen;
+    let hx = sh.x + Math.cos(a) * armLen;
+    let hy = sh.y + Math.sin(a) * armLen;
+    if (brace > 0) {
+      // brace: braccia raccolte verso l'alto/avanti (guardia), meno aperte
+      const ba = baseA + side * 0.4 - 1.0;
+      const bl = armLen * 0.85;
+      const bhx = sh.x + Math.cos(ba) * bl;
+      const bhy = sh.y + Math.sin(ba) * bl;
+      hx += (bhx - hx) * brace;
+      hy += (bhy - hy) * brace;
+    }
     line(ctx, sh.x, sh.y, hx, hy, t);
     ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 1, 1);
   }
@@ -3670,15 +3770,19 @@ function drawFigure(ctx, x, y, opts = {}) {
     h = 16, color = C.red, state = 'idle', phase = 0, facing = 1,
     thickness = 1, alpha = 1, shadow = false,
     detail = false, stretch = 0, rim = false,
+    breathe = 0,   // S-ANAT: 0..1 respiro sottile (testa/petto), 0 = storico
   } = opts;
   const P = pose(state, phase);
   const f = facing;
   // squash&stretch: fattore verticale limitato in [-1,1]; 0 = neutro (default)
   const st = clamp(finiteOr(stretch, 0), -1, 1);
   const sy = 1 + st * 0.30;   // 0.7 (schiacciato) … 1.3 (allungato)
+  // respiro: offset verticale sottile su petto/testa, sfasato dal bob della posa
+  const br = clamp(finiteOr(breathe, 0), 0, 1);
+  const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br * 0.6 : 0;
   const hipY = y - h * 0.48 * sy + P.bob;
-  const shY = y - h * 0.80 * sy + P.bob;
-  const headY = y - h * 0.94 * sy + P.bob;
+  const shY = y - h * 0.80 * sy + P.bob + breatheOff;
+  const headY = y - h * 0.94 * sy + P.bob + breatheOff * 1.4;
   const lean = P.lean * f;
 
   const hipX = x + Math.sin(lean) * h * 0.4;
@@ -3825,6 +3929,24 @@ function drawFigure(ctx, x, y, opts = {}) {
 
 
 const ART_VIEW_H = 180;
+
+// ---------------------------------------------------------------------------
+// S-REND — contatori di performance (solo diagnostica/test, zero costo a
+// runtime: incrementi interi). `trailAllocs` conta le allocazioni della scia
+// del gesto in drawPlayer; deve restare fermo quando l'azione è idle.
+// ---------------------------------------------------------------------------const artPerf = { trailAllocs: 0 };
+
+// Cache dei gradienti per contesto: `createLinearGradient`/`createRadialGradient`
+// sono costosi e i gradienti di foschia dipendono solo da W/H (non dal tempo).
+// WeakMap<ctx, Map<key, gradient>> → nessun leak, riuso per frame.
+const ART_GRAD_CACHE = new WeakMap();
+function artCachedGradient(ctx, key, make) {
+  let m = ART_GRAD_CACHE.get(ctx);
+  if (!m) { m = new Map(); ART_GRAD_CACHE.set(ctx, m); }
+  let g = m.get(key);
+  if (g === undefined) { g = make(); m.set(key, g); }
+  return g;
+}
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -4098,17 +4220,20 @@ function buildWallCanvas(ctx, g, climb, W, H) {
 
   let lx = p.lx, lyy = ly, rx = p.rx, ryy = ry;
   let hipX = p.bx, hipYOff = 0, lean = 0;
-  // scie multiple del gesto (comete) + particelle d'impatto al colpo
-  const trail = [];
+  // scie multiple del gesto (comete) + particelle d'impatto al colpo.
+  // LAZY: allocata solo quando un gesto è attivo (idle = nessuna allocazione).
+  let trail = null;
   if (action === 'tendi') {
     // braccio destro teso in alto-avanti: offerta
     rx += 7 * actK; ryy -= 9 * actK; lx -= 1 * actK;
     hipYOff = -2 * actK; lean = -0.35 * actK;
+    trail = []; artPerf.trailAllocs++;
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 7 * actK * (1 - i * 0.18), ly - 9 * actK * (1 - i * 0.18) + i * 1.6, i]);
   } else if (action === 'spingi') {
     // spinta in basso-avanti: torso che si torce, gamba che spinge
     rx += 9 * actK; ryy += 6 * actK; lx -= 3 * actK;
     hipX += 3 * actK; hipYOff = 1 * actK; lean = 0.5 * actK;
+    trail = []; artPerf.trailAllocs++;
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
@@ -4144,7 +4269,7 @@ function buildWallCanvas(ctx, g, climb, W, H) {
   }
 
   // scie del gesto
-  if (trail.length) {
+  if (trail) {
     ctx.save();
     ctx.fillStyle = action === 'spingi' ? C.redHot : C.red;
     for (const [tx0, ty0, i] of trail) {
@@ -4413,10 +4538,13 @@ function drawEncounterFlourish(ctx, kind, x, y, time, isActive) {
   }
   // FOSCHIA: i piani alti (lontani) svaniscono nel nero.
   try {
-    const fog = ctx.createLinearGradient(0, 0, 0, hh);
-    fog.addColorStop(0, 'rgba(0,0,0,0.55)');
-    fog.addColorStop(0.55, 'rgba(0,0,0,0.18)');
-    fog.addColorStop(1, 'rgba(0,0,0,0)');
+    const fog = artCachedGradient(ctx, 'skyline-fog:' + hh, () => {
+      const g = ctx.createLinearGradient(0, 0, 0, hh);
+      g.addColorStop(0, 'rgba(0,0,0,0.55)');
+      g.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      return g;
+    });
     ctx.globalAlpha = 1;
     ctx.fillStyle = fog;
     ctx.fillRect(0, 0, ww, hh);
@@ -5026,15 +5154,21 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
 
   // FOSCHIA in alto: la punta della piramide recede nel buio (cover).
   try {
-    const grad = ctx.createLinearGradient(0, 0, 0, hh * 0.5);
-    grad.addColorStop(0, 'rgba(0,0,0,0.95)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+    const grad = artCachedGradient(ctx, 'title-top:' + hh, () => {
+      const g = ctx.createLinearGradient(0, 0, 0, hh * 0.5);
+      g.addColorStop(0, 'rgba(0,0,0,0.95)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      return g;
+    });
     ctx.fillStyle = grad; ctx.fillRect(0, 0, ww, hh * 0.5);
   } catch { /* niente foschia */ }
 
   // FOSCHIA in basso: la base emerge dal nero, chiude la composizione.
   try {
-    const grad2 = ctx.createLinearGradient(0, hh * 0.72, 0, hh);
-    grad2.addColorStop(0, 'rgba(0,0,0,0)'); grad2.addColorStop(1, 'rgba(0,0,0,0.85)');
+    const grad2 = artCachedGradient(ctx, 'title-bottom:' + hh, () => {
+      const g = ctx.createLinearGradient(0, hh * 0.72, 0, hh);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)');
+      return g;
+    });
     ctx.fillStyle = grad2; ctx.fillRect(0, hh * 0.72, ww, hh * 0.28);
   } catch { /* niente foschia */ }
 }
