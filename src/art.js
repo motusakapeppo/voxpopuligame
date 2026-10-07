@@ -114,6 +114,23 @@ export function artDepthTone(depth) {
   return depthRed(Number.isFinite(depth) ? depth : 0);
 }
 
+// W2-D: helper puri di dithering e tono (palette-safe). Deterministici.
+const ART_BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+// Soglia di Bayer 4x4 normalizzata in [0,1): dithering ordinato per fondere due
+// toni della rampa rossa senza aggiungere colori. Ciclica su 4, gestisce negativi.
+export function dither4x4(x, y) {
+  const xi = ((Math.floor(x) % 4) + 4) % 4;
+  const yi = ((Math.floor(y) % 4) + 4) % 4;
+  return ART_BAYER4[yi * 4 + xi] / 16;
+}
+
+// Tono della rampa rossa per profondità 0..1 (riusa depthRed). Palette-safe:
+// r >= g && r >= b. Monotona in luminosità.
+export function rampTone(depth) {
+  return depthRed(depth);
+}
+
 // Strato di skyline: parallasse, tono, altezza e passo crescenti col vicino.
 // i = indice (0 = più lontano), n = numero di strati.
 export function artSkylineLayer(i, n) {

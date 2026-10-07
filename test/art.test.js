@@ -249,3 +249,41 @@ test('drawPlayer tendi: la scia viene allocata solo col gesto attivo', () => {
   assert.ok(artPerf.trailAllocs > before, 'il gesto tendi deve allocare la scia');
   assertFiniteCalls(ctx, 'drawPlayer/tendi');
 });
+
+// ---------------------------------------------------------------------------
+// W2-D: dithering Bayer 4x4 + rampa tono (palette-safe). Puro e deterministico.
+// ---------------------------------------------------------------------------
+import { dither4x4, rampTone } from '../src/art.js';
+
+const BAYER4 = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+
+test('dither4x4: matrice di Bayer normalizzata, deterministica e ciclica', () => {
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const v = dither4x4(x, y);
+    assert.ok(v >= 0 && v < 1, 'fuori [0,1): ' + v);
+    assert.equal(v, dither4x4(x + 4, y + 4), 'non ciclica su 4: ' + x + ',' + y);
+    assert.equal(v, dither4x4(x, y), 'non deterministica');
+  }
+  assert.equal(dither4x4(0, 0), BAYER4[0][0] / 16);
+  assert.equal(dither4x4(1, 0), BAYER4[0][1] / 16);
+  assert.equal(dither4x4(0, 1), BAYER4[1][0] / 16);
+  assert.equal(dither4x4(3, 3), BAYER4[3][3] / 16);
+});
+
+test('dither4x4: gestisce indici negativi (ciclo vero)', () => {
+  assert.equal(dither4x4(-1, -1), dither4x4(3, 3));
+  assert.equal(dither4x4(-4, 0), dither4x4(0, 0));
+});
+
+test('rampTone: ramp-safe (rosso dominante) e monotona in luminosita', () => {
+  let prev = -1;
+  for (let i = 0; i <= 10; i++) {
+    const c = rampTone(i / 10);
+    const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16);
+    assert.ok(r >= g && r >= b, 'non rosso-dominante a depth ' + (i / 10) + ': ' + c);
+    const lum = r + g + b;
+    assert.ok(lum >= prev, 'non monotona: ' + lum + ' < ' + prev);
+    prev = lum;
+  }
+  assert.equal(rampTone(0), rampTone(0));
+});
