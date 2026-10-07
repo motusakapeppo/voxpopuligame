@@ -378,7 +378,7 @@ function validateGironi(list) {
 // ============================================================================
 const REACH_TIME = 0.11;     // durata di un movimento di mano (s) — più veloce
 const HOLD_TIME = 0.14;      // recupero della presa dopo lo spostamento
-const HANG = 13;                    // quanto il bacino pende sotto le mani (corpo appeso)
+const HANG = 16;                    // quanto il bacino pende sotto le mani (corpo appeso)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
@@ -386,9 +386,9 @@ function createClimb(g) {
   const cx = 160;
   const bottomY = Math.max(...g.bodies.map(b => b.y));
   const nRows = Math.max(2, Math.floor((bottomY - TOP_Y) / STEP_Y) + 1);
-  // appigli fitti (24px): così le braccia PROPORZIONATE raggiungono sempre la
-  // presa senza allungarsi, e la parete ha più "mani" a cui aggrapparsi.
-  const cols = [40, 64, 88, 112, 136, 160, 184, 208, 232, 256, 280];
+  // appigli a 14px: la distanza tra le due mani è ~0.6h, quindi le braccia
+  // scendono QUASI VERTICALI (posa da arrampicata), non aperte a ragno.
+  const cols = Array.from({ length: 17 }, (_, i) => 160 - 8 * 14 + i * 14);
   const rows = Array.from({ length: nRows }, (_, r) => bottomY - r * STEP_Y); // r=0 in basso
 
   const halfWidth = r => 120 - (r / Math.max(1, nRows - 1)) * 90;
@@ -398,7 +398,7 @@ function createClimb(g) {
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
 
-  const c0 = 5;   // centro (160): con 11 colonne fitte l'indice centrale è 5
+  const c0 = 8;   // centro (160): con 17 colonne l'indice centrale è 8
   // posizione iniziale del bacino = centro presa + HANG
   const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
   const by0 = yOf(0) + HANG;
@@ -2779,16 +2779,19 @@ function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const swing = clamp(finiteOr(opts.swing, 0), -1, 1) * 3.2;
   const hipX = finiteOr(bx, handMidX) + swing;
   const hipY = finiteOr(by, handMidY + h * 0.55) + breatheOff;
-  const shHalf = Math.max(3, Math.round(h * 0.17));
-  const shY = hipY - h * 0.46;
+  const shHalf = Math.max(3, Math.round(h * 0.16));
+  // TRONCO: le spalle stanno 0.38h sopra il bacino. Le mani sono ~13px sopra il
+  // bacino, quindi le spalle restano ben sotto le mani: le braccia salgono con i
+  // gomiti CHIARAMENTE PIEGATI (posa da arrampicata leggibile).
+  const shY = hipY - h * 0.38;
   const leanX = Math.sin(clamp(finiteOr(lean, 0), -0.6, 0.6)) * h * 0.14;
   const shX = hipX + leanX;
   const shLx = shX - shHalf, shRx = shX + shHalf;
-  const headX = shX + leanX * 0.6, headY = shY - h * 0.16;
-  const hr = Math.max(1, Math.round(h * 0.085));
-  // portata del braccio: CORTA e proporzionata (0.5h per segmento). Braccia
-  // corte = gomiti molto piegati = posa da arrampicata credibile.
-  const up = h * 0.5, lo = h * 0.5;
+  const headX = shX + leanX * 0.6, headY = shY - h * 0.14 + h * 0.06;
+  const hr = Math.max(1, Math.round(h * 0.09));
+  // BRACCIA: ~0.24h per segmento. Le spalle sono ~0.38h sotto le mani → le
+  // braccia si PIEGANO di ~90° ai gomiti. Posa da scalata, non tentacoli.
+  const up = h * 0.26, lo = h * 0.26;
   // leggera alternanza delle anche (dondolio) per il ritmo di salita
   const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
   // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.
@@ -2820,15 +2823,18 @@ function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   line(ctx, shX, shY, headX, headY + h * 0.05, t);
   disc(ctx, headX, headY, hr);
 
-  // GAMBE: IK bacino→piede, ginocchia verso l'esterno (posa da scalata)
-  const thigh = h * 0.34, shin = h * 0.34;
-  const kSw = Math.sin(finiteOr(phase, 0) * 2.4 + 1) * 1.4;
+  // GAMBE: pendono sotto il corpo (stance stretta), appena piegate. Un piede
+  // cerca la presa e l'altro spinge, alternandosi col ciclo di salita.
+  const thigh = h * 0.22, shin = h * 0.22;
+  const cyc = Math.sin(finiteOr(phase, 0) * 2.4);
   for (const side of [-1, 1]) {
-    const footX = hipX + side * h * 0.18 + kSw * side * 0.3;
-    const footY = hipY + h * 0.40 + (side > 0 ? 0 : kSw * 0.4);
-    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, -side);
+    const footX = hipX + side * h * 0.15;
+    const footY = hipY + h * 0.40 - side * cyc * h * 0.05;
+    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, side);
     line(ctx, hipX, hipY, lg.ex, lg.ey, t);
     line(ctx, lg.ex, lg.ey, lg.hx, lg.hy, t);
+    // piede: piccola tacca piantata sulla parete
+    ctx.fillRect(Math.round(lg.hx) - 1, Math.round(lg.hy), 3, 1);
   }
 
   if (detail) {
@@ -3215,16 +3221,12 @@ function buildWallCanvas(ctx, g, climb, W, H) {
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
-  // alone scuro: lo stacca dalla massa di persone
-  ctx.save();
-  ctx.globalAlpha = 0.6;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 7, h: 22, bx: hipX, by: byc + hipYOff, swing });
-  ctx.restore();
-  // alone caldo pulsante; più acceso sull'azione e col flow
-  ctx.save();
-  ctx.globalAlpha = (0.24 + 0.10 * Math.sin(time * 5)) + 0.3 * actK;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.redHot, phase: ph, thickness: 6 + Math.round(2 * actK), h: 22, bx: hipX, by: byc + hipYOff, swing });
-  ctx.restore();
+  // corpo: 2 passate sole (contorno scuro netto + corpo acceso). Niente aloni
+  // multipli: con il bloom diventavano un blob illeggibile.
+  const col = actK > 0.1 ? C.redHot : C.redBright;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 3, h: 22, bx: hipX, by: byc + hipYOff, swing });
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 22,
+    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
 
   // scie del gesto
   if (trail.length) {
@@ -3236,14 +3238,6 @@ function buildWallCanvas(ctx, g, climb, W, H) {
     }
     ctx.restore();
   }
-
-  // corpo acceso con dettagli (chele, ciuffo, rim) + contorno scuro netto
-  const col = actK > 0.1 ? C.redHot : C.redBright;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 22,
-    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true });
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 22, bx: hipX, by: byc + hipYOff, swing });
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 22,
-    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
 
   // impatto al culmine del gesto: particelle di colpo (quadrati rossi dal centro)
   if (actK > 0.7) {

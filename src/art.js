@@ -284,16 +284,12 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
-  // alone scuro: lo stacca dalla massa di persone
-  ctx.save();
-  ctx.globalAlpha = 0.6;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 7, h: 22, bx: hipX, by: byc + hipYOff, swing });
-  ctx.restore();
-  // alone caldo pulsante; più acceso sull'azione e col flow
-  ctx.save();
-  ctx.globalAlpha = (0.24 + 0.10 * Math.sin(time * 5)) + 0.3 * actK;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.redHot, phase: ph, thickness: 6 + Math.round(2 * actK), h: 22, bx: hipX, by: byc + hipYOff, swing });
-  ctx.restore();
+  // corpo: 2 passate sole (contorno scuro netto + corpo acceso). Niente aloni
+  // multipli: con il bloom diventavano un blob illeggibile.
+  const col = actK > 0.1 ? C.redHot : C.redBright;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 3, h: 22, bx: hipX, by: byc + hipYOff, swing });
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 22,
+    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
 
   // scie del gesto
   if (trail.length) {
@@ -305,14 +301,6 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
     }
     ctx.restore();
   }
-
-  // corpo acceso con dettagli (chele, ciuffo, rim) + contorno scuro netto
-  const col = actK > 0.1 ? C.redHot : C.redBright;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 22,
-    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true });
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 22, bx: hipX, by: byc + hipYOff, swing });
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 22,
-    bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
 
   // impatto al culmine del gesto: particelle di colpo (quadrati rossi dal centro)
   if (actK > 0.7) {

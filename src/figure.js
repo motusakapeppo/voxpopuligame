@@ -166,16 +166,19 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const swing = clamp(finiteOr(opts.swing, 0), -1, 1) * 3.2;
   const hipX = finiteOr(bx, handMidX) + swing;
   const hipY = finiteOr(by, handMidY + h * 0.55) + breatheOff;
-  const shHalf = Math.max(3, Math.round(h * 0.17));
-  const shY = hipY - h * 0.46;
+  const shHalf = Math.max(3, Math.round(h * 0.16));
+  // TRONCO: le spalle stanno 0.38h sopra il bacino. Le mani sono ~13px sopra il
+  // bacino, quindi le spalle restano ben sotto le mani: le braccia salgono con i
+  // gomiti CHIARAMENTE PIEGATI (posa da arrampicata leggibile).
+  const shY = hipY - h * 0.38;
   const leanX = Math.sin(clamp(finiteOr(lean, 0), -0.6, 0.6)) * h * 0.14;
   const shX = hipX + leanX;
   const shLx = shX - shHalf, shRx = shX + shHalf;
-  const headX = shX + leanX * 0.6, headY = shY - h * 0.16;
-  const hr = Math.max(1, Math.round(h * 0.085));
-  // portata del braccio: CORTA e proporzionata (0.5h per segmento). Braccia
-  // corte = gomiti molto piegati = posa da arrampicata credibile.
-  const up = h * 0.5, lo = h * 0.5;
+  const headX = shX + leanX * 0.6, headY = shY - h * 0.14 + h * 0.06;
+  const hr = Math.max(1, Math.round(h * 0.09));
+  // BRACCIA: ~0.24h per segmento. Le spalle sono ~0.38h sotto le mani → le
+  // braccia si PIEGANO di ~90° ai gomiti. Posa da scalata, non tentacoli.
+  const up = h * 0.26, lo = h * 0.26;
   // leggera alternanza delle anche (dondolio) per il ritmo di salita
   const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
   // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.
@@ -207,15 +210,18 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   line(ctx, shX, shY, headX, headY + h * 0.05, t);
   disc(ctx, headX, headY, hr);
 
-  // GAMBE: IK bacino→piede, ginocchia verso l'esterno (posa da scalata)
-  const thigh = h * 0.34, shin = h * 0.34;
-  const kSw = Math.sin(finiteOr(phase, 0) * 2.4 + 1) * 1.4;
+  // GAMBE: pendono sotto il corpo (stance stretta), appena piegate. Un piede
+  // cerca la presa e l'altro spinge, alternandosi col ciclo di salita.
+  const thigh = h * 0.22, shin = h * 0.22;
+  const cyc = Math.sin(finiteOr(phase, 0) * 2.4);
   for (const side of [-1, 1]) {
-    const footX = hipX + side * h * 0.18 + kSw * side * 0.3;
-    const footY = hipY + h * 0.40 + (side > 0 ? 0 : kSw * 0.4);
-    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, -side);
+    const footX = hipX + side * h * 0.15;
+    const footY = hipY + h * 0.40 - side * cyc * h * 0.05;
+    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, side);
     line(ctx, hipX, hipY, lg.ex, lg.ey, t);
     line(ctx, lg.ex, lg.ey, lg.hx, lg.hy, t);
+    // piede: piccola tacca piantata sulla parete
+    ctx.fillRect(Math.round(lg.hx) - 1, Math.round(lg.hy), 3, 1);
   }
 
   if (detail) {

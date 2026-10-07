@@ -9,7 +9,7 @@ import { STEP_Y, TOP_Y } from './gironi.js';
 
 export const REACH_TIME = 0.11;     // durata di un movimento di mano (s) — più veloce
 export const HOLD_TIME = 0.14;      // recupero della presa dopo lo spostamento
-const HANG = 13;                    // quanto il bacino pende sotto le mani (corpo appeso)
+const HANG = 16;                    // quanto il bacino pende sotto le mani (corpo appeso)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
@@ -17,9 +17,9 @@ export function createClimb(g) {
   const cx = 160;
   const bottomY = Math.max(...g.bodies.map(b => b.y));
   const nRows = Math.max(2, Math.floor((bottomY - TOP_Y) / STEP_Y) + 1);
-  // appigli fitti (24px): così le braccia PROPORZIONATE raggiungono sempre la
-  // presa senza allungarsi, e la parete ha più "mani" a cui aggrapparsi.
-  const cols = [40, 64, 88, 112, 136, 160, 184, 208, 232, 256, 280];
+  // appigli a 14px: la distanza tra le due mani è ~0.6h, quindi le braccia
+  // scendono QUASI VERTICALI (posa da arrampicata), non aperte a ragno.
+  const cols = Array.from({ length: 17 }, (_, i) => 160 - 8 * 14 + i * 14);
   const rows = Array.from({ length: nRows }, (_, r) => bottomY - r * STEP_Y); // r=0 in basso
 
   const halfWidth = r => 120 - (r / Math.max(1, nRows - 1)) * 90;
@@ -29,7 +29,7 @@ export function createClimb(g) {
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
 
-  const c0 = 5;   // centro (160): con 11 colonne fitte l'indice centrale è 5
+  const c0 = 8;   // centro (160): con 17 colonne l'indice centrale è 8
   // posizione iniziale del bacino = centro presa + HANG
   const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
   const by0 = yOf(0) + HANG;
