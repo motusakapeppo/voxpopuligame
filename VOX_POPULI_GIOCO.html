@@ -3222,7 +3222,11 @@ function loop() {
     }
     stepTransition(level.transition, 0.016);
     stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
-    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: applyPost('unlocked') });
+    // burst di glitch + flash rosso all'inizio della transizione, poi si spegne
+    const k = Math.min(1, level.transition.t / 1.2);
+    const burst = (1 - k) * (1 - k);
+    const tpost = Object.assign(applyPost('unlocked'), { glitch: 1.1 * burst, flash: 0.7 * burst, chroma: 0.9 * burst });
+    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });
     if (level.transition.done) {
       state = advance(state, 'audioDone');
       if (state.phase === 'playing') level = loadGirone(state.gironeIndex);
