@@ -129,6 +129,28 @@ Safari `play()` asincrono perdeva il gesto utente → audio non partiva.
 
 ---
 
+## Ciclo 7 — Palette: rampa rossa con hue-shift
+**Data:** 2026-10-07 · **Commit:** *(vedi git)*
+
+**Problema:** la rampa rossa era a tinta piatta (`g=b=0` ovunque) → i passi di
+profondità si distinguevano solo per luminosità, senza la vibrazione cromatica che
+rende "viva" una palette pixel-art.
+
+**Regole applicate** (guida §1.3): hue-shift sottile lungo la rampa — i toni scuri
+tirano al **freddo** (+blu), quelli accesi al **caldo** (+verde), restando rosso
+dominante (la copertina resta "solo rosso").
+- `redDeep #280206`, `redDark #55070c`, `redMid #800908` (freddi)
+- `red #a80a06`, `redBright #c00f0a` (caldi), `redHot #e01010` (invariato)
+
+**Verifica:** 119/119 test (il test "rosso dominante" continua a passare) · FPS 60 ·
+zero errori · bundle OK.
+
+**Esito:** KEEP.
+
+**File:** `src/palette.js` (`C`).
+
+---
+
 ## Prossimi cicli (backlog prioritizzato dalla ricerca)
 
 1. **Parete che respira** — la folla dietro è caotica; ridurre densità/scurire per far

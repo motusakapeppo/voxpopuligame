@@ -5,11 +5,11 @@
 // ============================================================================
 export const C = {
   black:    '#000000', // fondo
-  redDeep:  '#2a0202', // figure lontane / in ombra
-  redDark:  '#580808',
-  redMid:   '#800808',
-  red:      '#a80808', // il "rosso cover"
-  redBright:'#c00d0d', // figura vicina / primo piano
+  redDeep:  '#280206', // figure lontane / in ombra (freddo: +blu)
+  redDark:  '#55070c', // freddo
+  redMid:   '#800908', // neutro
+  red:      '#a80a06', // il "rosso cover" (caldo: +verde)
+  redBright:'#c00f0a', // figura vicina / primo piano (caldo)
   redHot:   '#e01010', // accenti: la mano tesa, il sangue, il titolo
   white:    '#f5f5f5', // solo testo/HUD
 };
