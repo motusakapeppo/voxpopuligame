@@ -166,3 +166,32 @@ test('ragAddFigure rispetta scale e restituisce la figura', () => {
   const span2 = Math.max(...f2.parts.map(p => p.y)) - Math.min(...f2.parts.map(p => p.y));
   assert.ok(span2 > span1 * 1.4, `scale non applicata: ${span1} vs ${span2}`);
 });
+
+// ---------------------------------------------------------------------------
+// T-fix: i parametri del mondo (pair e parametri fisici) DEVONO essere copiati.
+// Bug: ragCreateWorld non copiava opts.pair → world.pair undefined → le
+// collisioni fra figure erano silenziosamente DISATTIVATE in produzione.
+// ---------------------------------------------------------------------------
+test('ragCreateWorld copia pair e i parametri fisici dagli opts', () => {
+  const w = ragCreateWorld({ pair: true, friction: 0.7, rest: 0.04, pairR: 3.5 });
+  assert.equal(w.pair, true, 'pair non copiato (bug: collisioni fra figure disattivate)');
+  assert.equal(w.friction, 0.7, 'friction non copiata');
+  assert.equal(w.rest, 0.04, 'rest non copiata');
+  assert.equal(w.pairR, 3.5, 'pairR non copiata');
+});
+
+test('con pair:true due figure sovrapposte si SEPARANO; con pair off no', () => {
+  const dist = (w) => {
+    const a = w.figures[0], b = w.figures[1];
+    return Math.hypot(a.parts[0].x - b.parts[0].x, a.parts[0].y - b.parts[0].y);
+  };
+  const run = (pair) => {
+    const w = ragCreateWorld({ gravity: 80, groundY: 170, seed: 5, pair });
+    ragAddFigure(w, { x: 100, y: 100 });
+    ragAddFigure(w, { x: 101, y: 100 });   // quasi sovrapposte
+    for (let i = 0; i < 120; i++) ragStep(w, 1 / 60);
+    return dist(w);
+  };
+  const dOn = run(true), dOff = run(false);
+  assert.ok(dOn > dOff + 1, `pair non separa: on=${dOn.toFixed(2)} off=${dOff.toFixed(2)}`);
+});

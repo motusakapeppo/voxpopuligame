@@ -41,6 +41,14 @@ export function ragCreateWorld(opts = {}) {
     hash: new Map(),          // broadphase: "cx,cy" → [indice figura]
     hashCell: ragNum(opts.hashCell, 28),   // ~2× la figura media (12–14px)
     frame: 0,
+    // FIX: i parametri fisici DEVONO essere copiati dagli opts, altrimenti
+    // world.pair restava undefined e le collisioni fra figure erano disattivate.
+    pair: opts.pair === true,
+    pairR: ragNum(opts.pairR, RAG_PAIR_R),
+    pairIt: ragNum(opts.pairIt, RAG_PAIR_IT),
+    pairMax: ragNum(opts.pairMax, RAG_PAIR_MAX),
+    friction: ragNum(opts.friction, RAG_FRICTION),
+    rest: ragNum(opts.rest, 0),
   };
   w.rng = ragLcg(w.seed);
   return w;
@@ -137,13 +145,16 @@ function ragDampVel(p, ax, ay, keep) {
 }
 
 function ragCollide(world) {
+  const fr = world.friction, rest = world.rest;
   for (const f of world.figures) {
     if (f.sleeping) continue;
     for (const p of f.parts) {
       if (p.y > world.groundY) {
+        // restitution: rimbalzo piccolo (0 di default). rest=0 → assorbe tutto.
+        const vy = p.y - p.py;
         p.y = world.groundY;
-        ragDampVel(p, 1, 0, RAG_FRICTION);   // attrito orizzontale, uccide la caduta
-        p.py = p.y;
+        p.py = p.y + vy * rest;                 // riflette una frazione della caduta
+        ragDampVel(p, 1, 0, fr);                 // attrito orizzontale
       }
       for (const box of world.boxes) {
         // broadphase a punto: salta i box lontani
@@ -154,10 +165,10 @@ function ragCollide(world) {
         const left = p.x - (box.x - 0.5), right = (box.x + box.w + 0.5) - p.x;
         const top = p.y - (box.y - 0.5), bottom = (box.y + box.h + 0.5) - p.y;
         const m = Math.min(left, right, top, bottom);
-        if (m === left) { p.x = box.x - 0.5; p.px = p.x; ragDampVel(p, 0, 1, RAG_FRICTION); }
-        else if (m === right) { p.x = box.x + box.w + 0.5; p.px = p.x; ragDampVel(p, 0, 1, RAG_FRICTION); }
-        else if (m === top) { p.y = box.y - 0.5; p.py = p.y; ragDampVel(p, 1, 0, RAG_FRICTION); }
-        else { p.y = box.y + box.h + 0.5; p.py = p.y; ragDampVel(p, 1, 0, RAG_FRICTION); }
+        if (m === left) { p.x = box.x - 0.5; p.px = p.x; ragDampVel(p, 0, 1, fr); }
+        else if (m === right) { p.x = box.x + box.w + 0.5; p.px = p.x; ragDampVel(p, 0, 1, fr); }
+        else if (m === top) { p.y = box.y - 0.5; p.py = p.y; ragDampVel(p, 1, 0, fr); }
+        else { p.y = box.y + box.h + 0.5; p.py = p.y; ragDampVel(p, 1, 0, fr); }
       }
     }
   }
@@ -259,14 +270,14 @@ function ragSleepWake(world) {
 // ---------------------------------------------------------------------------
 function ragCollidePairs(world) {
   if (!world.pair) return;
-  const R = RAG_PAIR_R, R2 = R * R;
+  const R = world.pairR, R2 = R * R;
   const n = world.figures.length;
   for (let i = 0; i < n; i++) {
     const a = world.figures[i];
     if (a.sleeping) continue;
     const near = ragNeighbors(world, i);
     let checked = 0;
-    for (let k = 0; k < near.length && checked < RAG_PAIR_MAX; k++) {
+    for (let k = 0; k < near.length && checked < world.pairMax; k++) {
       const b = world.figures[near[k]];
       if (!b) continue;
       checked++;
