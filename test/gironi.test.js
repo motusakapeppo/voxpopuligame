@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GIRONI, validateGironi } from '../src/gironi.js';
+import { GIRONI, validateGironi, modifierSignature } from '../src/gironi.js';
 
 test('ci sono esattamente 13 gironi con id/audioId unici e ordinati', () => {
   assert.equal(GIRONI.length, 13);
@@ -31,4 +31,10 @@ test('il girone 09 accende il verlet', () => {
 test('validateGironi passa e rifiuta gironi malformati', () => {
   assert.doesNotThrow(() => validateGironi(GIRONI));
   assert.throws(() => validateGironi([{ id:'01' }]), /malformed/);
+});
+
+test('i 13 gironi hanno firme modificatore pairwise distinte', () => {
+  const sigs = GIRONI.map(modifierSignature);
+  for (const s of sigs) assert.equal(typeof s, 'string');
+  assert.equal(new Set(sigs).size, 13, 'firme duplicate: ' + JSON.stringify(sigs));
 });

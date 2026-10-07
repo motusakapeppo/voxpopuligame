@@ -100,6 +100,15 @@ export const GIRONI = [
     npcScenes:['theTop'], inscription:{ text:'OUTRO' } },
 ];
 
+// Firma meccanica di un girone: kind + parametri autoriali ordinati.
+// Serve a garantire che i 13 gironi siano meccanicamente distinguibili.
+export function modifierSignature(g) {
+  return g.modifiers.map(m => {
+    const keys = Object.keys(m).filter(k => k !== 'kind').sort();
+    return m.kind + '(' + keys.map(k => k + '=' + m[k]).join(',') + ')';
+  }).join('+');
+}
+
 export function validateGironi(list) {
   if (!Array.isArray(list) || list.length !== 13) throw new Error('malformed: expected 13 gironi');
   for (const g of list) {
