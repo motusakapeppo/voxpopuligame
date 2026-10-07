@@ -116,7 +116,7 @@ test('moveHands sposta entrambe le mani e ritorna la differenza reale', () => {
   const d1 = moveHands(cl, +3);
   assert.equal(d1, 3);
   assert.equal(cl.lh.r, 3);
-  const d2 = moveHands(cl, -5);       // non può scendere sotto 0
+  const d2 = moveHands(cl, -5);       // non puï¿½ scendere sotto 0
   assert.equal(cl.lh.r, 0);
   assert.equal(d2, -3);
 });
@@ -132,6 +132,38 @@ test('i corpi deboli causano un cedimento se sosti sulla loro fila', () => {
     stepClimb(cl, { left:false, right:false, up:false, down:false }, 0.016);
     if (cl.collapseEvent) { collapsed = true; break; }
   }
-  assert.ok(collapsed, 'il corpo debole non è mai ceduto');
+  assert.ok(collapsed, 'il corpo debole non ï¿½ mai ceduto');
   assert.ok(cl.lh.r < weak, 'non sono caduto dopo il cedimento');
+});
+
+// ---------------------------------------------------------------------------
+// V2: parametri di scalata PER-LIVELLO (g.climb). Default = valori storici.
+// ---------------------------------------------------------------------------
+
+test('createClimb: senza g.climb usa i valori di default (regressione)', () => {
+  const cl = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
+  assert.equal(cl.reachDur, 0.11, 'REACH_TIME default');
+  assert.equal(cl.hang, 11, 'HANG default');
+  assert.equal(cl.weakEvery, 8, 'weakEvery default');
+});
+
+test('createClimb: g.climb sovrascrive reach/hold/hang/weakEvery', () => {
+  const g = { ...GIRONI[0], climb: { reach: 0.2, hold: 0.3, hang: 16, weakEvery: 4 } };
+  const cl = createClimb(g);
+  assert.equal(cl.reachDur, 0.2);
+  assert.equal(cl.holdTime, 0.3);
+  assert.equal(cl.hang, 16);
+  // le righe deboli ora seguono weakEvery=4, non 8
+  const weak = [...cl.weakRows];
+  assert.ok(weak.length > 0, 'nessuna fila debole');
+  for (let i = 1; i < weak.length; i++)
+    assert.equal(weak[i] - weak[i - 1], 4, 'weakEvery non applicato');
+});
+
+test('i 13 gironi hanno feel di scalata distinti (non tutti uguali)', () => {
+  const sigs = GIRONI.map(g => {
+    const cl = createClimb(g);
+    return [cl.reachDur, cl.hang, cl.weakEvery].join(',');
+  });
+  assert.ok(new Set(sigs).size >= 6, 'meno di 6 feel distinti: ' + new Set(sigs).size);
 });

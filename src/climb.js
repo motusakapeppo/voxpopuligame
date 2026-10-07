@@ -15,6 +15,14 @@ const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pi
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
 export function createClimb(g) {
   const cx = 160;
+  // V2: parametri di scalata PER-LIVELLO (g.climb), con default = valori storici.
+  // Ogni girone può avere il suo "feel": reach/hold più lenti, hang diverso, e una
+  // diversa densità di appigli debolli (weakEvery).
+  const pc = (g && g.climb) || {};
+  const reach = Number.isFinite(pc.reach) ? pc.reach : REACH_TIME;
+  const hold = Number.isFinite(pc.hold) ? pc.hold : HOLD_TIME;
+  const hang = Number.isFinite(pc.hang) ? pc.hang : HANG;
+  const weakEvery = Number.isFinite(pc.weakEvery) && pc.weakEvery > 0 ? pc.weakEvery : 8;
   const bottomY = Math.max(...g.bodies.map(b => b.y));
   const nRows = Math.max(2, Math.floor((bottomY - TOP_Y) / STEP_Y) + 1);
   // appigli a 11px: la distanza tra le due mani resta ~1.4× la larghezza spalle,
@@ -32,20 +40,21 @@ export function createClimb(g) {
   const c0 = 10;   // centro (160): con 21 colonne l'indice centrale è 10
   // posizione iniziale del bacino = centro presa + HANG
   const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
-  const by0 = yOf(0) + HANG;
+  const by0 = yOf(0) + hang;
   // appigli DEBOLI: ogni tanto un corpo cede mentre ci sali sopra (deterministico
   // per girone, così è sempre lo stesso e testabile)
   const weakRows = new Set();
   const seed = String(g.id || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 5, 0);
-  for (let r = 4 + seed; r < nRows - 3; r += 8) weakRows.add(r);
+  for (let r = 4 + seed; r < nRows - 3; r += weakEvery) weakRows.add(r);
   return {
     cols, rows, holds, has, xOf, yOf, nRows, cx,
+    reachDur: reach, holdTime: hold, hang, weakEvery,
     lh: { c: c0, r: 0 }, rh: { c: c0 + 1, r: 0 },
     lhA: { c: c0, r: 0 }, rhA: { c: c0 + 1, r: 0 },  // animati (float)
     lhHold: 1, rhHold: 1,                            // presa 0..1
     bx: bx0, by: by0, vby: 0,                        // bacino (animato)
     lead: 'l',                                      // quale mano sale per prossima
-    reach: 0, reachDur: REACH_TIME,
+    reach: 0,
     from: null, to: null, which: null,
     weakRows, weakTimer: 0, collapsed: new Set(), collapseEvent: null,
     reached: false,
@@ -150,8 +159,8 @@ export function stepClimb(cl, input, dt) {
   const d = Number.isFinite(dt) ? dt : 0.016;
   // presa: recupera verso 1 quando la mano è ferma
   if (cl.reach <= 0) {
-    if (cl.which !== 'l') cl.lhHold = Math.min(1, cl.lhHold + d / HOLD_TIME);
-    if (cl.which !== 'r') cl.rhHold = Math.min(1, cl.rhHold + d / HOLD_TIME);
+    if (cl.which !== 'l') cl.lhHold = Math.min(1, cl.lhHold + d / (cl.holdTime || HOLD_TIME));
+    if (cl.which !== 'r') cl.rhHold = Math.min(1, cl.rhHold + d / (cl.holdTime || HOLD_TIME));
   }
 
   if (cl.reach > 0) {
@@ -176,7 +185,7 @@ export function stepClimb(cl, input, dt) {
   // bacino: segue il centro delle mani con ritardo (dondolio) e non supera
   // mai la presa. Quando un corpo vicino cede (piantata), dà un "tirone" su.
   const mx = (cl.xOf(cl.lhA.c) + cl.xOf(cl.rhA.c)) / 2;
-  const my = (cl.yOf(cl.lhA.r) + cl.yOf(cl.rhA.r)) / 2 + HANG;
+  const my = (cl.yOf(cl.lhA.r) + cl.yOf(cl.rhA.r)) / 2 + (cl.hang || HANG);
   const k = 1 - Math.pow(0.001, d);         // smorzamento indipendente dal frame
   cl.vby += (my - cl.by) * 8 * d;           // molla verticale (il "tiro su")
   cl.vby *= Math.pow(0.02, d);              // attrito

@@ -47,56 +47,56 @@ export function isTopReached(g, p) {
 
 export const GIRONI = [
   { id:'01', track:'INTRO', title:'INTRO', audioId:'01-intro', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'tutorial'}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'tutorial'}], climb:{reach:0.14,hold:0.18,hang:11,weakEvery:10},
     npcScenes:['sleepers','seaWall'], inscription:{ text:'INTRO' } },
 
   { id:'02', track:'IL VENTO DAL SUD', title:'IL VENTO DAL SUD', audioId:'02-vento', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'wind', period:4, strength:2.5, dust:true}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'wind', period:4, strength:2.5, dust:true}], climb:{reach:0.11,hold:0.14,hang:12,weakEvery:9},
     npcScenes:['blownBodies','domeHouses'], inscription:{ text:'IL VENTO DAL SUD' } },
 
   { id:'03', track:'COME I TUONI', title:'COME I TUONI', audioId:'03-tuoni', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'quake', every:5, shakeT:0.8, shakeAmp:6}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'quake', every:5, shakeT:0.8, shakeAmp:6}], climb:{reach:0.12,hold:0.20,hang:11,weakEvery:6},
     npcScenes:['separatedMothers','trembling'], inscription:{ text:'COME I TUONI' } },
 
   { id:'04', track:'BAGHDAD', title:'BAGHDAD', audioId:'04-baghdad', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'fallingBlades', every:3, speed:3}],
+    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'fallingBlades', every:3, speed:3}], climb:{reach:0.10,hold:0.13,hang:12,weakEvery:5},
     npcScenes:['repressedProtest','stillBody'], inscription:{ text:'BAGHDAD' } },
 
   { id:'05', track:'HO SONNO', title:'HO SONNO', audioId:'05-hosonno', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'sleep', dimTo:0.35, wakeTouchEvery:1.2}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'sleep', dimTo:0.35, wakeTouchEvery:1.2}], climb:{reach:0.16,hold:0.24,hang:10,weakEvery:9},
     npcScenes:['workLoop','timecard','sirene'], inscription:{ text:'HO SONNO' } },
 
   { id:'06', track:'PRIMO POSTO', title:'PRIMO POSTO', audioId:'06-primoposto', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rivals', count:3, pushForce:2}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rivals', count:3, pushForce:2}], climb:{reach:0.09,hold:0.12,hang:13,weakEvery:8},
     npcScenes:['snakes','climbers'], inscription:{ text:'PRIMO POSTO' } },
 
   { id:'07', track:'TIC-TAC', title:'TIC-TAC', audioId:'07-tictac', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'timer', total:35, collapseSpeed:0.6}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'timer', total:35, collapseSpeed:0.6}], climb:{reach:0.08,hold:0.11,hang:11,weakEvery:7},
     npcScenes:['clocks','wornBodies','crackedMirror'], inscription:{ text:'TIC-TAC' } },
 
   { id:'08', track:'TUTTO FINTO', title:'TUTTO FINTO', audioId:'08-tuttofinto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720).map((b, i) => i % 3 === 1 ? { ...b, kind:'fake' } : b)],
-    modifiers:[{kind:'illusion', fakeRatio:0.4, flames:true}],
+    modifiers:[{kind:'illusion', fakeRatio:0.4, flames:true}], climb:{reach:0.12,hold:0.16,hang:12,weakEvery:6},
     npcScenes:['redCurtain','maskedOrchestra','delta'], inscription:{ text:'TUTTO FINTO' } },
 
   { id:'09', track:'EDERA', title:'EDERA', audioId:'09-edera', direction:'down', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'descent', verlet:true, verletFor:15, ivy:true}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'descent', verlet:true, verletFor:15, ivy:true}], climb:{reach:0.15,hold:0.22,hang:9,weakEvery:5},
     npcScenes:['snakes','cerberus','double'], inscription:{ text:'EDERA' } },
 
   { id:'10', track:'SCENDI', title:'SCENDI', audioId:'10-scendi', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rain', slip:true, pushers:3}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rain', slip:true, pushers:3}], climb:{reach:0.11,hold:0.15,hang:12,weakEvery:7},
     npcScenes:['protest','raisedFists','wetCrowd'], inscription:{ text:'SCENDI' } },
 
   { id:'11', track:'LA FINE DEL MONDO', title:'LA FINE DEL MONDO', audioId:'11-lafinedelmondo', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'risingWater', riseSpeed:0.8}, {kind:'fallingBlades', every:2.5, speed:3}],
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'risingWater', riseSpeed:0.8}, {kind:'fallingBlades', every:2.5, speed:3}], climb:{reach:0.13,hold:0.17,hang:10,weakEvery:6},
     npcScenes:['screamingWorld','wiltingFlowers','blackShroud'], inscription:{ text:'LA FINE DEL MONDO' } },
 
   { id:'12', track:'MARANATHA', title:'MARANATHA', audioId:'12-maranatha', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true}],
+    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true}], climb:{reach:0.12,hold:0.15,hang:11,weakEvery:12},
     npcScenes:['popoliInCammino','chorus'], inscription:{ text:'MARANATHA' } },
 
   { id:'13', track:'OUTRO', title:'OUTRO', audioId:'13-outro', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true, final:true}],
+    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true, final:true}], climb:{reach:0.13,hold:0.16,hang:11,weakEvery:14},
     npcScenes:['theTop'], inscription:{ text:'OUTRO' } },
 ];
 
