@@ -234,10 +234,8 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
-  // lirica PIXEL protagonista: in CIMA alla scena (dopo folla/giocatore/front),
-  // così resta leggibile in ogni tema pur restando pixel-art (attraversa il post).
-  const kl = KARAOKE[lv.girone.audioId];
-  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
+  // NB: la lirica PIXEL è disegnata FUORI dalla transform della camera (in main),
+  // così non viene mai spinta fuori schermo da shake/zoom.
   // T9: acqua che sale (girone 11) — copre la scena sotto il livello raggiunto.
   const wl = lv.fxState && lv.fxState.water;
   if (wl && wl > 0) {
@@ -563,6 +561,11 @@ function loop(now) {
     ctx.translate(sh.x + jsh.x, sh.y + jsh.y);
     drawWorld(level, cameraY);
     ctx.restore();
+    // lirica PIXEL protagonista: FUORI dalla transform della camera, in cima alla
+    // scena (leggibile in ogni tema, mai spinta fuori da shake/zoom). Resta pixel
+    // perché è disegnata nella scena-offscreen che attraversa il post-processing.
+    const kl = KARAOKE[level.girone.audioId];
+    if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
     if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);

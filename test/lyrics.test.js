@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { lyricIndexAt, drawLyricsOverlay, drawLyricsPixel } from '../src/art.js';
 import { C } from '../src/palette.js';
 
-// --- stub ctx: registra le chiamate di disegno ------------------------------
+// --- stub ctx: registra le chiamate e MISURA davvero (advance ~0.6 em) --------
 function recCtx() {
   const calls = [];
   let fill = '#000000';
@@ -24,7 +24,12 @@ function recCtx() {
     fillRect(x, y, w, h) { calls.push({ op: 'fillRect', x, y, w, h, fill, alpha }); },
     fillText(text, x, y) { calls.push({ op: 'fillText', text, x, y, fill, alpha, font }); },
     save() {}, restore() {}, setTransform() {},
-    measureText: () => ({ width: 0 }),
+    // misura realistica: monospace bold ~0.6 em per carattere, come il canvas
+    measureText(s) {
+      const m = /(\d+(?:\.\d+)?)px/.exec(font);
+      const fp = m ? +m[1] : 10;
+      return { width: (s == null ? '' : String(s)).length * fp * 0.6 };
+    },
     textAlign: 'left', textBaseline: 'alphabetic',
   };
   return ctx;
@@ -172,9 +177,6 @@ test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + outline nero + ban
   drawLyricsPixel(ctx, LINES, 6, 2, W, H);
   const texts = ctx.calls.filter(c => c.op === 'fillText');
   assert.ok(texts.length > 0, 'nessun testo disegnato');
-  for (const c of texts) {
-    assert.ok(c.x >= 0 && c.x <= W, 'x fuori schermo: ' + c.x);
-  }
   const white = texts.filter(c => c.fill === C.white);
   assert.ok(white.length >= 1, 'nessun corpo bianco (il pixel deve essere leggibile)');
   assert.ok(white[white.length - 1].alpha >= 0.9, 'corpo troppo tenue: alpha ' + white[white.length - 1].alpha);
@@ -184,11 +186,38 @@ test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + outline nero + ban
   assert.ok(band.length >= 1, 'nessuna banda scura dietro la lirica');
 });
 
-test('drawLyricsPixel: riga lunghissima non sborda', () => {
+// La larghezza VERA dell'unità di testo disegnata deve entrare nello schermo.
+// (Il centro x non basta: il testo può sbordare a sinistra/destra.)
+function realWidth(ctx, call) {
+  ctx.font = call.font;
+  const m = ctx.measureText(call.text);
+  return (m && m.width > 0) ? m.width : call.text.length * 0.62 * (/(\d+(?:\.\d+)?)px/.exec(call.font || '') ? +/(\d+(?:\.\d+)?)px/.exec(call.font)[1] : 10);
+}
+
+test('drawLyricsPixel: nessun testo sborda (larghezza reale entro lo schermo)', () => {
   const W = 320, H = 180;
   const ctx = recCtx();
-  drawLyricsPixel(ctx, [[0, LONG]], 1, 2, W, H);
+  drawLyricsPixel(ctx, LINES, 6, 2, W, H);
+  for (const c of ctx.calls.filter(x => x.op === 'fillText')) {
+    const hw = realWidth(ctx, c) / 2;
+    assert.ok(c.x - hw >= -0.5, 'sborda a sinistra: x=' + c.x + ' hw=' + Math.round(hw));
+    assert.ok(c.x + hw <= W + 0.5, 'sborda a destra: x=' + c.x + ' hw=' + Math.round(hw));
+  }
+});
+
+test('drawLyricsPixel: riga lunga (come 01-intro) va a capo e non sborda', () => {
+  const W = 320, H = 180;
+  const REAL = 'E scopro ogni giorno che passa un pezzetto di me che si stacca dal cranio ah';
+  const ctx = recCtx();
+  drawLyricsPixel(ctx, [[0, REAL]], 1, 2, W, H);
   const texts = ctx.calls.filter(c => c.op === 'fillText');
-  assert.ok(texts.length > 0, 'nessun testo disegnato');
-  for (const c of texts) assert.ok(c.x >= 0 && c.x <= W, 'x fuori schermo: ' + c.x);
+  const white = texts.filter(c => c.fill === C.white);
+  assert.ok(white.length >= 2, 'riga lunga: attese >=2 righe bianche (wrap), avute ' + white.length);
+  for (const c of texts) {
+    const hw = realWidth(ctx, c) / 2;
+    assert.ok(c.x - hw >= -0.5 && c.x + hw <= W + 0.5, 'sborda: x=' + c.x + ' hw=' + Math.round(hw));
+  }
+  // il font delle righe avvolte deve restare leggibile (>= 9 logici)
+  const m = /(\d+(?:\.\d+)?)px/.exec(white[0].font);
+  assert.ok(+m[1] >= 9, 'font troppo piccolo dopo il wrap: ' + m[1] + 'px');
 });
