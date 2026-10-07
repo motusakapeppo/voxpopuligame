@@ -196,3 +196,156 @@ export function alignLinesWithMeta(officialLines, words, opts = {}) {
 export function alignLines(officialLines, words, opts = {}) {
   return alignLinesWithMeta(officialLines, words, opts).entries;
 }
+
+// ---------------------------------------------------------------------------
+// GAP-FILL (v3): gli anchor del matcher stretto restano ESATTI; le righe
+// ufficiali intermedie vengono distribuite nei buchi per non lasciare la
+// lirica "incollata" per molti secondi mentre l'audio canta altri versi.
+//
+// Regole:
+//   - tra due anchor (tA, liA) e (tB, liB): le righe ufficiali con indice in
+//     (liA, liB) vengono piazzate uniformemente in (tA, tB], in ordine.
+//   - testa (prima del primo anchor): si riempie SOLO se l'audio inizia presto
+//     (prima parola whisper <= headMaxStart) e le righe precedenti ci stanno
+//     con spaziatura >= minSpacing; altrimenti si lascia stare (niente invenzioni).
+//   - coda (dopo l'ultimo anchor): si riempie fino alla durata stimata, con lo
+//     stesso vincolo di spaziatura.
+//   - guardrail: start monotoni non decrescenti, mai < 0, mai oltre la durata,
+//     mai duplicati consecutivi, spaziatura minima minSpacing tra interpolate.
+// ---------------------------------------------------------------------------
+
+function estimateDuration(words, opts) {
+  if (Number.isFinite(opts.duration) && opts.duration > 0) return opts.duration;
+  const ws = Array.isArray(words) ? words : [];
+  if (!ws.length) return 0;
+  const last = wordOnset(ws[ws.length - 1]);
+  return Number.isFinite(last) ? last + 1 : 0;
+}
+
+// n indici equispaziati in [0, count): deterministico, senza Math.random.
+function sampleIndices(count, n) {
+  const out = [];
+  if (n <= 0 || count <= 0) return out;
+  if (n >= count) { for (let i = 0; i < count; i++) out.push(i); return out; }
+  const seen = new Set();
+  for (let k = 0; k < n; k++) {
+    let i = Math.round(((k + 1) * count) / (n + 1)) - 1;
+    if (i < 0) i = 0;
+    if (i > count - 1) i = count - 1;
+    while (seen.has(i) && i < count - 1) i++;
+    while (seen.has(i) && i > 0) i--;
+    seen.add(i);
+    out.push(i);
+  }
+  out.sort((a, b) => a - b);
+  return out;
+}
+
+/**
+ * Riempie i buchi tra gli anchor con le righe ufficiali intermedie.
+ * @param {string[]} officialLines righe ufficiali (in ordine)
+ * @param {Array<[number,string]>} anchors voci ad alta confidenza (tempi esatti)
+ * @param {Array<[number,number,string]>} words parole whisper [start,end,text]
+ * @param {{duration?:number,minSpacing?:number,headMaxStart?:number}} [opts]
+ * @returns {Array<[number,string]>} voci con anchor preservati + interpolate
+ */
+export function fillGaps(officialLines, anchors, words, opts = {}) {
+  const lines = Array.isArray(officialLines) ? officialLines : [];
+  const anch = Array.isArray(anchors) ? anchors : [];
+  const minSpacing = Number.isFinite(opts.minSpacing) && opts.minSpacing > 0 ? opts.minSpacing : 1.2;
+  const dur = estimateDuration(words, opts);
+  if (!anch.length) return [];
+
+  // indici ufficiali degli anchor (prima occorrenza non ancora consumata, cosi'
+  // i ritornelli ripetuti restano coerenti).
+  const used = new Set();
+  const anchorIdx = [];
+  for (const [start, line] of anch) {
+    let li = -1;
+    for (let k = 0; k < lines.length; k++) {
+      if (lines[k] === line && !used.has(k)) { li = k; break; }
+    }
+    if (li < 0) li = lines.indexOf(line);
+    if (li >= 0) used.add(li);
+    anchorIdx.push({ start, line, li });
+  }
+
+  const out = [];
+  const push = (start, line) => {
+    const s = Number(Math.max(0, start).toFixed(2));
+    const prev = out[out.length - 1];
+    if (prev && prev[1] === line) return;          // niente duplicati consecutivi
+    if (prev && s < prev[0]) return;               // monotonia garantita
+    out.push([s, line]);
+  };
+
+  // --- testa: righe ufficiali prima del primo anchor -------------------------
+  // Si riempie solo se c'e' audio cantato PRIMA dell'anchor (firstOnset < tA) e
+  // c'e' spazio; si distribuisce in [firstOnset, tA) prendendo le righe PIU'
+  // VICINE all'anchor (le ultime prima di esso). Niente liriche sul silenzio.
+  {
+    const a0 = anchorIdx[0];
+    const pre = a0.li;
+    const firstOnset = words && words.length ? wordOnset(words[0]) : 0;
+    const headStart = Number.isFinite(firstOnset) ? Math.max(0, firstOnset) : 0;
+    const room = a0.start - headStart;
+    const maxFit = Math.floor(room / minSpacing) - 1;
+    if (pre > 0 && maxFit >= 1 && room > 0) {
+      const n = Math.min(pre, maxFit);
+      const from = a0.li - n;                       // ultime n righe prima dell'anchor
+      const step = room / (n + 1);
+      for (let k = 0; k < n; k++) push(headStart + (k + 1) * step, lines[from + k]);
+    }
+  }
+
+  // --- gap tra anchor consecutivi --------------------------------------------
+  for (let i = 1; i < anchorIdx.length; i++) {
+    const a = anchorIdx[i - 1], b = anchorIdx[i];
+    push(a.start, a.line);                          // anchor ESATTO
+    const between = b.li - a.li - 1;
+    const win = b.start - a.start;
+    const maxFit = Math.floor(win / minSpacing) - 1;
+    if (between > 0 && maxFit >= 1 && win > 0) {
+      const n = Math.min(between, maxFit);
+      const picks = sampleIndices(between, n);      // sottoinsieme equispaziato
+      const step = win / (n + 1);
+      for (let k = 0; k < n; k++) push(a.start + (k + 1) * step, lines[a.li + 1 + picks[k]]);
+    }
+  }
+  push(anchorIdx[anchorIdx.length - 1].start, anchorIdx[anchorIdx.length - 1].line);
+
+  // --- coda: righe ufficiali dopo l'ultimo anchor ----------------------------
+  if (dur > 0) {
+    const al = anchorIdx[anchorIdx.length - 1];
+    const after = lines.length - al.li - 1;
+    const room = dur - al.start;
+    const maxFit = Math.floor(room / minSpacing);
+    if (after > 0 && maxFit >= 1) {
+      const n = Math.min(after, maxFit);
+      const step = room / (n + 1);
+      for (let k = 0; k < n; k++) push(al.start + (k + 1) * step, lines[al.li + 1 + k]);
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Allineamento completo: anchor stretti (tempi esatti) + riempimento dei buchi.
+ * Replica la strategia del driver: PASS 1 stretto; se produce < 2 righe, PASS 2
+ * largo (finestra ampia, ultimo token non obbligatorio) per le clip molto corte.
+ * @param {string[]} officialLines
+ * @param {Array<[number,number,string]>} words
+ * @param {{window?:number,minRatio?:number,requireLast?:boolean,minMatched?:number,offset?:number|'auto'|'none',duration?:number,minSpacing?:number}} [opts]
+ * @returns {{entries:Array<[number,string]>, anchors:Array<[number,string]>, offset:number, candidates:Array, pass:string}}
+ */
+export function alignWithFill(officialLines, words, opts = {}) {
+  let res = alignLinesWithMeta(officialLines, words, { window: 12, minRatio: 0.5, requireLast: true, ...opts });
+  let pass = 'strict';
+  if (res.entries.length < 2) {
+    const loose = alignLinesWithMeta(officialLines, words, { window: 24, minRatio: 0.4, requireLast: false, ...opts });
+    if (loose.entries.length > res.entries.length) { res = loose; pass = 'loose'; }
+  }
+  const entries = fillGaps(officialLines, res.entries, words, opts);
+  return { entries, anchors: res.entries, offset: res.offset, candidates: res.candidates, pass };
+}

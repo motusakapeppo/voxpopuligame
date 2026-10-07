@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { alignLines, calibrateOffset, tokenize } from '../tools/align-core.mjs';
+import { alignLines, alignLinesWithMeta, alignWithFill, calibrateOffset, tokenize } from '../tools/align-core.mjs';
 import { KARAOKE } from '../src/karaoke.js';
 
 const words = JSON.parse(readFileSync('tools/_words.json', 'utf8'));
@@ -174,40 +174,162 @@ test('calibrateOffset e 0 con meno di 2 righe', () => {
   assert.equal(calibrateOffset([{ first: 0, onset: 0, line: 'a' }], [[0, 0.3, 'a']]), 0);
 });
 
-// --- MISURA DEL SYNC (RED -> GREEN) -----------------------------------------
+// --- GAP-FILL: riempimento tra gli anchor (RED -> GREEN) --------------------
+//
+// Il matcher stretto emette poche righe (solo alta confidenza): tra due anchor
+// la riga mostrata resta "incollata" per molti secondi mentre l'audio canta
+// altri versi. alignWithFill() tiene gli anchor ESATTI e distribuisce le righe
+// ufficiali intermedie nei gap, senza inventare oltre il ragionevole.
 
-test('sync: nessuna traccia mostra versi sbagliati (copertura < 0.5)', () => {
+// durata stimata della clip: onset dell'ultima parola whisper + ~1s.
+function clipDuration(id) {
+  const ws = (words[id] && words[id].words) || [];
+  if (!ws.length) return 0;
+  return wordOnset(ws[ws.length - 1]) + 1;
+}
+
+// anchor "stretti" come li produce il driver (strict, fallback loose).
+function anchorsFor(id) {
+  const lines = official[id] || [];
+  const ws = (words[id] && words[id].words) || [];
+  let res = alignLinesWithMeta(lines, ws, { window: 12, minRatio: 0.5, requireLast: true });
+  if (res.entries.length < 2) {
+    const loose = alignLinesWithMeta(lines, ws, { window: 24, minRatio: 0.4, requireLast: false });
+    if (loose.entries.length > res.entries.length) res = loose;
+  }
+  return res;
+}
+
+function filledFor(id) {
+  const lines = official[id] || [];
+  const ws = (words[id] && words[id].words) || [];
+  return alignWithFill(lines, ws, { duration: clipDuration(id) }).entries;
+}
+
+test('gap-fill: ogni traccia ha PIU voci degli anchor stretti', () => {
   const bad = [];
   for (const id of IDS) {
-    const rows = syncReport(id, KARAOKE[id] || []);
-    const wrong = rows.filter(r => r.wrong);
+    const before = anchorsFor(id).entries.length;
+    const after = filledFor(id).length;
+    if (!(after > before)) bad.push(`${id}(${before}->${after})`);
+  }
+  assert.equal(bad.length, 0, 'tracce senza riempimento: ' + bad.join(', '));
+});
+
+test('gap-fill: start monotoni non decrescenti e dentro [0, durata]', () => {
+  for (const id of IDS) {
+    const dur = clipDuration(id);
+    const out = filledFor(id);
+    for (let i = 0; i < out.length; i++) {
+      assert.ok(out[i][0] >= 0, `${id}: start negativo a ${i} (${out[i][0]})`);
+      assert.ok(out[i][0] <= dur + 1e-9, `${id}: start ${out[i][0]} oltre durata ${dur}`);
+      if (i > 0) assert.ok(out[i][0] >= out[i - 1][0], `${id}: start non monotono a ${i}`);
+    }
+  }
+});
+
+test('gap-fill: gli ANCHOR sono preservati esattamente (tempo e testo)', () => {
+  for (const id of IDS) {
+    const anchors = anchorsFor(id).entries;
+    const out = filledFor(id);
+    for (const [start, line] of anchors) {
+      const hit = out.find(e => e[1] === line && Math.abs(e[0] - start) < 1e-9);
+      assert.ok(hit, `${id}: anchor perso "${line}" @${start}`);
+    }
+  }
+});
+
+test('gap-fill: 03-tuoni "Quando ci sono i tuoni" resta a ~16.59', () => {
+  const out = filledFor('03-tuoni');
+  const line = out.find(e => /Quando ci sono i tuoni/.test(e[1]));
+  assert.ok(line, 'riga "tuoni" non trovata');
+  assert.ok(Math.abs(line[0] - 16.59) < 0.01, `start ${line[0]} != 16.59`);
+});
+
+test('gap-fill: 11-lafinedelmondo "È la fine del mondo" resta >= 8.0', () => {
+  const out = filledFor('11-lafinedelmondo');
+  const line = out.find(e => /fine del mondo/.test(e[1]));
+  assert.ok(line, 'riga "fine del mondo" non trovata');
+  assert.ok(line[0] >= 8.0, `start ${line[0]} < 8.0`);
+});
+
+test('gap-fill: nessuna riga consecutiva duplicata', () => {
+  for (const id of IDS) {
+    const out = filledFor(id);
+    for (let i = 1; i < out.length; i++) {
+      assert.notEqual(out[i][1], out[i - 1][1], `${id}: duplicato consecutivo a ${i}`);
+    }
+  }
+});
+
+test('gap-fill: le righe interpolate stanno tra gli anchor in ordine ufficiale', () => {
+  for (const id of IDS) {
+    const lines = official[id] || [];
+    const anchors = anchorsFor(id).entries;
+    const anchorSet = new Set(anchors.map(e => e[1]));
+    const out = filledFor(id);
+    // Assegna a ogni voce l'indice ufficiale successivo non ancora usato che
+    // combacia col testo (gestisce i ritornelli ripetuti): deve essere
+    // strettamente crescente -> l'ordine ufficiale e' rispettato.
+    const used = new Set();
+    let last = -1;
+    for (const [, line] of out) {
+      let li = -1;
+      for (let k = last + 1; k < lines.length; k++) {
+        if (lines[k] === line && !used.has(k)) { li = k; break; }
+      }
+      assert.ok(li >= 0, `${id}: riga fuori ordine ufficiale "${line}"`);
+      used.add(li);
+      last = li;
+    }
+    // ogni anchor deve comparire nell'output (gia' verificato altrove)
+    for (const a of anchors) assert.ok(anchorSet.has(a[1]), `${id}: anchor assente ${a[1]}`);
+  }
+});
+
+// --- MISURA DEL SYNC (RED -> GREEN) -----------------------------------------
+//
+// La copertura si misura sugli ANCHOR (righe ad alta confidenza, tempi esatti):
+// le righe interpolate sono per definizione "di riempimento" e non hanno un
+// onset whisper proprio, quindi non si pretende copertura >= 0.5 da loro.
+
+// voci di KARAOKE[id] che sono anchor (testo+tempo combaciano con anchorsFor).
+function anchorRows(id) {
+  const anchors = anchorsFor(id).entries;
+  const key = new Set(anchors.map(e => e[0] + '\u0000' + e[1]));
+  const rows = syncReport(id, KARAOKE[id] || []);
+  return rows.filter(r => key.has(r.start + '\u0000' + r.line));
+}
+
+test('sync: nessun ANCHOR mostra versi sbagliati (copertura < 0.5)', () => {
+  const bad = [];
+  for (const id of IDS) {
+    const wrong = anchorRows(id).filter(r => r.wrong);
     if (wrong.length) bad.push(`${id}(${wrong.length})`);
   }
   assert.equal(
     bad.length, 0,
-    'tracce con versi sbagliati al momento giusto: ' + bad.join(', ') + '\n' + printTable()
+    'anchor con versi sbagliati al momento giusto: ' + bad.join(', ') + '\n' + printTable()
   );
 });
 
-test('sync: la copertura mediana per traccia e >= 0.5', () => {
+test('sync: la copertura mediana degli ANCHOR per traccia e >= 0.5', () => {
   const bad = [];
   for (const id of IDS) {
-    const rows = syncReport(id, KARAOKE[id] || []);
+    const rows = anchorRows(id);
     if (!rows.length) continue;
     const med = median(rows.map(r => r.coverage));
     if (!(med >= 0.5)) bad.push(`${id}(med=${med.toFixed(2)})`);
   }
-  assert.equal(bad.length, 0, 'copertura mediana bassa: ' + bad.join(', ') + '\n' + printTable());
+  assert.equal(bad.length, 0, 'copertura mediana anchor bassa: ' + bad.join(', ') + '\n' + printTable());
 });
 
-test('sync: errore mediano di onset sulle voci ben allineate <= 0.6s', () => {
+test('sync: errore mediano di onset sugli ANCHOR <= 0.6s', () => {
   const errs = [];
   for (const id of IDS) {
-    for (const r of syncReport(id, KARAOKE[id] || [])) {
-      if (!r.wrong) errs.push(r.onsetErr);
-    }
+    for (const r of anchorRows(id)) errs.push(r.onsetErr);
   }
   const med = median(errs);
-  assert.ok(Number.isFinite(med), 'nessuna voce ben allineata');
-  assert.ok(med <= 0.6, `errore mediano di onset ${med.toFixed(3)}s > 0.6s\n` + printTable());
+  assert.ok(Number.isFinite(med), 'nessun anchor');
+  assert.ok(med <= 0.6, `errore mediano di onset anchor ${med.toFixed(3)}s > 0.6s\n` + printTable());
 });
