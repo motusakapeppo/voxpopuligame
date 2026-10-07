@@ -167,3 +167,30 @@ test('i 13 gironi hanno feel di scalata distinti (non tutti uguali)', () => {
   });
   assert.ok(new Set(sigs).size >= 6, 'meno di 6 feel distinti: ' + new Set(sigs).size);
 });
+
+// ---------------------------------------------------------------------------
+// V3: DIREZIONE reale. Livello 'down' (09 EDERA): si parte dall'alto e si SCENDE.
+// ---------------------------------------------------------------------------
+test('createClimb direzione down: parte in cima e scende', () => {
+  const up = createClimb({ id: 'u', bodies: GIRONI[0].bodies, direction: 'up' });
+  const dn = createClimb({ id: 'd', bodies: GIRONI[0].bodies, direction: 'down' });
+  assert.equal(up.dir, 1, 'up: dir +1');
+  assert.equal(dn.dir, -1, 'down: dir -1');
+  // up parte in basso (r=0), down parte in cima (r=nRows-1)
+  assert.equal(up.lh.r, 0);
+  assert.equal(dn.lh.r, dn.nRows - 1, 'down deve partire in cima');
+});
+
+test('stepClimb down: autoStep fa SCENDERE (r diminuisce)', () => {
+  const dn = createClimb({ id: 'd', bodies: GIRONI[0].bodies, direction: 'down' });
+  const r0 = dn.lh.r;
+  for (let i = 0; i < 120; i++) stepClimb(dn, { left:false, right:false, up:true, down:false }, 0.016);
+  assert.ok(Math.max(dn.lh.r, dn.rh.r) < r0, 'down: le mani devono scendere, non salire');
+});
+
+test('stepClimb down: reached quando si arriva in BASSO', () => {
+  const dn = createClimb({ id: 'd', bodies: GIRONI[0].bodies, direction: 'down' });
+  dn.lh.r = 0; dn.rh.r = 0; dn.lhA.r = 0; dn.rhA.r = 0;
+  stepClimb(dn, { left:false, right:false, up:false, down:false }, 0.016);
+  assert.ok(dn.reached, 'down: reached al fondo');
+});
