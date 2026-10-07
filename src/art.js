@@ -603,11 +603,15 @@ export function drawPickup(ctx, pk, climb, cameraY, time) {
 // ---------------------------------------------------------------------------
 export function drawThreatMsg(ctx, msg, W, H) {
   if (!msg) return;
+  const w = Number.isFinite(W) ? W : 320;
+  const h = Number.isFinite(H) ? H : 180;
+  const str = msg.toUpperCase();
   ctx.save();
-  ctx.font = '7px monospace';
+  ctx.font = uiFitSize(ctx, str, w * 0.94, 1, 7, 5) + 'px monospace';
   ctx.textAlign = 'center';
-  ctx.fillStyle = C.black; ctx.fillText(msg.toUpperCase(), W / 2 + 1, H - 20);
-  ctx.fillStyle = C.redHot; ctx.fillText(msg.toUpperCase(), W / 2, H - 21);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.black; ctx.fillText(str, w / 2 + 1, h - 20);
+  ctx.fillStyle = C.redHot; ctx.fillText(str, w / 2, h - 21);
   ctx.restore();
   ctx.textAlign = 'left';
 }
@@ -699,7 +703,8 @@ export function drawKaraoke(ctx, karaoke, pos, time, W, H) {
   if (idx < 0) idx = 0;
   const [t0, t1, text] = karaoke[idx];
   const next = karaoke[idx + 1];
-  const size = Math.max(7, Math.min(13, Math.floor((W * 0.92) / Math.max(1, text.length * 0.6))));
+  // shrink-to-fit: la frase karaoke non sborda mai (min 6px logici)
+  const size = uiFitSize(ctx, text, W * 0.92, 1, 13, 6);
   const cw = size * 0.6;                 // larghezza carattere
   const totalW = text.length * cw;
   const x0 = W / 2 - totalW / 2;
@@ -710,10 +715,10 @@ export function drawKaraoke(ctx, karaoke, pos, time, W, H) {
 
   ctx.save();
   ctx.textAlign = 'left';
-  // eco delle righe precedenti (fantasmi in alto)
+  // eco delle righe precedenti (fantasmi in alto) — shrink-to-fit
   for (let i = Math.max(0, idx - 2); i < idx; i++) {
     ctx.globalAlpha = 0.10 * (i - idx + 3);
-    drawCentered(ctx, karaoke[i][2], W / 2, y - (idx - i) * 12, time, 7);
+    drawCentered(ctx, karaoke[i][2], W / 2, y - (idx - i) * 12, time, 7, W);
   }
   // banda scura per leggibilità
   ctx.globalAlpha = 0.5;
@@ -753,16 +758,19 @@ export function drawKaraoke(ctx, karaoke, pos, time, W, H) {
   ctx.fillStyle = C.red;
   ctx.fillRect(x0, y + 7, totalW * Math.min(1, k), 1);
   // prossima riga in eco
-  if (next) { ctx.globalAlpha = 0.13; drawCentered(ctx, next[2], W / 2, y + 24, time, 7); }
+  if (next) { ctx.globalAlpha = 0.13; drawCentered(ctx, next[2], W / 2, y + 24, time, 7, W); }
   ctx.restore();
   ctx.textAlign = 'left';
 }
 
-// Testo centrato con tremolio (per le righe fantasma).
-function drawCentered(ctx, text, cx, cy, time, size) {
-  const cw = size * 0.6;
+// Testo centrato con tremolio (per le righe fantasma). Shrink-to-fit su W.
+function drawCentered(ctx, text, cx, cy, time, size, W) {
+  const w = Number.isFinite(W) ? W : 320;
+  const fit = uiFitSize(ctx, text, w * 0.92, 1, size, 5);
+  const cw = fit * 0.6;
   let x = cx - (text.length * cw) / 2;
-  ctx.font = size + 'px monospace';
+  if (x < 0) x = 0;
+  ctx.font = fit + 'px monospace';
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (ch !== ' ') ctx.fillText(ch, x, cy + Math.sin(time * 4 + i * 0.9) * 0.5);
@@ -786,11 +794,11 @@ export function drawChapterCard(ctx, title, k, W, H) {
   ctx.fillStyle = C.redDeep;
   ctx.fillRect(0, H * 0.42, W, 1);
   ctx.fillRect(0, H * 0.42 + 29, W, 1);
-  // titolo
-  const size = Math.max(11, Math.min(22, Math.floor((W * 0.9) / Math.max(1, title.length * 0.62))));
+  // titolo — shrink-to-fit, mai oltre lo schermo
+  const size = uiFitSize(ctx, title, W * 0.9, 1, 22, 8);
   ctx.font = size + 'px monospace';
   ctx.textAlign = 'center';
-  const tw = title.length * size * 0.62;
+  const tw = Math.min(W * 0.9, lyricTextWidth(ctx, title, size));
   ctx.globalAlpha = Math.min(1, k * 2.5) * 0.8;
   ctx.fillStyle = C.black; ctx.fillText(title, W / 2 + 1 - slide, H * 0.42 + 21 + 1);
   ctx.globalAlpha = Math.min(1, k * 2.5);
@@ -848,6 +856,108 @@ function uiRect(ctx, x, y, w, h, S, color, alpha) {
   ctx.fillRect(Math.round(x * S), Math.round(y * S), Math.round(w * S), Math.round(h * S));
 }
 
+// ---------------------------------------------------------------------------
+// FIT DEL TESTO — deterministico, NaN-safe. Stima la larghezza (measureText
+// quando affidabile, altrimenti advance monospace 0.62em) e sceglie la size
+// che fa entrare la riga; se nemmeno il minimo basta, manda a capo.
+// ---------------------------------------------------------------------------
+function lyricTextWidth(ctx, text, fontPx) {
+  const fp = Number.isFinite(fontPx) && fontPx > 0 ? fontPx : 1;
+  const str = text == null ? '' : String(text);
+  try {
+    if (ctx && typeof ctx.measureText === 'function') {
+      const prev = ctx.font;
+      ctx.font = 'bold ' + Math.round(fp) + 'px "Consolas","Courier New",monospace';
+      const m = ctx.measureText(str);
+      ctx.font = prev;
+      if (m && Number.isFinite(m.width) && m.width > 0) return m.width;
+    }
+  } catch { /* stima sotto */ }
+  return str.length * fp * 0.62;
+}
+
+// Divide il testo in k righe ~uguali, tagliando sullo spazio più vicino al
+// punto di taglio (o a metà esatta se non ci sono spazi).
+function lyricWrap(text, k) {
+  const str = text == null ? '' : String(text);
+  const n = str.length;
+  if (k <= 1 || n === 0) return [str];
+  const target = Math.ceil(n / k);
+  const out = [];
+  let rest = str;
+  while (rest.length > target && out.length < k - 1) {
+    let cut = -1;
+    for (let d = 0; d <= target; d++) {
+      const a = target - d, b = target + d;
+      if (a > 0 && rest[a] === ' ') { cut = a; break; }
+      if (b < rest.length && rest[b] === ' ') { cut = b; break; }
+    }
+    if (cut <= 0) cut = target;
+    const piece = rest.slice(0, cut).trim();
+    if (piece) out.push(piece);
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out.length ? out : [str];
+}
+
+// Size logica massima (intera) che fa entrare tutte le righe in maxW (device px).
+function lyricFitSize(ctx, lines, maxW, s, maxSize, minSize) {
+  const MAX = Number.isFinite(maxSize) ? maxSize : 16;
+  const MIN = Number.isFinite(minSize) ? minSize : 7;
+  let size = MAX;
+  for (const ln of lines) {
+    const refW = lyricTextWidth(ctx, ln, 100);
+    let sz = refW > 0 ? Math.floor(((maxW * 100) / refW) / s) : MIN;
+    if (sz > MAX) sz = MAX;
+    if (sz < MIN) sz = MIN;
+    while (sz > MIN && lyricTextWidth(ctx, ln, sz * s) > maxW) sz -= 1;
+    if (sz < size) size = sz;
+  }
+  return size;
+}
+
+// Layout completo: 1 riga se entra, altrimenti 2-3 righe; mai oltre lo schermo.
+function lyricLayout(ctx, text, maxW, s, maxSize, minSize) {
+  const MAX = Number.isFinite(maxSize) ? maxSize : 16;
+  const MIN = Number.isFinite(minSize) ? minSize : 7;
+  const str = text == null ? '' : String(text);
+  const fits = (lines, size) => lines.every(ln => lyricTextWidth(ctx, ln, size * s) <= maxW);
+  let lines = [str];
+  let size = lyricFitSize(ctx, lines, maxW, s, MAX, MIN);
+  if (fits(lines, size)) return { size, lines };
+  for (let k = 2; k <= 3; k++) {
+    lines = lyricWrap(str, k);
+    size = lyricFitSize(ctx, lines, maxW, s, MAX, MIN);
+    if (fits(lines, size)) return { size, lines };
+  }
+  // ultima spiaggia: shrink sotto il minimo (mai sotto 4px) e, se serve, tronca
+  let sz = MIN;
+  while (sz > 4 && !fits(lines, sz)) sz -= 1;
+  const safe = lines.map(ln => {
+    if (lyricTextWidth(ctx, ln, sz * s) <= maxW) return ln;
+    let cut = ln.length;
+    while (cut > 1 && lyricTextWidth(ctx, ln.slice(0, cut) + '…', sz * s) > maxW) cut -= 1;
+    return ln.slice(0, cut) + '…';
+  });
+  return { size: sz, lines: safe };
+}
+
+// Size logica (intera) per il testo UI: shrink-to-fit in maxW device px.
+function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
+  const s = Number.isFinite(S) && S > 0 ? S : 1;
+  const max = Number.isFinite(maxSize) ? maxSize : 8;
+  const min = Number.isFinite(minSize) ? minSize : 5;
+  const str = txt == null ? '' : String(txt);
+  if (!str) return max;
+  const refW = lyricTextWidth(ctx, str, 100);
+  let sz = refW > 0 ? Math.floor(((maxW * 100) / refW) / s) : min;
+  if (sz > max) sz = max;
+  if (sz < min) sz = min;
+  while (sz > min && lyricTextWidth(ctx, str, sz * s) > maxW) sz -= 1;
+  return sz;
+}
+
 // Lirica estetica di SFONDO: una riga grande, soffusa, che fluttua; si rinnova
 // quando la canzone passa alla frase successiva. Non è karaoke: è atmosfera.
 export function drawLyricBackdrop(ctx, lines, pos, time, W, H, S) {
@@ -861,11 +971,13 @@ export function drawLyricBackdrop(ctx, lines, pos, time, W, H, S) {
   ctx.textAlign = 'center';
   // riga precedente, fantasma in alto
   if (prev) uiText(ctx, prev, W / 2, H * 0.20 - 6, S, C.redDeep, 0.16);
-  // riga attiva: ondeggia leggermente, lettera per lettera
+  // riga attiva: ondeggia leggermente, lettera per lettera (shrink-to-fit)
   const y = H * 0.30 + Math.sin(time * 0.7) * 2;
+  const fit = uiFitSize(ctx, text, W * S * 0.92, S, 20, 8);
+  uiFont(ctx, fit, S);
   const total = ctx.measureText(text).width;
   let x = W / 2 * S - total / 2;
-  uiFont(ctx, 20, S);
+  if (x < 0) x = 0;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     const wob = Math.sin(time * 1.1 + i * 0.35) * 1.5;
@@ -888,16 +1000,20 @@ export function drawUIOverlay(ctx, S, W, H, o) {
   // lirica di sfondo (atmosfera) — PIXEL ART, non nitida
   if (o.lyricLines) { /* disegnata nella scena, non qui */ }
 
-  // iscrizione in alto a sinistra (titolo brano)
-  uiFont(ctx, 8, S);
-  uiTextShadow(ctx, o.inscription || '', 12, 13, S, C.redHot, 1);
-  uiRect(ctx, 12, 15, (o.inscription || '').length * 4.8, 0.6, S, C.red, 0.9);
+  // iscrizione in alto a sinistra (titolo brano) — shrink-to-fit, mai oltre W
+  const insc = o.inscription || '';
+  const inscSize = uiFitSize(ctx, insc, (W - 14) * S * 0.94, S, 8, 5);
+  uiFont(ctx, inscSize, S);
+  uiTextShadow(ctx, insc, 12, 13, S, C.redHot, 1);
+  const inscW = Math.min((W - 14) * S * 0.94, lyricTextWidth(ctx, insc, inscSize * S));
+  uiRect(ctx, 12, 15, inscW / S, 0.6, S, C.red, 0.9);
 
-  // messaggio evento (basso centro)
+  // messaggio evento (basso centro) — shrink-to-fit
   if (o.threatMsg) {
-    uiFont(ctx, 8, S);
+    const msg = o.threatMsg.toUpperCase();
+    uiFont(ctx, uiFitSize(ctx, msg, W * S * 0.94, S, 8, 5), S);
     ctx.textAlign = 'center';
-    uiTextShadow(ctx, o.threatMsg.toUpperCase(), W / 2, H - 30, S, C.redHot, 1);
+    uiTextShadow(ctx, msg, W / 2, H - 30, S, C.redHot, 1);
     ctx.textAlign = 'left';
   }
 
@@ -909,15 +1025,15 @@ export function drawUIOverlay(ctx, S, W, H, o) {
     uiRect(ctx, 0, H * 0.40, W, 30, S, C.black, 0.72 * Math.min(1, k * 3));
     uiRect(ctx, 0, H * 0.40, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
     uiRect(ctx, 0, H * 0.40 + 29, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
-    uiFont(ctx, 17, S);
+    uiFont(ctx, uiFitSize(ctx, o.chapterTitle, W * S * 0.94, S, 17, 8), S);
     ctx.textAlign = 'center';
     uiTextShadow(ctx, o.chapterTitle, W / 2 - slide, H * 0.40 + 21, S, C.redHot, Math.min(1, k * 2.5));
     ctx.textAlign = 'left';
   }
 
-  // prompt incontro (sopra la barra bassa)
+  // prompt incontro (sopra la barra bassa) — shrink-to-fit
   if (o.prompt) {
-    uiFont(ctx, 8, S);
+    uiFont(ctx, uiFitSize(ctx, o.prompt, W * S * 0.94, S, 8, 5), S);
     ctx.textAlign = 'center';
     uiTextShadow(ctx, o.prompt, W / 2, H - 20, S, C.white, o.promptK || 1);
     ctx.textAlign = 'left';
@@ -948,39 +1064,64 @@ export function drawUIOverlay(ctx, S, W, H, o) {
   ctx.textAlign = 'left';
 }
 
-// Lirica di sfondo in PIXEL ART (coerente col mondo, non nitida): riga soffusa
-// che fluttua e si rinnova quando la canzone passa alla frase successiva.
+// Lirica di sfondo in PIXEL ART: SOLO backdrop atmosferico. La leggibilità è
+// dell'overlay full-res (drawLyricsOverlay): qui alpha bassissime, mai in gara.
+// Stesso guard overflow dell'overlay: shrink-to-fit + wrap, mai fuori schermo.
 export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   if (!lines || !lines.length) return;
-  let idx = 0;
-  for (let i = 0; i < lines.length; i++) if (pos >= lines[i][0]) idx = i;
+  const w = Number.isFinite(W) ? W : 320;
+  const h = Number.isFinite(H) ? H : 180;
+  const t = Number.isFinite(time) ? time : 0;
+  const idx = lyricIndexAt(lines, pos);
+  if (idx < 0) return;
   const cur = lines[idx];
   const text = cur[2] != null ? cur[2] : cur[1];
+  if (!text) return;
   const prev = idx > 0 ? (lines[idx - 1][2] != null ? lines[idx - 1][2] : lines[idx - 1][1]) : null;
-  const size = Math.max(8, Math.min(14, Math.floor((W * 0.92) / Math.max(1, text.length * 0.6))));
-  const y = H * 0.30 + Math.sin(time * 0.7) * 2;
+
   ctx.save();
   ctx.textAlign = 'center';
-  if (prev) drawVert(ctx, prev, W / 2, y - 14, time, 0.06, 8, 0);
-  // banda scura soffusa per staccare
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = C.black;
-  ctx.fillRect(0, y - size, W, size + 8);
-  // riga attiva, tremolio lettera per lettera, tenue (atmosfera)
-  const cw = size * 0.6;
-  let x = W / 2 - (text.length * cw) / 2;
-  ctx.font = size + 'px monospace';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const wob = Math.sin(time * 1.1 + i * 0.35) * 0.8;
-    if (ch !== ' ') {
-      ctx.globalAlpha = 0.14;
-      ctx.fillStyle = C.black; ctx.fillText(ch, x + 1, y + wob + 1);
-      ctx.globalAlpha = 0.16;
-      ctx.fillStyle = i % 7 === 0 ? C.redHot : C.red;
-      ctx.fillText(ch, x, y + wob);
+  const y = h * 0.30 + Math.sin(t * 0.7) * 2;
+
+  // fantasma riga precedente: ancora più tenue, shrink-to-fit (righe separate)
+  if (prev) {
+    const pl = lyricLayout(ctx, prev, w * 0.92, 1, 8, 6);
+    const pstep = pl.size * 1.15;
+    for (let li = 0; li < pl.lines.length; li++) {
+      drawVert(ctx, pl.lines[li], w / 2, y - 14 - (pl.lines.length - 1 - li) * pstep, t, 0.05, pl.size, 0);
     }
-    x += cw;
+  }
+
+  // riga attiva: backdrop tenue (alpha ~0.10), mai sopra la soglia di gara
+  const lay = lyricLayout(ctx, text, w * 0.92, 1, 14, 6);
+  const size = lay.size;
+  const n = lay.lines.length;
+  const step = size * 1.15;
+  const bandTop = y - ((n - 1) / 2) * step - size - 2;
+  const bandH = (n - 1) * step + size + 6;
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, bandTop, w, bandH);
+
+  ctx.font = size + 'px monospace';
+  const cw = size * 0.6;
+  for (let li = 0; li < n; li++) {
+    const ln = lay.lines[li];
+    const ly = y + (li - (n - 1) / 2) * step;
+    let x = w / 2 - (ln.length * cw) / 2;
+    if (x < 0) x = 0;
+    for (let i = 0; i < ln.length; i++) {
+      const ch = ln[i];
+      const wob = Math.sin(t * 1.1 + i * 0.35) * 0.8;
+      if (ch !== ' ') {
+        ctx.globalAlpha = 0.08;
+        ctx.fillStyle = C.black; ctx.fillText(ch, x + 1, ly + wob + 1);
+        ctx.globalAlpha = 0.10;
+        ctx.fillStyle = i % 7 === 0 ? C.redHot : C.red;
+        ctx.fillText(ch, x, ly + wob);
+      }
+      x += cw;
+    }
   }
   ctx.restore();
   ctx.textAlign = 'left';
@@ -1023,25 +1164,34 @@ export function drawLyricsOverlay(uctx, S, lines, pos, W, H, time) {
   uctx.textAlign = 'center';
   uctx.textBaseline = 'alphabetic';
 
-  // size: floor 10px logici, shrink per far entrare la riga
-  const size = Math.max(10, Math.min(16, Math.floor((w * 0.92) / Math.max(1, text.length * 0.62))));
+  // layout: shrink-to-fit (fino a ~7px logici) e, se serve, wrap su 2-3 righe.
+  // Mai oltre 0.92*W: niente testo fuori schermo.
+  const maxW = w * 0.92 * s;
+  const lay = lyricLayout(uctx, text, maxW, s, 16, 7);
+  const size = lay.size;
+  const n = lay.lines.length;
+  const step = size * 1.15;
   const y = h * 0.30 + Math.sin(t * 0.7) * 1.5;
   const px = Math.round((w / 2) * s);
   const py = Math.round(y * s);
 
-  // fantasma riga precedente (sopra, tenue, rosso)
+  // fantasma riga precedente (sopra, tenue, rosso): leggibile ma mai in gara
   if (prev) {
-    uctx.font = 'bold ' + Math.round(Math.max(8, size - 3) * s) + 'px "Consolas","Courier New",monospace';
-    uctx.globalAlpha = 0.22;
+    const pl = lyricLayout(uctx, prev, maxW, s, Math.max(8, size - 3), 6);
+    uctx.font = 'bold ' + Math.round(pl.size * s) + 'px "Consolas","Courier New",monospace';
+    uctx.globalAlpha = 0.35;
     uctx.fillStyle = C.red;
-    uctx.fillText(prev, px, Math.round((y - size - 4) * s));
+    const pstep = pl.size * 1.15;
+    for (let li = 0; li < pl.lines.length; li++) {
+      uctx.fillText(pl.lines[li], px, Math.round((y - size - 4 - (pl.lines.length - 1 - li) * pstep) * s));
+    }
   }
 
-  // banda scura dietro la riga attiva (stacca da qualunque sfondo)
-  const bandTop = py - Math.round(size * s) - Math.round(3 * s);
-  const bandH = Math.round((size + 8) * s);
+  // banda scura dietro le righe attive (stacca da qualunque sfondo)
+  const bandTop = py - Math.round(((n - 1) / 2) * step * s) - Math.round(size * s) - Math.round(3 * s);
+  const bandH = Math.round(((n - 1) * step + size + 8) * s);
   const edge = Math.max(1, Math.round(s));
-  uctx.globalAlpha = 0.55;
+  uctx.globalAlpha = 0.62;
   uctx.fillStyle = C.black;
   uctx.fillRect(0, bandTop, Math.round(w * s), bandH);
   uctx.globalAlpha = 0.5;
@@ -1049,18 +1199,22 @@ export function drawLyricsOverlay(uctx, S, lines, pos, W, H, time) {
   uctx.fillRect(0, bandTop, Math.round(w * s), edge);
   uctx.fillRect(0, bandTop + bandH - edge, Math.round(w * s), edge);
 
-  // riga attiva: outline nero a 4 direzioni, poi corpo bianco (l'unico leggibile)
+  // righe attive: outline nero a 4 direzioni (>= 1px device), poi corpo bianco
   uctx.font = 'bold ' + Math.round(size * s) + 'px "Consolas","Courier New",monospace';
   const o = Math.max(1, Math.round(s));
-  uctx.globalAlpha = 0.9;
-  uctx.fillStyle = C.black;
-  uctx.fillText(text, px - o, py);
-  uctx.fillText(text, px + o, py);
-  uctx.fillText(text, px, py - o);
-  uctx.fillText(text, px, py + o);
-  uctx.globalAlpha = 1;
-  uctx.fillStyle = C.white;
-  uctx.fillText(text, px, py);
+  for (let li = 0; li < n; li++) {
+    const ln = lay.lines[li];
+    const ly = py + Math.round((li - (n - 1) / 2) * step * s);
+    uctx.globalAlpha = 0.9;
+    uctx.fillStyle = C.black;
+    uctx.fillText(ln, px - o, ly);
+    uctx.fillText(ln, px + o, ly);
+    uctx.fillText(ln, px, ly - o);
+    uctx.fillText(ln, px, ly + o);
+    uctx.globalAlpha = 1;
+    uctx.fillStyle = C.white;
+    uctx.fillText(ln, px, ly);
+  }
 
   uctx.restore();
   uctx.textAlign = 'left';
@@ -1070,10 +1224,14 @@ export function drawLyricsOverlay(uctx, S, lines, pos, W, H, time) {
 // ISCRIZIONE
 // ---------------------------------------------------------------------------
 export function drawInscription(ctx, text, W) {
-  ctx.font = '7px monospace';
-  ctx.fillStyle = C.black; ctx.fillText(text, 9, 11);
-  ctx.fillStyle = C.redHot; ctx.fillText(text, 8, 10);
-  ctx.fillStyle = C.red; ctx.fillRect(8, 13, Math.round(ctx.measureText(text).width), 1);
+  const w = Number.isFinite(W) ? W : 320;
+  const str = text == null ? '' : String(text);
+  const size = uiFitSize(ctx, str, (w - 16) * 0.94, 1, 7, 5);
+  ctx.font = size + 'px monospace';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.black; ctx.fillText(str, 9, 11);
+  ctx.fillStyle = C.redHot; ctx.fillText(str, 8, 10);
+  ctx.fillStyle = C.red; ctx.fillRect(8, 13, Math.round(ctx.measureText(str).width), 1);
 }
 
 // ---------------------------------------------------------------------------

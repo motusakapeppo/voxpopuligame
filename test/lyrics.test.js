@@ -4,7 +4,7 @@
 // ============================================================================
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lyricIndexAt, drawLyricsOverlay } from '../src/art.js';
+import { lyricIndexAt, drawLyricsOverlay, drawLyricsPixel } from '../src/art.js';
 import { C } from '../src/palette.js';
 
 // --- stub ctx: registra le chiamate di disegno ------------------------------
@@ -122,5 +122,62 @@ test('drawLyricsOverlay: input non finiti → nessuna coordinata NaN', () => {
   drawLyricsOverlay(ctx, NaN, LINES, NaN, NaN, NaN, NaN);
   for (const c of ctx.calls) {
     assert.ok(Number.isFinite(c.x) && Number.isFinite(c.y), 'coordinata non finita: ' + JSON.stringify(c));
+  }
+});
+
+// --- S6/S7: leggibilità e overflow -------------------------------------------
+
+const LONG = ('parola '.repeat(13)).trim();   // 90 caratteri, spazi ogni 7
+
+// larghezza stimata in px DEVICE: font px * advance monospace conservativo * len
+function estWidth(call) {
+  const m = /(\d+(?:\.\d+)?)px/.exec(call.font || '');
+  return m ? (+m[1]) * 0.62 * call.text.length : Infinity;
+}
+
+test('drawLyricsOverlay: riga lunghissima non sborda (shrink o wrap)', () => {
+  const S = 3, W = 320;
+  const ctx = recCtx();
+  drawLyricsOverlay(ctx, S, [[0, LONG]], 1, W, 180, 2);
+  const texts = ctx.calls.filter(c => c.op === 'fillText');
+  assert.ok(texts.length > 0, 'nessun testo disegnato');
+  for (const c of texts) {
+    assert.ok(c.x >= 0 && c.x <= W * S, 'x fuori schermo: ' + c.x);
+    const est = estWidth(c);
+    assert.ok(est <= W * S * 0.95,
+      'testo sborda: ' + c.text.length + ' char @ ' + c.font + ' = ' + Math.round(est) + ' > ' + Math.round(W * S * 0.95));
+  }
+  const white = texts.filter(c => c.fill === C.white);
+  assert.ok(white.length >= 1, 'nessun corpo bianco');
+  const m = /(\d+(?:\.\d+)?)px/.exec(white[white.length - 1].font);
+  const shrunk = +m[1] < 10 * S;          // sotto il vecchio floor di 10px logici
+  const wrapped = white.length >= 2;      // oppure mandata a capo su >= 2 righe
+  assert.ok(shrunk || wrapped, 'né shrink né wrap: ' + m[1] + 'px, ' + white.length + ' righe bianche');
+});
+
+test('drawLyricsOverlay: riga attiva ben visibile (bianco alpha >= 0.9, banda >= 0.55)', () => {
+  const ctx = recCtx();
+  drawLyricsOverlay(ctx, 3, LINES, 6, 320, 180, 2);
+  const white = ctx.calls.filter(c => c.op === 'fillText' && c.fill === C.white);
+  assert.ok(white.length >= 1, 'nessun corpo bianco');
+  assert.ok(white[white.length - 1].alpha >= 0.9,
+    'corpo attivo troppo tenue: alpha ' + white[white.length - 1].alpha);
+  const band = ctx.calls.filter(c => c.op === 'fillRect' && c.fill === C.black && c.alpha >= 0.55);
+  assert.ok(band.length >= 1, 'banda scura sotto alpha 0.55');
+});
+
+test('drawLyricsPixel: solo backdrop (alpha <= 0.2) e mai fuori schermo', () => {
+  const W = 320, H = 180;
+  const ctx = recCtx();
+  drawLyricsPixel(ctx, [[0, LONG]], 1, 2, W, H);
+  const texts = ctx.calls.filter(c => c.op === 'fillText');
+  assert.ok(texts.length > 0, 'nessun testo disegnato');
+  for (const c of texts) {
+    assert.ok(c.x >= 0 && c.x <= W, 'x fuori schermo: ' + c.x);
+  }
+  const body = texts.filter(c => c.fill === C.red || c.fill === C.redHot);
+  assert.ok(body.length > 0, 'nessun corpo attivo');
+  for (const c of body) {
+    assert.ok(c.alpha <= 0.2, 'corpo pixel troppo acceso: alpha ' + c.alpha);
   }
 });
