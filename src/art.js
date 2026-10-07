@@ -961,9 +961,9 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   const y = H * 0.30 + Math.sin(time * 0.7) * 2;
   ctx.save();
   ctx.textAlign = 'center';
-  if (prev) drawVert(ctx, prev, W / 2, y - 14, time, 0.10, 8, 0);
+  if (prev) drawVert(ctx, prev, W / 2, y - 14, time, 0.06, 8, 0);
   // banda scura soffusa per staccare
-  ctx.globalAlpha = 0.20;
+  ctx.globalAlpha = 0.12;
   ctx.fillStyle = C.black;
   ctx.fillRect(0, y - size, W, size + 8);
   // riga attiva, tremolio lettera per lettera, tenue (atmosfera)
@@ -974,9 +974,9 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
     const ch = text[i];
     const wob = Math.sin(time * 1.1 + i * 0.35) * 0.8;
     if (ch !== ' ') {
-      ctx.globalAlpha = 0.30;
+      ctx.globalAlpha = 0.14;
       ctx.fillStyle = C.black; ctx.fillText(ch, x + 1, y + wob + 1);
-      ctx.globalAlpha = 0.34;
+      ctx.globalAlpha = 0.16;
       ctx.fillStyle = i % 7 === 0 ? C.redHot : C.red;
       ctx.fillText(ch, x, y + wob);
     }
@@ -984,6 +984,86 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
   }
   ctx.restore();
   ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------
+// LIRICHE FULL-RES (overlay nitido, disegnato DOPO il post-processing).
+// Una riga attiva bianca con outline nero a 4 direzioni + banda scura: leggibile
+// su qualunque sfondo. La riga precedente resta come fantasma rosso tenue.
+// ---------------------------------------------------------------------------
+
+// Indice della riga attiva per una posizione in secondi: ultima voce con
+// start <= pos; 0 se pos precede la prima; -1 se vuoto. NaN → 0 (sicuro).
+export function lyricIndexAt(lines, pos) {
+  if (!lines || !lines.length) return -1;
+  const p = (typeof pos === 'number' && !Number.isNaN(pos)) ? pos : 0;
+  let idx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const start = Number.isFinite(lines[i][0]) ? lines[i][0] : 0;
+    if (p >= start) idx = i;
+  }
+  return idx;
+}
+
+export function drawLyricsOverlay(uctx, S, lines, pos, W, H, time) {
+  if (!lines || !lines.length) return;
+  const s = Number.isFinite(S) && S > 0 ? S : 1;
+  const w = Number.isFinite(W) ? W : 320;
+  const h = Number.isFinite(H) ? H : 180;
+  const t = Number.isFinite(time) ? time : 0;
+  const idx = lyricIndexAt(lines, pos);
+  if (idx < 0) return;
+  const cur = lines[idx];
+  const text = cur[2] != null ? cur[2] : cur[1];
+  if (!text) return;
+  const prev = idx > 0 ? (lines[idx - 1][2] != null ? lines[idx - 1][2] : lines[idx - 1][1]) : null;
+
+  uctx.save();
+  uctx.setTransform(1, 0, 0, 1, 0, 0);
+  uctx.textAlign = 'center';
+  uctx.textBaseline = 'alphabetic';
+
+  // size: floor 10px logici, shrink per far entrare la riga
+  const size = Math.max(10, Math.min(16, Math.floor((w * 0.92) / Math.max(1, text.length * 0.62))));
+  const y = h * 0.30 + Math.sin(t * 0.7) * 1.5;
+  const px = Math.round((w / 2) * s);
+  const py = Math.round(y * s);
+
+  // fantasma riga precedente (sopra, tenue, rosso)
+  if (prev) {
+    uctx.font = 'bold ' + Math.round(Math.max(8, size - 3) * s) + 'px "Consolas","Courier New",monospace';
+    uctx.globalAlpha = 0.22;
+    uctx.fillStyle = C.red;
+    uctx.fillText(prev, px, Math.round((y - size - 4) * s));
+  }
+
+  // banda scura dietro la riga attiva (stacca da qualunque sfondo)
+  const bandTop = py - Math.round(size * s) - Math.round(3 * s);
+  const bandH = Math.round((size + 8) * s);
+  const edge = Math.max(1, Math.round(s));
+  uctx.globalAlpha = 0.55;
+  uctx.fillStyle = C.black;
+  uctx.fillRect(0, bandTop, Math.round(w * s), bandH);
+  uctx.globalAlpha = 0.5;
+  uctx.fillStyle = C.red;
+  uctx.fillRect(0, bandTop, Math.round(w * s), edge);
+  uctx.fillRect(0, bandTop + bandH - edge, Math.round(w * s), edge);
+
+  // riga attiva: outline nero a 4 direzioni, poi corpo bianco (l'unico leggibile)
+  uctx.font = 'bold ' + Math.round(size * s) + 'px "Consolas","Courier New",monospace';
+  const o = Math.max(1, Math.round(s));
+  uctx.globalAlpha = 0.9;
+  uctx.fillStyle = C.black;
+  uctx.fillText(text, px - o, py);
+  uctx.fillText(text, px + o, py);
+  uctx.fillText(text, px, py - o);
+  uctx.fillText(text, px, py + o);
+  uctx.globalAlpha = 1;
+  uctx.fillStyle = C.white;
+  uctx.fillText(text, px, py);
+
+  uctx.restore();
+  uctx.textAlign = 'left';
 }
 
 // ---------------------------------------------------------------------------

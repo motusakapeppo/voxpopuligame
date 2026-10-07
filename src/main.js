@@ -8,7 +8,7 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText, drawLyricsPixel } from './art.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText, drawLyricsPixel, drawLyricsOverlay } from './art.js';
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup } from './threats.js';
@@ -232,6 +232,12 @@ function drawWorld(lv, camY) {
 const uctx = canvas.getContext('2d');
 function drawOverlay() {
   const pos = audio.position();
+  // liriche NITIDE a risoluzione piena: solo dove hanno senso (playing/unlocked),
+  // mai sopra title/cta/collapse. La scena pixel resta come sfondo tenue.
+  if (level && (state.phase === 'playing' || state.phase === 'unlocked')) {
+    const kl = KARAOKE[level.girone.audioId];
+    if (kl && !SKIP.has('lyrics')) drawLyricsOverlay(uctx, SCALE, kl, pos, VIEW_W, VIEW_H, time);
+  }
   drawUIOverlay(uctx, SCALE, VIEW_W, VIEW_H, {
     inscription: level ? level.girone.inscription.text : '',
     threatMsg: level ? level.threatMsg : '',
@@ -333,7 +339,9 @@ function loop() {
     const k = Math.min(1, level.transition.t / 1.2);
     const burst = (1 - k) * (1 - k);
     const tpost = Object.assign(applyPost('unlocked'), { glitch: 1.1 * burst, flash: 0.7 * burst, chroma: 0.9 * burst });
-    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });    if (level.transition.done) {
+    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });
+    drawOverlay();   // liriche nitide anche durante la transizione di sblocco
+    if (level.transition.done) {
       state = advance(state, 'audioDone');
       if (state.phase === 'playing') level = loadGirone(state.gironeIndex);
       else level.transition = null;
