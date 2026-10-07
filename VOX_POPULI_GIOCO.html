@@ -753,8 +753,11 @@ function createModState(mod) {
 }
 
 // Ritorna void. Aggiorna ctx.player / ctx.world / ctx.events. Deterministico.
+// Aggiorna ANCHE ctx.effects (T4): un oggetto osservabile con dim/flicker/water/
+// elapsed, così il rendering può consumare gli stati oggi solo calcolati.
 function applyModifier(mod, ctx, dt, st = createModState(mod)) {
   st.t += dt;
+  const fx = ctx.effects || (ctx.effects = { dim: 0, flicker: 0, water: 0, elapsed: 0, verlet: false });
   switch (mod.kind) {
     case 'tutorial': break;
 
@@ -785,6 +788,7 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
     case 'sleep': {
       if (mod.dimTo !== undefined) {
         st.dim = Math.max(mod.dimTo, 1 - st.t * 0.05); // cala la luce col tempo
+        fx.dim = 1 - st.dim;                            // esposizione osservabile
         ctx.events.push('dim');
       }
       break;
@@ -807,6 +811,7 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
 
     case 'illusion': {
       st.flicker = Math.sin(st.t * 6) > 0.9;
+      fx.flicker = st.flicker ? 1 : 0;
       if (st.flicker) ctx.events.push('fake');
       break;
     }
@@ -814,6 +819,7 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
     case 'descent': {
       // direzione invertita: il progresso va "verso l'ade" (giù)
       st.verletOn = st.t < mod.verletFor;
+      fx.verlet = st.verletOn;
       break;
     }
 
@@ -832,6 +838,8 @@ function applyModifier(mod, ctx, dt, st = createModState(mod)) {
 
     default: break;
   }
+  fx.water = st.water || 0;
+  fx.elapsed = st.elapsed || 0;
 }
 
 
@@ -876,22 +884,58 @@ const THREATS = {
   '13-outro':     { auto: [], pickups: [] },
 };
 
-// Effetto di un pericolo sull'arrampicata.
+// Effetto di un pericolo sull'arrampicata. Ogni pericolo tocca un campo DIVERSO
+// di `state`, così i 13 gironi hanno una firma meccanica distinta (non tutti lo
+// stesso shiftHands(0,-1)). Ritorna il messaggio mostrato a schermo.
 function applyThreat(kind, cl, state) {
   switch (kind) {
-    case 'wind':   shiftHands(cl, state.windDir || 1, 0); state.windDir = -(state.windDir || 1); return 'vento ti sposta';
-    case 'quake':  shiftHands(cl, 0, -1); return 'il tuono ti fa perdere presa';
-    case 'debris': if (state.shield > 0) { state.shield--; return 'il detrito si infrange sul tuo scudo'; }
-                   shiftHands(cl, 0, -1); return 'un detrito ti colpisce';
-    case 'drowsy': shiftHands(cl, 0, -1); return 'il sonno ti fa scivolare';
-    case 'rival':  shiftHands(cl, 0, -1); return 'un rivale ti spinge giù';
-    case 'time':   shiftHands(cl, 0, -1); return 'il tempo ti sfugge';
-    case 'fake':   shiftHands(cl, 0, -1); return 'un appiglio era finto';
-    case 'ivy':    shiftHands(cl, 0, -1); return 'l edera ti tira giù';
-    case 'rain':   shiftHands(cl, state.rainDir || 1, 0); state.rainDir = -(state.rainDir || 1); return 'la pioggia ti fa scivolare';
+    case 'wind':
+      shiftHands(cl, state.windDir || 1, 0);
+      state.windDir = -(state.windDir || 1);
+      return 'vento ti sposta';
+    case 'quake':
+      state.stun = 0.6;                          // congela l'input
+      shiftHands(cl, 0, -1);
+      return 'il tuono ti stordisce';
+    case 'debris':
+      if (state.shield > 0) { state.shield--; return 'il detrito si infrange sul tuo scudo'; }
+      state.colliders = (state.colliders || 0) + 1;   // un masso cade
+      shiftHands(cl, 0, -1);
+      return 'un detrito ti colpisce';
+    case 'drowsy':
+      state.lag = 0.8;                          // input in ritardo
+      state.grip = (state.grip || 1) - 0.3;     // presa più debole
+      return 'il sonno ti fa scivolare';
+    case 'rival':
+      state.duel = 1.2;                         // un rivale sale accanto
+      shiftHands(cl, 0, -1);
+      return 'un rivale ti spinge giù';
+    case 'time':
+      state.countdown = (state.countdown || 0) + 1;   // il tempo stringe
+      return 'il tempo ti sfugge';
+    case 'fake':
+      state.decoy = 1.0;                        // un appiglio finto (nessuna perdita)
+      return 'un appiglio era finto';
+    case 'ivy':
+      state.tether = { c: cl.lh.c, r: cl.lh.r + 2 };  // ti tira verso un punto
+      shiftHands(cl, 0, -1);
+      return 'l edera ti tira giù';
+    case 'rain':
+      state.grip = Math.max(0, (state.grip == null ? 1 : state.grip) - 0.4);  // scivoloso
+      shiftHands(cl, state.rainDir || 1, 0);
+      state.rainDir = -(state.rainDir || 1);
+      return 'la pioggia ti fa scivolare';
     default: return null;
   }
 }
+
+// Firma meccanica di ogni pericolo: tipo + campo di stato che muta. Serve a
+// garantire che i gironi non condividano lo stesso effetto.
+const THREAT_SIGNATURES = {
+  wind: 'shift-x:windDir', quake: 'stun:0.6', debris: 'collider:1',
+  drowsy: 'lag:0.8+grip', rival: 'duel:1.2', time: 'countdown:+1',
+  fake: 'decoy:1.0', ivy: 'tether:down', rain: 'grip-0.4+shift-x', water: 'waterRow:rise',
+};
 
 // Effetto di un aiuto raccolto.
 function applyPickup(kind, cl, state) {
@@ -909,7 +953,10 @@ function applyPickup(kind, cl, state) {
   }
 }
 function createThreatState() {
-  return { t: 0, last: {}, shield: 0, speed: 0, slow: 0, real: 0, breakFree: 0, windDir: 1, rainDir: 1, waterRow: -1, lastMsg: '', msgT: 0 };
+  return { t: 0, last: {}, shield: 0, speed: 0, slow: 0, real: 0, breakFree: 0,
+    windDir: 1, rainDir: 1, waterRow: -1, lastMsg: '', msgT: 0,
+    // campi distinti per i pericoli (T4): ognuno muta il proprio
+    stun: 0, lag: 0, grip: 1, duel: 0, countdown: 0, decoy: 0, colliders: 0, tether: null };
 }
 
 // Avanza: applica pericoli periodici e acqua che sale. Ritorna il messaggio attivo.
@@ -920,6 +967,12 @@ function stepThreats(girone, cl, state, dt, waterLevel) {
   if (state.real > 0) state.real -= dt;
   if (state.breakFree > 0) state.breakFree -= dt;
   if (state.msgT > 0) state.msgT -= dt;
+  // decadimento dei campi dei pericoli (ognuno col proprio ritmo)
+  if (state.stun > 0) state.stun -= dt;
+  if (state.lag > 0) state.lag -= dt;
+  if (state.duel > 0) state.duel -= dt;
+  if (state.decoy > 0) state.decoy -= dt;
+  if (state.grip < 1) state.grip = Math.min(1, state.grip + dt * 0.15);   // recupera la presa
 
   const def = THREATS[girone.audioId] || { auto: [] };
   for (const a of def.auto) {
@@ -933,12 +986,27 @@ function stepThreats(girone, cl, state, dt, waterLevel) {
     }
     if (a.every > 0 && state.t - (state.last[a.kind] || 0) >= a.every) {
       state.last[a.kind] = state.t;
-      if (a.kind === 'ivy' && state.breakFree > 0) continue;   // l'aiuto ti protegge
+      if (a.kind === 'ivy' && (state.breakFree > 0 || state.real > 0)) continue;   // l'aiuto ti protegge
       const msg = applyThreat(a.kind, cl, state);
       if (msg) { state.lastMsg = msg; state.msgT = 2; }
     }
   }
   return state.msgT > 0 ? state.lastMsg : '';
+}
+
+// Effetti osservabili per il rendering (T4): il main legge questi per dim/water/glitch.
+function threatEffects(state) {
+  return {
+    dim: state.grip < 0.6 ? 0.25 : 0,      // presa debole = buio leggero
+    lag: Math.max(0, state.lag),            // input in ritardo (dormiente)
+    stun: Math.max(0, state.stun),          // input congelato (terremoto)
+    decoy: Math.max(0, state.decoy),        // appiglio finto
+    colliders: state.colliders || 0,        // massi caduti (baghdad)
+    duel: Math.max(0, state.duel),          // rivale accanto
+    tether: state.tether,                   // edera
+    water: state.waterRow >= 0 ? state.waterRow : 0,
+    countdown: state.countdown || 0,
+  };
 }
 
 function climbRowOf(cl) { return Math.max(cl.lh.r, cl.rh.r); }
@@ -1170,19 +1238,20 @@ function isAutoKind(kind) {
 // Quanti incontri per girone e di che tipo (in ordine di scalata).
 // Ogni girone è monotono: non "spam" di tipi, ma una progressione tematica.
 const GIRONE_ENCOUNTERS = {
-  '01': ['sleeper', 'helper', 'hand'],
-  '02': ['hand', 'grabber', 'pusher'],
+  // Ribilanciato (T4): nessun tipo piu' di 5 volte, tutti gli 11 presenti.
+  '01': ['sleeper', 'helper', 'siren'],
+  '02': ['hand', 'pusher', 'grabber'],
   '03': ['rival', 'helper', 'falling'],
   '04': ['falling', 'grabber', 'pusher'],
-  '05': ['siren', 'helper', 'hand'],
-  '06': ['rival', 'grabber', 'hand'],
-  '07': ['rival', 'falling', 'grabber'],
-  '08': ['fake', 'helper', 'hand'],
+  '05': ['siren', 'sleeper', 'hand'],
+  '06': ['rival', 'grabber', 'helper'],
+  '07': ['rival', 'falling', 'pusher'],
+  '08': ['fake', 'self', 'helper'],
   '09': ['self', 'grabber', 'falling'],
-  '10': ['pusher', 'grabber', 'hand'],
-  '11': ['falling', 'grabber', 'helper'],
+  '10': ['hand', 'pusher', 'siren'],
+  '11': ['falling', 'fake', 'sleeper'],
   '12': ['chorus', 'helper', 'hand'],
-  '13': ['hand'],
+  '13': ['chorus'],
 };
 
 // Crea gli incontri per un girone, distribuiti lungo la scala.
