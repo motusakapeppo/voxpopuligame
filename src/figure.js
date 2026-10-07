@@ -3,6 +3,10 @@
 // ossa (bacino, spalle, braccia a 2 segmenti, gambe a 2 segmenti, testa).
 // Le pose sono angoli; il tempo li anima. Disegno a pixel (Bresenham) con
 // spessore, così le membra restano leggibili e "pixel art".
+//
+// Opzioni extra (tutte OFF di default: il look storico non cambia):
+//   drawFigure  : detail, stretch (-1..1), rim
+//   drawClimber : detail, breathe (0..1), grip (0..1), rim
 // ============================================================================
 import { C } from './palette.js';
 
@@ -32,6 +36,19 @@ function disc(ctx, cx, cy, r) {
   for (let y = -r; y <= r; y++)
     for (let x = -r; x <= r; x++)
       if (x * x + y * y <= r * r + 1) ctx.fillRect(cx + x, cy + y, 1, 1);
+}
+
+// valore finito oppure default: protegge i nuovi parametri opzionali
+function finiteOr(v, d) { return Number.isFinite(v) ? v : d; }
+// limita un valore nell'intervallo [lo, hi]
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+// chela: 3 pixel (palmo + due dita) — usata solo con detail:true
+function claw(ctx, hx, hy, f = 1) {
+  if (!Number.isFinite(hx) || !Number.isFinite(hy) || !Number.isFinite(f)) return;
+  const px = Math.round(hx), py = Math.round(hy);
+  ctx.fillRect(px, py, 1, 1);
+  ctx.fillRect(px + f, py + 1, 1, 1);
+  ctx.fillRect(px - f, py + 1, 1, 1);
 }
 
 // posizione lungo un angolo (0 = giù, +x verso destra): y cresce verso il basso
@@ -108,18 +125,30 @@ export function pose(state, phase) {
 // ---------------------------------------------------------------------------
 // ARRAMPICATORE — figura appesa a due mani (lx,ly) e (rx,ry).
 // Il tronco pende al centro, le gambe oscillano.
+// Opzioni extra: detail (ciuffo/chele/brandelli), breathe (respiro 0..1),
+// grip (tensione presa 0..1: 1 = gomito piegato, 0 = braccio disteso), rim.
 // ---------------------------------------------------------------------------
 export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
-  const { h = 17, color = C.redBright, phase = 0, thickness = 1, alpha = 1, outline = false } = opts;
+  const {
+    h = 17, color = C.redBright, phase = 0, thickness = 1, alpha = 1, outline = false,
+    detail = false, breathe = 0, grip = 1, rim = false,
+  } = opts;
   const shHalf = Math.max(2, Math.round(h * 0.16));  // semilarghezza spalle
   const cx = (lx + rx) / 2, cy = (ly + ry) / 2;
-  const shY = cy + h * 0.20;
-  const hipY = cy + h * 0.62;
+  // respiro: offset verticale sinusoidale, max 1px, spento di default (0)
+  const br = clamp(finiteOr(breathe, 0), 0, 1);
+  const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br : 0;
+  const shY = cy + h * 0.20 + breatheOff;
+  const hipY = cy + h * 0.62 + breatheOff;
   const sway = Math.sin(phase * 2.4) * 0.8;
   const shX = cx;
   const hipX = cx + sway;
   const headX = cx + sway * 0.5;
   const headY = shY - h * 0.14;
+  // presa: 1 = gomito piegato (default storico), 0 = braccio più disteso
+  const g = clamp(finiteOr(grip, 1), 0, 1);
+  const bendX = 1 + 2 * g;      // g=1 → 3 (invariato)
+  const bendY = 0.5 + 1.5 * g;  // g=1 → 2 (invariato)
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -129,8 +158,8 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   // braccia a DUE segmenti: spalla → gomito → mano (gomito verso l'esterno/alto)
   const arm = (hx, hy, side) => {
     const shx = shX + side * shHalf;
-    const ex = (shx + hx) / 2 + side * 3;
-    const ey = (shY + hy) / 2 - 2;
+    const ex = (shx + hx) / 2 + side * bendX;
+    const ey = (shY + hy) / 2 - bendY;
     line(ctx, shx, shY, ex, ey, t);
     line(ctx, ex, ey, hx, hy, t);
   };
@@ -141,7 +170,8 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   line(ctx, shX, shY, hipX, hipY, t + (outline ? 1 : 0));
   // collo + testa
   line(ctx, shX, shY, headX, headY + h * 0.04, t);
-  disc(ctx, headX, headY, Math.max(1, Math.round(h * 0.085)));
+  const hr = Math.max(1, Math.round(h * 0.085));
+  disc(ctx, headX, headY, hr);
   // gambe penzolanti, ginocchia piegate
   const k = Math.sin(phase * 2.4 + 1) * 1.2;
   for (const side of [-1, 1]) {
@@ -150,30 +180,59 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
     line(ctx, hipX, hipY, kx, ky, t);
     line(ctx, kx, ky, kx + side * 1, ky + h * 0.16, t);
   }
-  // mani (presa) evidenziate
-  ctx.fillRect(Math.round(lx) - 1, Math.round(ly) - 1, 2, 2);
-  ctx.fillRect(Math.round(rx) - 1, Math.round(ry) - 1, 2, 2);
+  // mani (presa): chele a 3 pixel con detail, altrimenti il blocco storico
+  if (detail) {
+    claw(ctx, lx, ly, 1);
+    claw(ctx, rx, ry, 1);
+  } else {
+    ctx.fillRect(Math.round(lx) - 1, Math.round(ly) - 1, 2, 2);
+    ctx.fillRect(Math.round(rx) - 1, Math.round(ry) - 1, 2, 2);
+  }
+  // dettagli opzionali: ciuffo di capelli + brandelli di stoffa sul tronco
+  if (detail) {
+    ctx.fillRect(Math.round(headX) - 1, Math.round(headY) - hr - 1, 2, 1);
+    ctx.fillRect(Math.round(headX) + 1, Math.round(headY) - hr - 2, 1, 1);
+    const mx = hipX + (shX - hipX) * 0.4, my = hipY + (shY - hipY) * 0.4;
+    line(ctx, mx - 2, my, mx - 1, my, 1);
+    line(ctx, mx + 1, my + 2, mx + 2, my + 2, 1);
+  }
+  // luce di bordo: 1px sul lato destro, bianco solo per un pixel (testa)
+  if (rim) {
+    ctx.fillStyle = C.redHot;
+    line(ctx, hipX + 1, hipY, shX + 1, shY, 1);
+    ctx.fillStyle = C.white;
+    ctx.fillRect(Math.round(headX + hr), Math.round(headY), 1, 1);
+  }
   ctx.restore();
 }
 
+// ---------------------------------------------------------------------------
+// FIGURA — disegna il corpo intero a partire dalla posa.
+// Opzioni extra: detail (ciuffo/chele/brandelli), stretch (squash&stretch
+// -1..1, 0 = neutro), rim (luce di bordo).
+// ---------------------------------------------------------------------------
 export function drawFigure(ctx, x, y, opts = {}) {
   const {
     h = 16, color = C.red, state = 'idle', phase = 0, facing = 1,
     thickness = 1, alpha = 1, shadow = false,
+    detail = false, stretch = 0, rim = false,
   } = opts;
   const P = pose(state, phase);
   const f = facing;
-  const hipY = y - h * 0.48 + P.bob;
-  const shY = y - h * 0.80 + P.bob;
-  const headY = y - h * 0.94 + P.bob;
+  // squash&stretch: fattore verticale limitato in [-1,1]; 0 = neutro (default)
+  const st = clamp(finiteOr(stretch, 0), -1, 1);
+  const sy = 1 + st * 0.30;   // 0.7 (schiacciato) … 1.3 (allungato)
+  const hipY = y - h * 0.48 * sy + P.bob;
+  const shY = y - h * 0.80 * sy + P.bob;
+  const headY = y - h * 0.94 * sy + P.bob;
   const lean = P.lean * f;
 
   const hipX = x + Math.sin(lean) * h * 0.4;
   const shX = x + Math.sin(lean) * h * 0.7;
   const headX = x + Math.sin(lean) * h * 0.8;
 
-  const upper = h * 0.20, lower = h * 0.19;
-  const thigh = h * 0.24, shin = h * 0.24;
+  const upper = h * 0.20 * sy, lower = h * 0.19 * sy;
+  const thigh = h * 0.24 * sy, shin = h * 0.24 * sy;
   const t = thickness;
 
   ctx.save();
@@ -196,19 +255,43 @@ export function drawFigure(ctx, x, y, opts = {}) {
   }
   // tronco
   line(ctx, hipX, hipY, shX, shY, t + 1);
+  // brandelli di stoffa sul tronco (solo con detail)
+  if (detail) {
+    const mx = hipX + (shX - hipX) * 0.45, my = hipY + (shY - hipY) * 0.45;
+    line(ctx, mx - 2, my, mx - 1, my, 1);
+    line(ctx, mx + 1, my + 2, mx + 2, my + 2, 1);
+  }
   // braccia
   for (const ang of [P.aL, P.aR]) {
     let [ex, ey] = tip(shX, shY, ang[0] * f + lean, upper);
     let [hx, hy] = tip(ex, ey, (ang[0] + ang[1]) * f + lean, lower);
     line(ctx, shX, shY, ex, ey, t);
     line(ctx, ex, ey, hx, hy, t);
-    // mano (punto acceso per "tendi")
-    if (state === 'tendi' || state === 'reach' || state === 'scream') ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, t + 1, t + 1);
+    if (detail) {
+      // mano: piccola chela a 3 pixel
+      claw(ctx, hx, hy, f);
+    } else if (state === 'tendi' || state === 'reach' || state === 'scream') {
+      // mano (punto acceso per "tendi")
+      ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, t + 1, t + 1);
+    }
   }
   // testa
-  disc(ctx, headX, headY, Math.max(1, Math.round(h * 0.09)));
+  const hr = Math.max(1, Math.round(h * 0.09));
+  disc(ctx, headX, headY, hr);
   // collo
   line(ctx, shX, shY, headX, headY + h * 0.06, t);
+  // ciuffo di capelli (solo con detail)
+  if (detail) {
+    ctx.fillRect(Math.round(headX) - 1, Math.round(headY) - hr - 1, 2, 1);
+    ctx.fillRect(Math.round(headX) + f, Math.round(headY) - hr - 2, 1, 1);
+  }
+  // luce di bordo: 1px sul lato frontale, bianco solo per un pixel (testa)
+  if (rim) {
+    ctx.fillStyle = C.redHot;
+    line(ctx, hipX + f, hipY, shX + f, shY, 1);
+    ctx.fillStyle = C.white;
+    ctx.fillRect(Math.round(headX + f * hr), Math.round(headY), 1, 1);
+  }
 
   ctx.restore();
 }

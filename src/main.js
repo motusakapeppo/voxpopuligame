@@ -8,13 +8,16 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawBackground, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawVignette } from './art.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg } from './art.js';
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol } from './climb.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup } from './threats.js';
+import { createRenderer } from './renderer.js';
+import { drawThemeBack, drawThemeFront } from './themes.js';
+import { createFx, emitFx, stepFx, drawFx } from './fx.js';
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');   // riassegnato al contesto offscreen del renderer
 const VIEW_W = 320, VIEW_H = 180;
 let SCALE = 3;
 
@@ -24,8 +27,17 @@ function resize() {
   canvas.width = VIEW_W * SCALE; canvas.height = VIEW_H * SCALE;
   canvas.style.width = (VIEW_W * SCALE) + 'px'; canvas.style.height = (VIEW_H * SCALE) + 'px';
   ctx.imageSmoothingEnabled = false;
+  if (renderer) renderer.resize();
 }
-window.addEventListener('resize', resize); resize();
+window.addEventListener('resize', resize);
+
+// Pipeline di post-processing: bloom, scanline, grana, aberrazione, glitch.
+// Tutto il disegno avviene sul contesto OFFSCREEN `scene` del renderer (320×180);
+// il renderer compone, applica gli effetti e scala sul canvas visibile.
+const renderer = createRenderer(canvas, VIEW_W, VIEW_H);
+ctx = renderer.scene.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+resize();
 
 const input = createInput();
 input.attach(window);
@@ -93,6 +105,7 @@ function loadGirone(index) {
     encounters: makeEncounters(g, climb),
     pickups,
     threats: createThreatState(),
+    pfx: createFx((index + 1) * 7919),   // particelle cinematografiche (deterministiche)
     events: [], fx: createEffects(), transition: null, active: null, threatMsg: '',
   };
 }
@@ -168,34 +181,50 @@ window.addEventListener('keydown', ev => {
   else if (ev.code === 'KeyX') doVerb('spingi');
 });
 
+const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').split(',').filter(Boolean));
+
 function drawWorld(lv, camY) {
-  drawBackground(ctx, lv.girone, camY, time, VIEW_W, VIEW_H);
-  drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
-  drawWall(ctx, lv.girone, camY, time, VIEW_W, VIEW_H);
-  for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
-  for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
-  drawPlayer(ctx, lv.climb, camY, time, action);
+  if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
+  if (!SKIP.has('lyrics')) drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
+  if (!SKIP.has('wall')) drawWall(ctx, lv.girone, camY, time, VIEW_W, VIEW_H);
+  if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
+  if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
+  if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
+  if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
+  if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   drawInscription(ctx, lv.girone.inscription.text, VIEW_W);
   drawThreatMsg(ctx, lv.threatMsg, VIEW_W, VIEW_H);
+}
+
+// Parametri di post-processing per fase. Imposta la base e fa decadere
+// glitch/flash del frame precedente; gli eventi del frame poi li rinforzano.
+function applyPost(kind) {
+  const post = renderer.post;
+  post.bloom = 0.22; post.bloomThreshold = 0.66; post.chroma = 0.22;
+  post.scan = 0.16; post.grain = 0.07; post.vignette = 0.42;
+  if (kind === 'title') { post.bloom = 0.28; post.vignette = 0.5; }
+  post.glitch *= 0.55;
+  post.flash *= 0.55;
+  if (post.glitch < 0.01) post.glitch = 0;
+  if (post.flash < 0.01) post.flash = 0;
+  return post;
 }
 
 function loop() {
   requestAnimationFrame(loop);
   time += 0.016;
   if (actionT > 0) { actionT -= 0.016; if (actionT <= 0) action = 'idle'; }
-  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
-  ctx.imageSmoothingEnabled = false;
 
   if (state.phase === 'title') {
     showCtaButton(false); setPrompt('');
-    drawTitle(ctx, VIEW_W, VIEW_H, time);
+    renderer.render(() => drawTitle(ctx, VIEW_W, VIEW_H, time), { post: applyPost('title') });
     if (input.consumeJump()) { state = advance(state, 'start'); level = loadGirone(state.gironeIndex); }
     return;
   }
   if (state.phase === 'cta') {
     showCtaButton(true); setPrompt('');
     if (!collapse) collapse = createCollapse({ bodies: level ? level.bodies : [], viewW: VIEW_W, viewH: VIEW_H, supported: Math.max(0, loyalty + 4) });
-    drawCollapse(ctx, collapse, time); drawCta(ctx, VIEW_W, VIEW_H, time);
+    renderer.render(() => { drawCollapse(ctx, collapse, time); drawCta(ctx, VIEW_W, VIEW_H, time); }, { post: applyPost('cta') });
     return;
   }
   if (state.phase === 'collapse') {
@@ -208,7 +237,8 @@ function loop() {
         collapse.phase = ['zoomOut','revealBodies','flip','fall','circle'][collapse.phaseIndex]; }
       audio.stop();
     }
-    stepCollapse(collapse, 0.016); drawCollapse(ctx, collapse, time);
+    stepCollapse(collapse, 0.016);
+    renderer.render(() => drawCollapse(ctx, collapse, time), { post: applyPost('collapse') });
     if (collapseFinished(collapse)) state = advance(state, 'collapseDone');
     return;
   }
@@ -223,8 +253,8 @@ function loop() {
       audio.stop();
     }
     stepTransition(level.transition, 0.016);
-    drawWorld(level, cameraY);
-    drawTransition(ctx, level.transition, VIEW_W, VIEW_H);
+    stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
+    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: applyPost('unlocked') });
     if (level.transition.done) {
       state = advance(state, 'audioDone');
       if (state.phase === 'playing') level = loadGirone(state.gironeIndex);
@@ -237,33 +267,46 @@ function loop() {
   level.events.length = 0;
   const NONE = { left: false, right: false, up: false, down: false };
   // L'incontro attivo FERMA il corpo: finché non scegli (tendi/spingi) non sali.
-  // Così ogni incontro è un momento vero, non un lampo che si oltrepassa.
   level.active = encounterAt(cl, level.encounters);
   const acts = level.active ? NONE : input.climbActions();
-  // caffè: un mezzo passo in più
   if (!level.active && level.threats.speed > 0 && acts.up) stepClimb(cl, NONE, 0.016);
+
+  // scintille quando le mani si muovono
+  const prevL = { c: cl.lhA.c, r: cl.lhA.r }, prevR = { c: cl.rhA.c, r: cl.rhA.r };
   stepClimb(cl, acts, 0.016);
+  const moved = Math.abs(cl.lhA.c - prevL.c) + Math.abs(cl.lhA.r - prevL.r) +
+                Math.abs(cl.rhA.c - prevR.c) + Math.abs(cl.rhA.r - prevR.r);
+  if (moved > 0.02) {
+    const p0 = climbPos(cl);
+    emitFx(level.pfx, 'spark', p0.lx, p0.ly + cameraY, { count: 1, spread: 2 });
+  }
 
   // ostacoli/aiuti legati alla canzone
   const msg = stepThreats(g, cl, level.threats, 0.016, 0);
   if (msg && msg !== level.threatMsg) {
-    // impatto visivo coerente col tipo di evento
     const m = msg.toLowerCase();
-    if (/vento|pioggia|scivol/.test(m)) level.events.push('slip');
-    else if (/tuono|tempo/.test(m)) level.events.push('quake');
-    else if (/detrito|cranio|edera|sonno/.test(m)) level.events.push('blade');
-    else level.events.push('fake');
+    const mp = climbPos(cl);
+    if (/vento|pioggia|scivol/.test(m)) { level.events.push('slip'); emitFx(level.pfx, 'dust', mp.tx, mp.ty + cameraY, { count: 5 }); }
+    else if (/tuono|tempo/.test(m)) { level.events.push('quake'); emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 6 }); }
+    else if (/detrito|cranio|edera|sonno/.test(m)) { level.events.push('blade'); emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 5 }); }
+    else { level.events.push('fake'); emitFx(level.pfx, 'ash', mp.tx, mp.ty + cameraY, { count: 4 }); }
+    renderer.post.glitch = Math.max(renderer.post.glitch, 0.5);
   }
   level.threatMsg = msg;
 
-  // raccolta potenziamenti: scatta quando il giocatore raggiunge quella fila
+  // raccolta potenziamenti
   const curRow = Math.max(cl.lh.r, cl.rh.r);
   for (const pk of level.pickups) {
     if (pk.taken) continue;
     if (Math.abs(pk.r - curRow) <= 1) {
       pk.taken = true;
       const m = applyPickup(pk.kind, cl, level.threats);
-      if (m) { level.threats.lastMsg = m; level.threats.msgT = 2; level.events.push('warm'); }
+      if (m) {
+        level.threats.lastMsg = m; level.threats.msgT = 2; level.events.push('warm');
+        const mp = climbPos(cl);
+        emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 8, spread: 3 });
+        renderer.post.flash = 0.35;
+      }
     }
   }
 
@@ -276,10 +319,9 @@ function loop() {
 
   spawnFromEvents(level.fx, level.events, cameraY, pos.tx);
   stepEffects(level.fx, 0.016, cameraY, VIEW_H);
+  stepFx(level.pfx, 0.016, cameraY, { H: VIEW_H });
   const sh = shakeOffset(level.fx, time);
 
-  // camera: segue il corpo del climber. rows[0] è la BASE (in basso),
-  // rows[nRows-1] è la CIMA. Il limite massimo tiene la base visibile.
   const maxCam = Math.max(0, cl.rows[0] - VIEW_H + 40);
   cameraY = Math.max(0, Math.min(maxCam, pos.ty - VIEW_H * 0.55));
 
@@ -287,20 +329,21 @@ function loop() {
   if (level.active) setPrompt('◀ ' + KINDS[level.active.kind].prompt + ' ▶   [Z] tendi   [X] spingi');
   else setPrompt('');
 
-  if (cl.reached && state.phase === 'playing') state = advance(state, 'reachedTop');
+  if (cl.reached && state.phase === 'playing') {
+    emitFx(level.pfx, 'shock', pos.tx, pos.ty + cameraY, { count: 1 });
+    renderer.post.flash = 0.6;
+    state = advance(state, 'reachedTop');
+  }
 
-  ctx.save(); ctx.translate(sh.x, sh.y);
-  drawWorld(level, cameraY);
-  ctx.restore();
-
-  drawVignette(ctx, VIEW_W, VIEW_H);
-
-  if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
-
-  // HUD verticale di scalata
-  const prog = climbProgress(cl);
-  ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
-  ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
+  renderer.render(() => {
+    ctx.save(); ctx.translate(sh.x, sh.y);
+    drawWorld(level, cameraY);
+    ctx.restore();
+    if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+    const prog = climbProgress(cl);
+    ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
+    ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
+  }, { post: applyPost('playing') });
 }
 
 // --- debug: ?g=NN ---

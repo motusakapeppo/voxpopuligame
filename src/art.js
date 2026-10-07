@@ -153,14 +153,16 @@ export function drawWall(ctx, g, cameraY, time, W, H) {
       drawFigure(ctx, x, top + 2 + bob, { h: 12, color: col, state, phase: ph, facing: 1 });
     }
   }
-  // accenti: una manciata di figure più grandi che emergono (teste sporgenti)
+  // accenti: figure più grandi che emergono dalla parete (teste sporgenti).
+  // Posa NON verticale: con il bloom un braccio dritto in su diventa una barra.
   const r = rng(91);
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 5; i++) {
     const x = r() * W;
     const y = ((r() * H * 3 - cameraY * 1.0) % (H * 3) + H * 3) % (H * 3) - H;
     if (y < -20 || y > H + 20) continue;
     const ph = time * 1.2 + i * 2.1;
-    drawFigure(ctx, x, y, { h: 22, color: C.redDark, state: 'reach', phase: ph, alpha: 0.5, facing: r() > 0.5 ? 1 : -1 });
+    const st = r() > 0.5 ? 'idle' : 'climb';
+    drawFigure(ctx, x, y, { h: 17, color: C.redDeep, state: st, phase: ph, alpha: 0.4, facing: r() > 0.5 ? 1 : -1 });
   }
 }
 
@@ -172,26 +174,21 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
   const p = climbPos(cl);
   const ly = p.ly - cameraY, ry = p.ry - cameraY;
   const ph = time;
-  // alone scuro attorno (stacca dalla folla in modo netto)
-  ctx.save();
-  ctx.globalAlpha = 0.55;
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.black, phase: ph, thickness: 5, h: 19 });
-  ctx.restore();
   // alone caldo pulsante (ti fa trovare a colpo d'occhio)
   ctx.save();
-  ctx.globalAlpha = 0.14 + 0.08 * Math.sin(time * 5);
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.redHot, phase: ph, thickness: 4, h: 19 });
+  ctx.globalAlpha = 0.16 + 0.08 * Math.sin(time * 5);
+  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.redHot, phase: ph, thickness: 3, h: 19 });
   ctx.restore();
-  // corpo acceso (più grande della folla, bordo rosso pieno)
+  // contorno scuro sottile (1 px) + corpo acceso
+  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.black, phase: ph, thickness: 3, h: 19 });
   const col = (action === 'tendi' || action === 'spingi') ? C.redHot : C.redBright;
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.red, phase: ph, thickness: 3, h: 19 });
   drawClimber(ctx, p.lx, ly, p.rx, ry, { color: col, phase: ph, thickness: 1, h: 19 });
-  // anelli sulla presa: dove sono le tue mani
+  // mani evidenziate: dove sei aggrappato
   ctx.save();
-  ctx.globalAlpha = 0.6 + 0.3 * Math.sin(time * 6);
+  ctx.globalAlpha = 0.85;
   ctx.fillStyle = C.white;
-  ctx.fillRect(Math.round(p.lx) - 2, Math.round(ly) - 2, 5, 5);
-  ctx.fillRect(Math.round(p.rx) - 2, Math.round(ry) - 2, 5, 5);
+  ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3);
+  ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3);
   ctx.restore();
 }
 

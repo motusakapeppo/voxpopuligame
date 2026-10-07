@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pose } from '../src/figure.js';
+import { pose, drawFigure, drawClimber } from '../src/figure.js';
 
 // Verifica che le pose siano articolate (angoli delle ossa) e che cambino
 // nel tempo: è ciò che rende il gioco animato e non statico.
@@ -43,4 +43,83 @@ test('le pose d\'azione sono riconoscibili: tendi vs spingi', () => {
 test('climb porta le braccia sopra la testa', () => {
   const c = pose('climb', 0.5);
   assert.ok(c.aL[0] < -2 && c.aR[0] < -2, 'braccia in alto');
+});
+
+// ---------------------------------------------------------------------------
+// TEST AGGIUNTI — dettaglio, squash&stretch, respiro, presa, luce di bordo.
+// Stub ctx minimale: nessun DOM, registra le chiamate fillRect.
+// ---------------------------------------------------------------------------
+function stubCtx() {
+  const calls = [];
+  const noop = () => {};
+  return {
+    calls,
+    fillRect(x, y, w, h) { calls.push([x, y, w, h]); },
+    save: noop, restore: noop, beginPath: noop, moveTo: noop,
+    lineTo: noop, stroke: noop, arc: noop,
+    globalAlpha: 1, fillStyle: '#000',
+  };
+}
+
+test('pose: ogni stato restituisce solo numeri finiti (nessun NaN)', () => {
+  for (const s of STATES) {
+    for (const ph of [0, 0.7, 1.5, 3.3, 6.28]) {
+      const p = pose(s, ph);
+      for (const k of ['lean', 'bob']) {
+        assert.ok(Number.isFinite(p[k]), s + '.' + k + ' non finito');
+      }
+      for (const k of ['aL', 'aR', 'lL', 'lR']) {
+        assert.ok(Number.isFinite(p[k][0]) && Number.isFinite(p[k][1]),
+          s + '.' + k + ' non finito');
+      }
+    }
+  }
+});
+
+test('drawFigure: detail+stretch+rim non lancia e produce pixel finiti', () => {
+  const ctx = stubCtx();
+  drawFigure(ctx, 40, 60, { h: 16, state: 'walk', phase: 1.2, detail: true, stretch: 0.5, rim: true });
+  assert.ok(ctx.calls.length > 0, 'nessun pixel disegnato');
+  for (const [x, y, w, hh] of ctx.calls) {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+      'fillRect con coordinate non finite');
+  }
+});
+
+test('drawFigure: stretch estremo/NaN resta limitato e sicuro', () => {
+  for (const st of [-5, -1, 0, 1, 5, NaN, Infinity, -Infinity]) {
+    const ctx = stubCtx();
+    drawFigure(ctx, 30, 50, { state: 'run', phase: 0.4, stretch: st, detail: true });
+    for (const [x, y, w, hh] of ctx.calls) {
+      assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+        'stretch=' + st + ' ha prodotto coordinate non finite');
+    }
+  }
+});
+
+test('drawFigure: default identico a detail/stretch/rim espliciti a zero', () => {
+  const a = stubCtx(), b = stubCtx();
+  drawFigure(a, 25, 45, { h: 16, state: 'idle', phase: 0.9 });
+  drawFigure(b, 25, 45, { h: 16, state: 'idle', phase: 0.9, detail: false, stretch: 0, rim: false });
+  assert.deepEqual(a.calls, b.calls, 'i nuovi default alterano il rendering storico');
+});
+
+test('drawClimber: detail+breathe+grip+rim non lancia e resta finito', () => {
+  for (const br of [0, 0.5, 1, 3, NaN]) {
+    for (const g of [0, 0.5, 1, 2, NaN]) {
+      const ctx = stubCtx();
+      drawClimber(ctx, 20, 10, 40, 12, { h: 17, phase: 1.1, detail: true, breathe: br, grip: g, rim: true });
+      for (const [x, y, w, hh] of ctx.calls) {
+        assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh),
+          'climber breathe=' + br + ' grip=' + g + ' non finito');
+      }
+    }
+  }
+});
+
+test('drawClimber: default identico a detail/breathe/grip/rim espliciti a zero', () => {
+  const a = stubCtx(), b = stubCtx();
+  drawClimber(a, 20, 10, 40, 12, { h: 17, phase: 0.8 });
+  drawClimber(b, 20, 10, 40, 12, { h: 17, phase: 0.8, detail: false, breathe: 0, grip: 1, rim: false });
+  assert.deepEqual(a.calls, b.calls, 'i nuovi default alterano il rendering storico');
 });
