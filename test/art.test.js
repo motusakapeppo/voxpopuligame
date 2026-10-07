@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   artDepthTone, artSkylineLayer, artFogAlpha, artSeed,
-  drawWall, drawSkyline, drawPlayer, drawTitle,
+  drawWall, drawSkyline, drawPlayer, drawTitle, artPerf,
 } from '../src/art.js';
 import { C, RED_RAMP } from '../src/palette.js';
 import { createClimb } from '../src/climb.js';
@@ -18,6 +18,7 @@ function recCtx() {
   const calls = [];
   let fill = '#000000';
   let alpha = 1;
+  let gradCount = 0;
   const mkGrad = () => ({
     __grad: true, stops: [],
     addColorStop(o, c) { this.stops.push([o, c]); },
@@ -25,6 +26,7 @@ function recCtx() {
   const norm = v => (v && typeof v === 'object' && v.__grad) ? '__grad__' : v;
   const ctx = {
     calls,
+    get gradCount() { return gradCount; },
     get fillStyle() { return fill; },
     set fillStyle(v) { fill = norm(v); },
     get globalAlpha() { return alpha; },
@@ -37,7 +39,8 @@ function recCtx() {
     translate() {}, scale() {}, rotate() {}, setTransform() {},
     measureText: () => ({ width: 0 }),
     drawImage() { calls.push({ op: 'drawImage' }); },
-    createLinearGradient: mkGrad, createRadialGradient: mkGrad,
+    createLinearGradient: (...a) => { gradCount++; return mkGrad(); },
+    createRadialGradient: (...a) => { gradCount++; return mkGrad(); },
     createPattern: () => ({}),
     imageSmoothingEnabled: false,
     globalCompositeOperation: 'source-over',
@@ -185,4 +188,64 @@ test('input non finiti: nessuna coordinata NaN su stub', () => {
   assertFiniteCalls(p, 'drawPlayer/NaN');
   const t = recCtx(); drawTitle(t, 320, 180, NaN);
   assertFiniteCalls(t, 'drawTitle/NaN');
+});
+
+// --- S-REND: cache dei gradienti + scia lazy ---------------------------------
+// I gradienti di foschia dipendono solo da H (non dal tempo): vanno creati una
+// volta e riusati. createLinearGradient è costoso → zero allocazioni per frame.
+
+test('drawSkyline: chiamate ripetute identiche e gradienti NON ricreati (cache)', () => {
+  const ctx = recCtx();
+  drawSkyline(ctx, '04-baghdad', 200, 5.5, 320, 180, 0.4);
+  const first = ctx.calls.slice();
+  const g1 = ctx.gradCount;
+  drawSkyline(ctx, '04-baghdad', 200, 5.5, 320, 180, 0.4);
+  const second = ctx.calls.slice(first.length);
+  assert.deepEqual(second, first, 'drawSkyline: output diverso tra chiamate ripetute');
+  assert.ok(g1 <= 1, 'drawSkyline: troppi createLinearGradient alla prima chiamata: ' + g1);
+  assert.equal(ctx.gradCount, g1, 'drawSkyline: gradienti ricreati alla seconda chiamata');
+});
+
+test('drawTitle: chiamate ripetute identiche e gradienti NON ricreati (cache)', () => {
+  const ctx = recCtx();
+  drawTitle(ctx, 320, 180, 4.4);
+  const first = ctx.calls.slice();
+  const g1 = ctx.gradCount;
+  drawTitle(ctx, 320, 180, 4.4);
+  const second = ctx.calls.slice(first.length);
+  assert.deepEqual(second, first, 'drawTitle: output diverso tra chiamate ripetute');
+  assert.ok(g1 <= 2, 'drawTitle: troppi createLinearGradient alla prima chiamata: ' + g1);
+  assert.equal(ctx.gradCount, g1, 'drawTitle: gradienti ricreati alla seconda chiamata');
+});
+
+test('drawSkyline: H diverso → nuovo gradiente (chiave di cache corretta)', () => {
+  const ctx = recCtx();
+  drawSkyline(ctx, '01-intro', 0, 0, 320, 180, 0);
+  const g1 = ctx.gradCount;
+  drawSkyline(ctx, '01-intro', 0, 0, 320, 240, 0);
+  assert.ok(ctx.gradCount > g1, 'H diverso deve ricreare il gradiente (chiave errata)');
+});
+
+test('drawPlayer idle: nessuna scia allocata (trail lazy) e output stabile', () => {
+  const g = fakeGirone();
+  const before = artPerf.trailAllocs;
+  const ctx = recCtx();
+  drawPlayer(ctx, createClimb(g), 100, 2.2, 'idle');
+  assert.equal(artPerf.trailAllocs, before, 'idle non deve allocare la scia');
+  // nessun fillRect 2x2 con alpha di scia (0 < a < 0.55)
+  const trailDraws = ctx.calls.filter(c =>
+    c.op === 'fillRect' && c.w === 2 && c.h === 2 && c.alpha > 0 && c.alpha < 0.55);
+  assert.equal(trailDraws.length, 0, 'idle non deve disegnare la scia');
+  const ctx2 = recCtx();
+  drawPlayer(ctx2, createClimb(g), 100, 2.2, 'idle');
+  assert.deepEqual(ctx2.calls, ctx.calls, 'drawPlayer/idle non deterministico');
+});
+
+test('drawPlayer tendi: la scia viene allocata solo col gesto attivo', () => {
+  const g = fakeGirone();
+  const before = artPerf.trailAllocs;
+  const ctx = recCtx();
+  drawPlayer(ctx, createClimb(g), 100, 2.2, 'tendi');
+  assert.ok(artPerf.trailAllocs > before, 'il gesto tendi deve allocare la scia');
+  assertFiniteCalls(ctx, 'drawPlayer/tendi');
 });

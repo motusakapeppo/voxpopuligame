@@ -78,6 +78,25 @@ export function drawVert(ctx, text, cx, cy, time, alpha, size, glitch) {
 
 const ART_VIEW_H = 180;
 
+// ---------------------------------------------------------------------------
+// S-REND — contatori di performance (solo diagnostica/test, zero costo a
+// runtime: incrementi interi). `trailAllocs` conta le allocazioni della scia
+// del gesto in drawPlayer; deve restare fermo quando l'azione è idle.
+// ---------------------------------------------------------------------------
+export const artPerf = { trailAllocs: 0 };
+
+// Cache dei gradienti per contesto: `createLinearGradient`/`createRadialGradient`
+// sono costosi e i gradienti di foschia dipendono solo da W/H (non dal tempo).
+// WeakMap<ctx, Map<key, gradient>> → nessun leak, riuso per frame.
+const ART_GRAD_CACHE = new WeakMap();
+function artCachedGradient(ctx, key, make) {
+  let m = ART_GRAD_CACHE.get(ctx);
+  if (!m) { m = new Map(); ART_GRAD_CACHE.set(ctx, m); }
+  let g = m.get(key);
+  if (g === undefined) { g = make(); m.set(key, g); }
+  return g;
+}
+
 function rng(seed) {
   let s = seed >>> 0;
   return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
@@ -359,17 +378,20 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
 
   let lx = p.lx, lyy = ly, rx = p.rx, ryy = ry;
   let hipX = p.bx, hipYOff = 0, lean = 0;
-  // scie multiple del gesto (comete) + particelle d'impatto al colpo
-  const trail = [];
+  // scie multiple del gesto (comete) + particelle d'impatto al colpo.
+  // LAZY: allocata solo quando un gesto è attivo (idle = nessuna allocazione).
+  let trail = null;
   if (action === 'tendi') {
     // braccio destro teso in alto-avanti: offerta
     rx += 7 * actK; ryy -= 9 * actK; lx -= 1 * actK;
     hipYOff = -2 * actK; lean = -0.35 * actK;
+    trail = []; artPerf.trailAllocs++;
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 7 * actK * (1 - i * 0.18), ly - 9 * actK * (1 - i * 0.18) + i * 1.6, i]);
   } else if (action === 'spingi') {
     // spinta in basso-avanti: torso che si torce, gamba che spinge
     rx += 9 * actK; ryy += 6 * actK; lx -= 3 * actK;
     hipX += 3 * actK; hipYOff = 1 * actK; lean = 0.5 * actK;
+    trail = []; artPerf.trailAllocs++;
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
@@ -405,7 +427,7 @@ export function drawPlayer(ctx, cl, cameraY, time, action) {
   }
 
   // scie del gesto
-  if (trail.length) {
+  if (trail) {
     ctx.save();
     ctx.fillStyle = action === 'spingi' ? C.redHot : C.red;
     for (const [tx0, ty0, i] of trail) {
@@ -680,10 +702,13 @@ export function drawSkyline(ctx, audioId, camY, time, W, H, beat) {
   }
   // FOSCHIA: i piani alti (lontani) svaniscono nel nero.
   try {
-    const fog = ctx.createLinearGradient(0, 0, 0, hh);
-    fog.addColorStop(0, 'rgba(0,0,0,0.55)');
-    fog.addColorStop(0.55, 'rgba(0,0,0,0.18)');
-    fog.addColorStop(1, 'rgba(0,0,0,0)');
+    const fog = artCachedGradient(ctx, 'skyline-fog:' + hh, () => {
+      const g = ctx.createLinearGradient(0, 0, 0, hh);
+      g.addColorStop(0, 'rgba(0,0,0,0.55)');
+      g.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      return g;
+    });
     ctx.globalAlpha = 1;
     ctx.fillStyle = fog;
     ctx.fillRect(0, 0, ww, hh);
@@ -1304,15 +1329,21 @@ export function drawTitle(ctx, W, H, time) {
 
   // FOSCHIA in alto: la punta della piramide recede nel buio (cover).
   try {
-    const grad = ctx.createLinearGradient(0, 0, 0, hh * 0.5);
-    grad.addColorStop(0, 'rgba(0,0,0,0.95)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+    const grad = artCachedGradient(ctx, 'title-top:' + hh, () => {
+      const g = ctx.createLinearGradient(0, 0, 0, hh * 0.5);
+      g.addColorStop(0, 'rgba(0,0,0,0.95)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      return g;
+    });
     ctx.fillStyle = grad; ctx.fillRect(0, 0, ww, hh * 0.5);
   } catch { /* niente foschia */ }
 
   // FOSCHIA in basso: la base emerge dal nero, chiude la composizione.
   try {
-    const grad2 = ctx.createLinearGradient(0, hh * 0.72, 0, hh);
-    grad2.addColorStop(0, 'rgba(0,0,0,0)'); grad2.addColorStop(1, 'rgba(0,0,0,0.85)');
+    const grad2 = artCachedGradient(ctx, 'title-bottom:' + hh, () => {
+      const g = ctx.createLinearGradient(0, hh * 0.72, 0, hh);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)');
+      return g;
+    });
     ctx.fillStyle = grad2; ctx.fillRect(0, hh * 0.72, ww, hh * 0.28);
   } catch { /* niente foschia */ }
 }
