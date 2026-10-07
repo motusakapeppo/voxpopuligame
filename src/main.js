@@ -135,6 +135,14 @@ if (btnAudio) btnAudio.addEventListener('click', () => {
   const on = audio.toggle(); btnAudio.textContent = 'audio: ' + (on ? 'on' : 'off');
 });
 
+// sblocca l'audio (iOS) al PRIMO gesto utente, una sola volta. Guida §9.
+(function primeAudio() {
+  const once = () => { audio.unlock(); window.removeEventListener('pointerdown', once); window.removeEventListener('keydown', once); window.removeEventListener('touchstart', once); };
+  window.addEventListener('pointerdown', once, { passive: true });
+  window.addEventListener('keydown', once);
+  window.addEventListener('touchstart', once, { passive: true });
+})();
+
 function goToCta() {
   // su file:// aprendo una nuova scheda Chrome blocca l'accesso: usiamo
   // location.href solo per URL reali; col placeholder non navighiamo affatto.

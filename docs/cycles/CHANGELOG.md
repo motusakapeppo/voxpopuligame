@@ -108,6 +108,27 @@ risoluzione) → impatti troppo "morbidi" e scossa sproporzionata.
 
 ---
 
+## Ciclo 6 — Mobile (viewport, safe-area, audio unlock)
+**Data:** 2026-10-07 · **Commit:** *(vedi git)*
+
+**Problema:** nessun supporto notch (`viewport-fit`), UI sotto le safe-area, e su iOS
+Safari `play()` asincrono perdeva il gesto utente → audio non partiva.
+
+**Regole applicate** (guida §9):
+- `viewport-fit=cover` + `env(safe-area-inset-*)` su dpad/verbs/hud/cta/prompt.
+- `overscroll-behavior:none` sul body (blocca pull-to-refresh).
+- `audio.unlock()`: WAV silenzioso di 1 campione riprodotto DENTRO il primo gesto
+  utente (`pointerdown`/`keydown`/`touchstart`, one-shot) → le `play()` asincrone
+  successive sono permesse su Safari.
+
+**Verifica:** 119/119 test · FPS 60 · zero errori · bundle OK.
+
+**Esito:** KEEP.
+
+**File:** `index.html`, `src/audio.js` (`unlock`), `src/main.js` (primeAudio).
+
+---
+
 ## Prossimi cicli (backlog prioritizzato dalla ricerca)
 
 1. **Parete che respira** — la folla dietro è caotica; ridurre densità/scurire per far
