@@ -8,7 +8,7 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText } from './art.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText, drawLyricsPixel } from './art.js';
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup } from './threats.js';
@@ -209,6 +209,9 @@ function updatePrompt() {
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
+  // lirica estetica in PIXEL ART (coerente col mondo)
+  const kl = KARAOKE[lv.girone.audioId];
+  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position(), time, VIEW_W, VIEW_H);
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
@@ -220,17 +223,17 @@ function drawWorld(lv, camY) {
 // Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
 const uctx = canvas.getContext('2d');
 function drawOverlay() {
-  const lyr = level ? KARAOKE[level.girone.audioId] : null;
   const pos = audio.position();
   drawUIOverlay(uctx, SCALE, VIEW_W, VIEW_H, {
     inscription: level ? level.girone.inscription.text : '',
     threatMsg: level ? level.threatMsg : '',
     chapterT: level ? level.chapter : 0,
     chapterTitle: level ? level.girone.title : '',
+    prompt: promptEl ? promptEl.textContent : '',
+    promptK: promptEl && promptEl.classList.contains('show') ? 1 : 0,
     flow: flowRatio(juice),
     beat: juice.beat,
     mash,
-    lyricLines: lyr,
     pos,
     time,
   });
@@ -513,6 +516,7 @@ if (_colParam) {
 window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb };
 
 loop();
+
 
 
 

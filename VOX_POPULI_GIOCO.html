@@ -3061,53 +3061,117 @@ function rng(seed) {
 // ---------------------------------------------------------------------------
 // PARETE — la piramide di CORPI. Non mensole: una massa continua che si
 // restringe salendo, con le teste/prese che emergono. Il giocatore la scala.
-// ---------------------------------------------------------------------------function drawWall(ctx, g, climb, cameraY, time, W, H, beat) {
-  const bt = Number.isFinite(beat) ? beat : 0;
-  const cx = climb.cx, rows = climb.rows, nRows = climb.nRows;
-  const stepY = rows.length > 1 ? Math.abs(rows[1] - rows[0]) : 24;
-  // 1) massa della piramide: fascia per fascia, si restringe salendo
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// PARETE — la piramide è fatta di PERSONE: una massa fitta di corpi che si
+// arrampicano l'uno sull'altro. Per restare veloce, la parete si disegna UNA
+// VOLTA in un canvas offscreen (coordinate mondo) e poi si blitta la fetta
+// visibile. Gli appigli (mani/teste di chi ti porge la presa) brillano live.
+// ---------------------------------------------------------------------------
+function buildWallCanvas(ctx, g, climb, W, H) {
+  const doc = (ctx && ctx.canvas && ctx.canvas.ownerDocument)
+    || (typeof document !== 'undefined' ? document : null);
+  if (!doc || typeof doc.createElement !== 'function') return null;
+  const rows = climb.rows, nRows = climb.nRows;
+  const stepY = Math.abs(rows[1] - rows[0]) || 24;
+  const topY = rows[nRows - 1] - 46;          // margine sopra la cima
+  const botY = rows[0] + 30;
+  const ch = Math.max(64, Math.round(botY - topY));
+  let cv;
+  try { cv = doc.createElement('canvas'); } catch { return null; }
+  cv.width = W; cv.height = ch;
+  const c = cv.getContext('2d');
+  if (!c) return null;
+
+  // massa organica di persone: non una griglia, ma corpi stipati con
+  // variazione di taglia, quota e posa (come una folla che si arrampica).
+  let seed = 0;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   for (let r = 0; r < nRows; r++) {
-    const y = rows[r] - cameraY;
-    if (y < -stepY * 2 || y > H + stepY * 2) continue;
     let lo = null, hi = null;
-    for (let c = 0; c < climb.cols.length; c++) if (climb.has(c, r)) { if (lo === null) lo = c; hi = c; }
+    for (let cc = 0; cc < climb.cols.length; cc++) if (climb.has(cc, r)) { if (lo === null) lo = cc; hi = cc; }
     if (lo === null) continue;
-    const x0 = climb.xOf(lo) - 18, x1 = climb.xOf(hi) + 18;
-    // corpo della massa (scuro), con bordo superiore acceso. Pulsa a tempo.
-    ctx.globalAlpha = 0.46 + 0.10 * bt;
-    ctx.fillStyle = C.redDeep;
-    ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), Math.round(stepY + 4));
-    ctx.globalAlpha = 0.6 + 0.3 * bt;
-    ctx.fillStyle = C.redDark;
-    ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), 1);
-    ctx.globalAlpha = 1;
-    // nervature: piccoli corpi incastrati (texture "muro di persone")
+    const x0 = climb.xOf(lo) - 16, x1 = climb.xOf(hi) + 16;
     const span = x1 - x0;
-    const n = Math.max(3, Math.round(span / 16));
-    // reazione fisica: i corpi nella zona delle mani si comprimono
-    const gRow = Math.max(climb.lh.r, climb.rh.r);
-    const rowDist = Math.abs(r - gRow);
-    const press = rowDist <= 1 ? (1 - rowDist) : 0;
+    // densità variabile: a volte fitta, a volte rada (fessure di buio)
+    const n = Math.max(2, Math.round(span / (10 + rnd() * 6)));
     for (let i = 0; i < n; i++) {
-      const fx = x0 + (i + 0.5) * (span / n);
-      const ph = time * 1.2 + (fx + r * 7) * 0.2;
-      const st = Math.sin(ph * 1.3) > 0.5 ? 'idle' : 'climb';
-      // schiacciamento verso il basso sotto la presa (squash)
-      const stretch = -press * 0.4;
-      drawFigure(ctx, fx, y + stepY * 0.7 + press * 2, { h: 11, color: C.redDeep, state: st, phase: ph, alpha: 0.5 + 0.12 * bt, stretch, detail: press > 0.5 });
+      const jitter = (rnd() - 0.5) * 5;
+      const fx = x0 + (i + 0.5) * (span / n) + jitter;
+      const layers = rnd() > 0.55 ? 2 : 1;      // a volte un corpo dietro
+      for (let layer = 0; layer < layers; layer++) {
+        const baseWorld = rows[r] - topY + stepY * (0.7 + rnd() * 0.25) + layer * 4;
+        const depth = r / Math.max(1, nRows - 1);
+        const hh = 11 + rnd() * 4;
+        const colr = depthRed(0.08 + depth * 0.4 + (layer ? 0 : 0.14) + rnd() * 0.16);
+        const ph = r * 1.5 + i * 1.2 + layer * 2.1;
+        const roll = rnd();
+        const st = roll < 0.4 ? 'climb' : roll < 0.7 ? 'reach' : roll < 0.9 ? 'idle' : 'push';
+        drawFigure(c, fx, baseWorld, {
+          h: hh, color: colr, state: st, phase: ph,
+          facing: rnd() > 0.5 ? 1 : -1, alpha: layer ? 0.65 : 0.92,
+        });
+      }
     }
-    // 2) GLI APPIGLI: teste che emergono dove il giocatore può aggrapparsi
+  }
+  return { canvas: cv, topY };
+}function drawWall(ctx, g, climb, cameraY, time, W, H, beat) {
+  const bt = Number.isFinite(beat) ? beat : 0;
+  // cache su climb (ricreato a ogni girone)
+  if (!climb._wall) climb._wall = buildWallCanvas(ctx, g, climb, W, H);
+  const wall = climb._wall;
+
+  if (wall) {
+    ctx.save();
+    ctx.globalAlpha = 0.92 + 0.08 * bt;
+    ctx.drawImage(wall.canvas, 0, Math.round(cameraY - wall.topY), W, H, 0, 0, W, H);
+    ctx.restore();
+  } else {
+    // ripiego (senza DOM): massa scura + qualche figura, per non rompere nulla
+    const rows = climb.rows, nRows = climb.nRows;
+    const stepY = Math.abs(rows[1] - rows[0]) || 24;
+    for (let r = 0; r < nRows; r++) {
+      const y = rows[r] - cameraY;
+      if (y < -stepY * 2 || y > H + stepY * 2) continue;
+      let lo = null, hi = null;
+      for (let cc = 0; cc < climb.cols.length; cc++) if (climb.has(cc, r)) { if (lo === null) lo = cc; hi = cc; }
+      if (lo === null) continue;
+      const x0 = climb.xOf(lo) - 14, x1 = climb.xOf(hi) + 14;
+      ctx.globalAlpha = 0.5 + 0.1 * bt; ctx.fillStyle = C.redDeep;
+      ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), Math.round(stepY + 4));
+      ctx.globalAlpha = 1;
+      for (let i = 0; i < 4; i++)
+        drawFigure(ctx, x0 + (i + 0.5) * ((x1 - x0) / 4), y + stepY * 0.75,
+          { h: 14, color: C.redDark, state: 'climb', phase: time + i, alpha: 0.7 });
+    }
+  }
+
+  // APPIGLI live: piccole mani che si protendono verso di te (non quadrati).
+  // Solo quelli vicino al giocatore si accendono; gli altri restano discreti.
+  const gRow = Math.max(climb.lh.r, climb.rh.r);
+  for (let r = 0; r < climb.nRows; r++) {
+    const y = climb.rows[r] - cameraY;
+    if (y < -30 || y > H + 30) continue;
+    const near = Math.abs(r - gRow) <= 1;
     for (let c = 0; c < climb.cols.length; c++) {
       if (!climb.has(c, r)) continue;
-      const hx = climb.xOf(c), hy = y + 1;
+      const hx = Math.round(climb.xOf(c));
+      const hy = Math.round(y) + 1;
       const ph = time * 1.6 + (hx + r * 13) * 0.1;
       const bob = Math.round(Math.sin(ph) * 0.6);
-      // testa/nodo luminoso della presa: pulsa a tempo
-      ctx.globalAlpha = 0.8 + 0.2 * bt;
-      ctx.fillStyle = C.redDark;
-      ctx.fillRect(Math.round(hx) - 1, hy + bob, 3, 3);
-      ctx.fillStyle = depthRed(0.35 + 0.3 * (0.5 + 0.5 * Math.sin(ph * 0.8)) + 0.2 * bt);
-      ctx.fillRect(Math.round(hx), hy + 1 + bob, 1, 1);
+      if (near) {
+        // mano tesa: dita + palmo
+        ctx.globalAlpha = 0.85 + 0.15 * bt;
+        ctx.fillStyle = C.redHot;
+        ctx.fillRect(hx - 1, hy - 1 + bob, 2, 2);
+        ctx.fillRect(hx - 2, hy + 1 + bob, 1, 1);
+        ctx.fillRect(hx + 1, hy + 1 + bob, 1, 1);
+      } else {
+        // accenno discreto di una testa tra la folla
+        ctx.globalAlpha = 0.35 + 0.15 * bt;
+        ctx.fillStyle = C.redDark;
+        ctx.fillRect(hx, hy + bob, 1, 2);
+      }
       ctx.globalAlpha = 1;
     }
   }
@@ -3151,11 +3215,15 @@ function rng(seed) {
     for (let i = 1; i <= 4; i++) trail.push([p.rx + 9 * actK * (1 - i * 0.15), ly + 6 * actK * (1 - i * 0.15) + i * 1.4, i]);
   }
 
-  // alone caldo pulsante (ti fa trovare a colpo d'occhio); più acceso sull'azione
+  // alone scuro: lo stacca dalla massa di persone
   ctx.save();
-  ctx.globalAlpha = (0.22 + 0.10 * Math.sin(time * 5)) + 0.3 * actK;
-  const auraCol = action === 'spingi' ? C.redHot : C.redHot;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: auraCol, phase: ph, thickness: 5 + Math.round(2 * actK), h: 20, bx: hipX, by: byc + hipYOff, swing });
+  ctx.globalAlpha = 0.6;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 7, h: 22, bx: hipX, by: byc + hipYOff, swing });
+  ctx.restore();
+  // alone caldo pulsante; più acceso sull'azione e col flow
+  ctx.save();
+  ctx.globalAlpha = (0.24 + 0.10 * Math.sin(time * 5)) + 0.3 * actK;
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.redHot, phase: ph, thickness: 6 + Math.round(2 * actK), h: 22, bx: hipX, by: byc + hipYOff, swing });
   ctx.restore();
 
   // scie del gesto
@@ -3171,10 +3239,10 @@ function rng(seed) {
 
   // corpo acceso con dettagli (chele, ciuffo, rim) + contorno scuro netto
   const col = actK > 0.1 ? C.redHot : C.redBright;
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 20,
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 22,
     bx: hipX, by: byc + hipYOff, swing, breathe, detail: true });
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff, swing });
-  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 20,
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 22, bx: hipX, by: byc + hipYOff, swing });
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 22,
     bx: hipX, by: byc + hipYOff, swing, breathe, detail: true, rim: true, lean });
 
   // impatto al culmine del gesto: particelle di colpo (quadrati rossi dal centro)
@@ -3567,8 +3635,17 @@ function drawCentered(ctx, text, cx, cy, time, size) {
 // Si disegna DOPO la scena pixel art, sul canvas visibile, scalando le
 // coordinate logiche per S. I font sono veri (non pixel art), quindi leggibili.
 // ============================================================================
-function uiFont(ctx, size, S) { ctx.font = Math.round(size * S) + 'px "Consolas","Courier New",monospace'; }
+function uiFont(ctx, size, S) { ctx.font = 'bold ' + Math.round(size * S) + 'px "Consolas","Courier New",monospace'; }
 function uiText(ctx, txt, x, y, S, color, alpha) {
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.fillStyle = color;
+  ctx.fillText(txt, Math.round(x * S), Math.round(y * S));
+}
+// Testo con ombra netta (1px logico): look pixel senza sgranare.
+function uiTextShadow(ctx, txt, x, y, S, color, alpha) {
+  ctx.globalAlpha = (alpha == null ? 1 : alpha) * 0.85;
+  ctx.fillStyle = C.black;
+  ctx.fillText(txt, Math.round(x * S) + S, Math.round(y * S) + S);
   ctx.globalAlpha = alpha == null ? 1 : alpha;
   ctx.fillStyle = color;
   ctx.fillText(txt, Math.round(x * S), Math.round(y * S));
@@ -3614,21 +3691,19 @@ function uiRect(ctx, x, y, w, h, S, color, alpha) {
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
 
-  // lirica di sfondo (atmosfera)
-  if (o.lyricLines) drawLyricBackdrop(ctx, o.lyricLines, o.pos || 0, o.time, W, H, S);
+  // lirica di sfondo (atmosfera) — PIXEL ART, non nitida
+  if (o.lyricLines) { /* disegnata nella scena, non qui */ }
 
   // iscrizione in alto a sinistra (titolo brano)
   uiFont(ctx, 8, S);
-  uiText(ctx, o.inscription || '', 12, 13, S, C.black);
-  uiText(ctx, o.inscription || '', 11, 12, S, C.redHot);
-  uiRect(ctx, 11, 15, (o.inscription || '').length * 4.8, 0.6, S, C.red, 0.9);
+  uiTextShadow(ctx, o.inscription || '', 12, 13, S, C.redHot, 1);
+  uiRect(ctx, 12, 15, (o.inscription || '').length * 4.8, 0.6, S, C.red, 0.9);
 
   // messaggio evento (basso centro)
   if (o.threatMsg) {
-    uiFont(ctx, 9, S);
+    uiFont(ctx, 8, S);
     ctx.textAlign = 'center';
-    uiText(ctx, o.threatMsg.toUpperCase(), W / 2 + 1.2, H - 30 + 1.2, S, C.black, 0.9);
-    uiText(ctx, o.threatMsg.toUpperCase(), W / 2, H - 30, S, C.redHot, 1);
+    uiTextShadow(ctx, o.threatMsg.toUpperCase(), W / 2, H - 30, S, C.redHot, 1);
     ctx.textAlign = 'left';
   }
 
@@ -3640,10 +3715,17 @@ function uiRect(ctx, x, y, w, h, S, color, alpha) {
     uiRect(ctx, 0, H * 0.40, W, 30, S, C.black, 0.72 * Math.min(1, k * 3));
     uiRect(ctx, 0, H * 0.40, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
     uiRect(ctx, 0, H * 0.40 + 29, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
-    uiFont(ctx, 20, S);
+    uiFont(ctx, 17, S);
     ctx.textAlign = 'center';
-    uiText(ctx, o.chapterTitle, W / 2 + 1 - slide, H * 0.40 + 21 + 1, S, C.black, Math.min(1, k * 2.5) * 0.9);
-    uiText(ctx, o.chapterTitle, W / 2 - slide, H * 0.40 + 21, S, C.redHot, Math.min(1, k * 2.5));
+    uiTextShadow(ctx, o.chapterTitle, W / 2 - slide, H * 0.40 + 21, S, C.redHot, Math.min(1, k * 2.5));
+    ctx.textAlign = 'left';
+  }
+
+  // prompt incontro (sopra la barra bassa)
+  if (o.prompt) {
+    uiFont(ctx, 8, S);
+    ctx.textAlign = 'center';
+    uiTextShadow(ctx, o.prompt, W / 2, H - 20, S, C.white, o.promptK || 1);
     ctx.textAlign = 'left';
   }
 
@@ -3667,6 +3749,43 @@ function uiRect(ctx, x, y, w, h, S, color, alpha) {
     uiText(ctx, 'TI AFFERRA — MARTELLA!', W / 2 + 1, by - 7 + 1, S, C.black, 0.9);
     uiText(ctx, 'TI AFFERRA — MARTELLA!', W / 2, by - 7, S, C.white, 1);
     ctx.textAlign = 'left';
+  }
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// Lirica di sfondo in PIXEL ART (coerente col mondo, non nitida): riga soffusa
+// che fluttua e si rinnova quando la canzone passa alla frase successiva.function drawLyricsPixel(ctx, lines, pos, time, W, H) {
+  if (!lines || !lines.length) return;
+  let idx = 0;
+  for (let i = 0; i < lines.length; i++) if (pos >= lines[i][0]) idx = i;
+  const cur = lines[idx];
+  const text = cur[2] != null ? cur[2] : cur[1];
+  const prev = idx > 0 ? (lines[idx - 1][2] != null ? lines[idx - 1][2] : lines[idx - 1][1]) : null;
+  const size = Math.max(8, Math.min(14, Math.floor((W * 0.92) / Math.max(1, text.length * 0.6))));
+  const y = H * 0.30 + Math.sin(time * 0.7) * 2;
+  ctx.save();
+  ctx.textAlign = 'center';
+  if (prev) drawVert(ctx, prev, W / 2, y - 14, time, 0.10, 8, 0);
+  // banda scura soffusa per staccare
+  ctx.globalAlpha = 0.20;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(0, y - size, W, size + 8);
+  // riga attiva, tremolio lettera per lettera, tenue (atmosfera)
+  const cw = size * 0.6;
+  let x = W / 2 - (text.length * cw) / 2;
+  ctx.font = size + 'px monospace';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const wob = Math.sin(time * 1.1 + i * 0.35) * 0.8;
+    if (ch !== ' ') {
+      ctx.globalAlpha = 0.30;
+      ctx.fillStyle = C.black; ctx.fillText(ch, x + 1, y + wob + 1);
+      ctx.globalAlpha = 0.34;
+      ctx.fillStyle = i % 7 === 0 ? C.redHot : C.red;
+      ctx.fillText(ch, x, y + wob);
+    }
+    x += cw;
   }
   ctx.restore();
   ctx.textAlign = 'left';
@@ -3731,6 +3850,7 @@ function uiRect(ctx, x, y, w, h, S, color, alpha) {
   ctx.restore();
   ctx.textAlign = 'left';
 }
+
 
 
 
@@ -3967,6 +4087,9 @@ function updatePrompt() {
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
+  // lirica estetica in PIXEL ART (coerente col mondo)
+  const kl = KARAOKE[lv.girone.audioId];
+  if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position(), time, VIEW_W, VIEW_H);
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
@@ -3978,17 +4101,17 @@ function drawWorld(lv, camY) {
 // Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
 const uctx = canvas.getContext('2d');
 function drawOverlay() {
-  const lyr = level ? KARAOKE[level.girone.audioId] : null;
   const pos = audio.position();
   drawUIOverlay(uctx, SCALE, VIEW_W, VIEW_H, {
     inscription: level ? level.girone.inscription.text : '',
     threatMsg: level ? level.threatMsg : '',
     chapterT: level ? level.chapter : 0,
     chapterTitle: level ? level.girone.title : '',
+    prompt: promptEl ? promptEl.textContent : '',
+    promptK: promptEl && promptEl.classList.contains('show') ? 1 : 0,
     flow: flowRatio(juice),
     beat: juice.beat,
     mash,
-    lyricLines: lyr,
     pos,
     time,
   });
@@ -4271,6 +4394,7 @@ if (_colParam) {
 window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb };
 
 loop();
+
 
 
 
