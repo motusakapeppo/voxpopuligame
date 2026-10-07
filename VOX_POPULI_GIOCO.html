@@ -167,6 +167,8 @@ function createInput() {
     // Arrampicata: un tocco = un passo, ma TENENDO premuto l'azione si ripete.
     // (Prima tenere la freccia non faceva nulla: sembrava rotto.)
     climbActions() {
+      // T9: se il giocatore è stordito (terremoto), l'input è congelato per un attimo.
+      if (api.frozen) return { left: false, right: false, up: false, down: false };
       const out = {
         left: api.consume('ArrowLeft') || api.consume('KeyA'),
         right: api.consume('ArrowRight') || api.consume('KeyD'),
@@ -5046,6 +5048,23 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
+  // T9: acqua che sale (girone 11) — copre la scena sotto il livello raggiunto.
+  const wl = lv.fxState && lv.fxState.water;
+  if (wl && wl > 0) {
+    const cl = lv.climb;
+    const wr = Math.min(cl.nRows - 1, Math.round(wl));
+    const wy = Math.round(cl.yOf(wr) - camY);
+    if (wy < VIEW_H) {
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = C.redDeep;           // acqua: rosso profondo
+      ctx.fillRect(0, Math.max(0, wy), VIEW_W, VIEW_H - Math.max(0, wy));
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = C.redHot;            // cresta dell'acqua
+      ctx.fillRect(0, Math.max(0, wy), VIEW_W, 1);
+      ctx.restore();
+    }
+  }
 }
 
 // Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
@@ -5087,6 +5106,14 @@ function playingPost(dt, glitch) {
   post.vignette = 0.40 - beat * 0.06;
   post.flash = juflash();
   post.glitch = Math.max(glitch || 0, juice.shake > 3 ? 0.5 : 0) * 0.9;
+  // T9: gli effetti dei pericoli modulano il post (varietà visiva per girone).
+  const st9 = level && level.fxState;
+  if (st9) {
+    post.glitch = Math.max(post.glitch, st9.glitch);       // appiglio finto / illusione
+    post.vignette = Math.min(0.7, post.vignette + st9.dim * 0.5);  // sonno: scurisce
+    post.chroma = Math.min(0.8, post.chroma + st9.dim * 0.3);       // dormiente: sbava
+    if (st9.stun > 0.01) post.glitch = Math.max(post.glitch, 0.5);  // terremoto: strappa
+  }
   return post;
 }
 function juflash() { return Math.max(0, juice.flash); }
@@ -5290,9 +5317,21 @@ function loop() {
   // moduli tematici (vento, tuoni, dim, ecc.) emettono eventi visivi
   const pos = climbPos(cl);
   const fakeP = { x: pos.tx - 4, y: pos.ty, w: 8, h: 12, vx: 0, vy: 0, onGround: true };
-  const mctx = { player: fakeP, world: { bodies: level.bodies, gravity: 0 }, time, events: level.events };
+  // T9: gli effetti osservabili dei pericoli/modificatori alimentano il rendering.
+  const teff = threatEffects(level.threats);
+  const mctx = { player: fakeP, world: { bodies: level.bodies, gravity: 0 }, time, events: level.events,
+    effects: level.modsFx || (level.modsFx = { dim: 0, flicker: 0, water: 0, elapsed: 0, verlet: false }) };
   for (let i = 0; i < g.modifiers.length; i++)
     applyModifier(g.modifiers[i], mctx, sdt, level.modStates[i]);
+  // fonde gli stati: sonno (dim), glitch (flicker/decoy), acqua che sale, stordimento.
+  level.fxState = {
+    dim: Math.max(mctx.effects.dim, teff.dim),
+    glitch: Math.max(mctx.effects.flicker, teff.decoy > 0 ? 0.4 : 0),
+    water: Math.max(mctx.effects.water, teff.water),
+    stun: teff.stun,
+  };
+  // il terremoto stordisce: congela l'input per `stun` secondi (già in teff)
+  if (teff.stun > 0.01) input.frozen = true; else input.frozen = false;
 
   spawnFromEvents(level.fx, level.events, cameraY, pos.tx);
   stepEffects(level.fx, sdt, cameraY, VIEW_H);
