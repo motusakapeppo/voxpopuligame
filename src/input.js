@@ -34,6 +34,8 @@ export function createInput() {
     // Arrampicata: un tocco = un passo, ma TENENDO premuto l'azione si ripete.
     // (Prima tenere la freccia non faceva nulla: sembrava rotto.)
     climbActions() {
+      // T9: se il giocatore è stordito (terremoto), l'input è congelato per un attimo.
+      if (api.frozen) return { left: false, right: false, up: false, down: false };
       const out = {
         left: api.consume('ArrowLeft') || api.consume('KeyA'),
         right: api.consume('ArrowRight') || api.consume('KeyD'),
