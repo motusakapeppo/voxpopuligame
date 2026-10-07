@@ -249,6 +249,72 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// RAGDOLL — disegna una figura del motore ragdoll (ragdoll.js) come sagoma
+// umana leggibile: le 5 particelle (bacino, spalle, testa, 2 piedi) diventano
+// testa + tronco + 2 gambe; le braccia sono un gesto deterministico legato
+// alla moto (pendolano se la figura vola, si abbandonano se dorme).
+// Solo fillRect/line pixel: niente arc, coordinate intere, spessore 1-2.
+// ---------------------------------------------------------------------------
+export function drawRagdoll(ctx, fig, opts = {}) {
+  const {
+    h = 14, color = C.red, thickness = 1, alpha = 1,
+    dust = null,   // opzionale: {x,y} punto d'impatto per un lampo di polvere
+  } = opts;
+  const parts = fig && fig.parts;
+  if (!parts || parts.length < 5) return;
+  const [hip, sh, head, footL, footR] = parts;
+  if (!Number.isFinite(hip.x) || !Number.isFinite(head.y)) return;
+  const t = Math.max(1, Math.min(2, thickness));
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+
+  // gambe: bacino → piedi (una linea ciascuna, spessore pieno)
+  line(ctx, hip.x, hip.y, footL.x, footL.y, t);
+  line(ctx, hip.x, hip.y, footR.x, footR.y, t);
+  // piedi: tacca di 2px sotto ogni caviglia
+  ctx.fillRect(Math.round(footL.x) - 1, Math.round(footL.y), 2, 1);
+  ctx.fillRect(Math.round(footR.x) - 1, Math.round(footR.y), 2, 1);
+
+  // tronco bacino → spalle (spessore +1: il corpo)
+  line(ctx, hip.x, hip.y, sh.x, sh.y, t + 1);
+  // collo + testa (disco pixel, mai arc)
+  const hr = Math.max(1, Math.round(h * 0.09));
+  disc(ctx, head.x, head.y, hr);
+
+  // braccia: dal punto spalle, due segmenti che pendono secondo la moto.
+  // Direzione = perpendicolare al torso, oscillante con la velocità del
+  // bacino: in volo sventolano in alto, a riposo pendono giù.
+  const vx = hip.x - hip.px, vy = hip.y - hip.py;
+  const speed = Math.sqrt(vx * vx + vy * vy);
+  const swing = Math.min(1, speed / 2.5);          // 0 = fermo, 1 = volo
+  const tx = sh.x - hip.x, ty = sh.y - hip.y;
+  const tl = Math.sqrt(tx * tx + ty * ty) || 1;
+  const ux = tx / tl, uy = ty / tl;                // asse torso (hip→sh)
+  const armLen = h * 0.30;
+  // angolo base: braccia lungo il torso verso il basso, aperte da `swing`
+  const baseA = Math.atan2(uy, ux) + PI / 2;       // "giù" rispetto al torso
+  for (const side of [-1, 1]) {
+    const wob = Math.sin((hip.x + hip.y) * 1.7 + side) * 0.35 * (1 - swing);
+    const a = baseA + side * (0.5 + swing * 1.1) + wob;
+    const hx = sh.x + Math.cos(a) * armLen;
+    const hy = sh.y + Math.sin(a) * armLen;
+    line(ctx, sh.x, sh.y, hx, hy, t);
+    ctx.fillRect(Math.round(hx) - 1, Math.round(hy) - 1, 1, 1);
+  }
+
+  // lampo d'impatto: 1 frame di polvere al punto passato (deterministico)
+  if (dust && Number.isFinite(dust.x) && Number.isFinite(dust.y)) {
+    ctx.fillStyle = C.redHot;
+    ctx.fillRect(Math.round(dust.x) - 2, Math.round(dust.y) - 1, 5, 1);
+    ctx.fillRect(Math.round(dust.x) - 1, Math.round(dust.y) - 2, 3, 3);
+  }
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
 // FIGURA — disegna il corpo intero a partire dalla posa.
 // Opzioni extra: detail (ciuffo/chele/brandelli), stretch (squash&stretch
 // -1..1, 0 = neutro), rim (luce di bordo).

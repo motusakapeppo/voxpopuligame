@@ -309,7 +309,7 @@ function loop() {
         supported: Math.max(0, loyalty + 4) });
       const jp = new URLSearchParams(location.search).get('collapse');
       if (jp && +jp >= 0) { collapse.phaseIndex = Math.min(4, +jp); collapse.t = 0;
-        collapse.phase = ['zoomOut','revealBodies','flip','fall','circle'][collapse.phaseIndex]; }
+        collapse.phase = ['zoomOut','revealBodies','crack','collapse','settle'][collapse.phaseIndex]; }
       audio.stop();
     }
     stepCollapse(collapse, 0.016);
