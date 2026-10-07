@@ -173,8 +173,9 @@ export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const shLx = shX - shHalf, shRx = shX + shHalf;
   const headX = shX + leanX * 0.6, headY = shY - h * 0.16;
   const hr = Math.max(1, Math.round(h * 0.085));
-  // portata del braccio: PROPORZIONATA al corpo (non più spropositata).
-  const up = h * 0.62, lo = h * 0.62;
+  // portata del braccio: CORTA e proporzionata (0.5h per segmento). Braccia
+  // corte = gomiti molto piegati = posa da arrampicata credibile.
+  const up = h * 0.5, lo = h * 0.5;
   // leggera alternanza delle anche (dondolio) per il ritmo di salita
   const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
   // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.

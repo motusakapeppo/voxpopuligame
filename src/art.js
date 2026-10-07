@@ -128,7 +128,8 @@ export function drawVignette(ctx, W, H) {
 // PARETE — la piramide di CORPI. Non mensole: una massa continua che si
 // restringe salendo, con le teste/prese che emergono. Il giocatore la scala.
 // ---------------------------------------------------------------------------
-export function drawWall(ctx, g, climb, cameraY, time, W, H) {
+export function drawWall(ctx, g, climb, cameraY, time, W, H, beat) {
+  const bt = Number.isFinite(beat) ? beat : 0;
   const cx = climb.cx, rows = climb.rows, nRows = climb.nRows;
   const stepY = rows.length > 1 ? Math.abs(rows[1] - rows[0]) : 24;
   // 1) massa della piramide: fascia per fascia, si restringe salendo
@@ -139,11 +140,11 @@ export function drawWall(ctx, g, climb, cameraY, time, W, H) {
     for (let c = 0; c < climb.cols.length; c++) if (climb.has(c, r)) { if (lo === null) lo = c; hi = c; }
     if (lo === null) continue;
     const x0 = climb.xOf(lo) - 18, x1 = climb.xOf(hi) + 18;
-    // corpo della massa (scuro), con bordo superiore acceso
-    ctx.globalAlpha = 0.5;
+    // corpo della massa (scuro), con bordo superiore acceso. Pulsa a tempo.
+    ctx.globalAlpha = 0.46 + 0.10 * bt;
     ctx.fillStyle = C.redDeep;
     ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), Math.round(stepY + 4));
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = 0.6 + 0.3 * bt;
     ctx.fillStyle = C.redDark;
     ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), 1);
     ctx.globalAlpha = 1;
@@ -160,7 +161,7 @@ export function drawWall(ctx, g, climb, cameraY, time, W, H) {
       const st = Math.sin(ph * 1.3) > 0.5 ? 'idle' : 'climb';
       // schiacciamento verso il basso sotto la presa (squash)
       const stretch = -press * 0.4;
-      drawFigure(ctx, fx, y + stepY * 0.7 + press * 2, { h: 11, color: C.redDeep, state: st, phase: ph, alpha: 0.5, stretch, detail: press > 0.5 });
+      drawFigure(ctx, fx, y + stepY * 0.7 + press * 2, { h: 11, color: C.redDeep, state: st, phase: ph, alpha: 0.5 + 0.12 * bt, stretch, detail: press > 0.5 });
     }
     // 2) GLI APPIGLI: teste che emergono dove il giocatore può aggrapparsi
     for (let c = 0; c < climb.cols.length; c++) {
@@ -168,11 +169,11 @@ export function drawWall(ctx, g, climb, cameraY, time, W, H) {
       const hx = climb.xOf(c), hy = y + 1;
       const ph = time * 1.6 + (hx + r * 13) * 0.1;
       const bob = Math.round(Math.sin(ph) * 0.6);
-      // testa/nodo luminoso della presa
-      ctx.globalAlpha = 0.9;
+      // testa/nodo luminoso della presa: pulsa a tempo
+      ctx.globalAlpha = 0.8 + 0.2 * bt;
       ctx.fillStyle = C.redDark;
       ctx.fillRect(Math.round(hx) - 1, hy + bob, 3, 3);
-      ctx.fillStyle = depthRed(0.35 + 0.3 * (0.5 + 0.5 * Math.sin(ph * 0.8)));
+      ctx.fillStyle = depthRed(0.35 + 0.3 * (0.5 + 0.5 * Math.sin(ph * 0.8)) + 0.2 * bt);
       ctx.fillRect(Math.round(hx), hy + 1 + bob, 1, 1);
       ctx.globalAlpha = 1;
     }
@@ -276,6 +277,29 @@ export function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
   const feetY = y + 6;
 
   if (e.resolved) {
+    // REAZIONE: per ~0.8s dopo la scelta, la figura mostra chiaramente cosa è
+    // successo (ti ha tirato su / è stata spinta giù).
+    if (e.reactT && e.reactT > 0) {
+      const rk = Math.min(1, (0.8 - e.reactT) / 0.3);   // 0→1 rapido
+      if (e.reactVerb === 'tendi') {
+        // ti tende la mano e ti tira: figura che si allunga verso l'alto
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        drawFigure(ctx, x, feetY - rk * 6, { h: 18, color: C.redHot, state: 'tendi', phase: time * 4, detail: true, rim: true });
+        // scia verso di te
+        ctx.fillStyle = C.redHot;
+        for (let i = 1; i <= 4; i++) { ctx.globalAlpha = 0.6 * (1 - i / 5); ctx.fillRect(Math.round(x - i * 4), Math.round(feetY - 12 - rk * 6), 2, 2); }
+        ctx.restore();
+      } else {
+        // spinto giù: scivola verso il basso e svanisce
+        const slide = rk * 26;
+        ctx.save();
+        ctx.globalAlpha = 0.9 * (1 - rk * 0.6);
+        drawFigure(ctx, x, feetY + slide, { h: 18, color: C.redDark, state: 'fall', phase: time * 5, detail: false });
+        ctx.restore();
+      }
+      return;
+    }
     const pushed = e.verb === 'spingi';
     if (pushed) {
       const slide = Math.min(40, ((time * 30) % 60));
@@ -452,12 +476,13 @@ export function drawMash(ctx, m, W, H) {
 // SKYLINE — strati di silhouette in parallasse: danno profondità e scala alla
 // salita. Un palazzo/pendio alla volta, dal più lontano al più vicino.
 // ---------------------------------------------------------------------------
-export function drawSkyline(ctx, audioId, camY, time, W, H) {
+export function drawSkyline(ctx, audioId, camY, time, W, H, beat) {
+  const bt = Number.isFinite(beat) ? beat : 0;
   const seed = String(audioId || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 97, 7);
   const layers = [
-    { f: 0.12, col: C.redDeep, base: 0.86, h: 22, step: 26, al: 0.5 },
-    { f: 0.25, col: C.redDeep, base: 0.95, h: 34, step: 34, al: 0.34 },
-    { f: 0.42, col: C.redDark, base: 1.05, h: 46, step: 44, al: 0.2 },
+    { f: 0.12, col: C.redDeep, base: 0.86, h: 22, step: 26, al: 0.5 + 0.08 * bt },
+    { f: 0.25, col: C.redDeep, base: 0.95, h: 34, step: 34, al: 0.34 + 0.06 * bt },
+    { f: 0.42, col: C.redDark, base: 1.05, h: 46, step: 44, al: 0.2 + 0.05 * bt },
   ];
   ctx.save();
   for (let li = 0; li < layers.length; li++) {
@@ -614,6 +639,118 @@ export function drawFlow(ctx, ratio, beat, W, H) {
   ctx.restore();
 }
 
+// ============================================================================
+// OVERLAY UI — testo a RISOLUZIONE PIENA (nitido, non sgranato).
+// Si disegna DOPO la scena pixel art, sul canvas visibile, scalando le
+// coordinate logiche per S. I font sono veri (non pixel art), quindi leggibili.
+// ============================================================================
+function uiFont(ctx, size, S) { ctx.font = Math.round(size * S) + 'px "Consolas","Courier New",monospace'; }
+function uiText(ctx, txt, x, y, S, color, alpha) {
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.fillStyle = color;
+  ctx.fillText(txt, Math.round(x * S), Math.round(y * S));
+}
+function uiRect(ctx, x, y, w, h, S, color, alpha) {
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x * S), Math.round(y * S), Math.round(w * S), Math.round(h * S));
+}
+
+// Lirica estetica di SFONDO: una riga grande, soffusa, che fluttua; si rinnova
+// quando la canzone passa alla frase successiva. Non è karaoke: è atmosfera.
+export function drawLyricBackdrop(ctx, lines, pos, time, W, H, S) {
+  if (!lines || !lines.length) return;
+  let idx = 0;
+  for (let i = 0; i < lines.length; i++) if (pos >= lines[i][0]) idx = i;
+  const text = lines[idx][2] != null ? lines[idx][2] : lines[idx][1];
+  const prev = idx > 0 ? (lines[idx - 1][2] != null ? lines[idx - 1][2] : lines[idx - 1][1]) : null;
+  uiFont(ctx, 20, S);
+  ctx.save();
+  ctx.textAlign = 'center';
+  // riga precedente, fantasma in alto
+  if (prev) uiText(ctx, prev, W / 2, H * 0.20 - 6, S, C.redDeep, 0.16);
+  // riga attiva: ondeggia leggermente, lettera per lettera
+  const y = H * 0.30 + Math.sin(time * 0.7) * 2;
+  const total = ctx.measureText(text).width;
+  let x = W / 2 * S - total / 2;
+  uiFont(ctx, 20, S);
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const wob = Math.sin(time * 1.1 + i * 0.35) * 1.5;
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = C.red;
+    ctx.fillText(ch, x, (y + wob) * S);
+    x += ctx.measureText(ch).width;
+  }
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// Disegna TUTTO il testo/HUD a risoluzione piena.
+export function drawUIOverlay(ctx, S, W, H, o) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+
+  // lirica di sfondo (atmosfera)
+  if (o.lyricLines) drawLyricBackdrop(ctx, o.lyricLines, o.pos || 0, o.time, W, H, S);
+
+  // iscrizione in alto a sinistra (titolo brano)
+  uiFont(ctx, 8, S);
+  uiText(ctx, o.inscription || '', 12, 13, S, C.black);
+  uiText(ctx, o.inscription || '', 11, 12, S, C.redHot);
+  uiRect(ctx, 11, 15, (o.inscription || '').length * 4.8, 0.6, S, C.red, 0.9);
+
+  // messaggio evento (basso centro)
+  if (o.threatMsg) {
+    uiFont(ctx, 9, S);
+    ctx.textAlign = 'center';
+    uiText(ctx, o.threatMsg.toUpperCase(), W / 2 + 1.2, H - 30 + 1.2, S, C.black, 0.9);
+    uiText(ctx, o.threatMsg.toUpperCase(), W / 2, H - 30, S, C.redHot, 1);
+    ctx.textAlign = 'left';
+  }
+
+  // chapter card (banda centrale)
+  if (o.chapterT > 0) {
+    const k = 1 - Math.min(1, o.chapterT / 1.4);
+    const ease = 1 - Math.pow(1 - Math.min(1, k * 2.2), 3);
+    const slide = (1 - ease) * 40;
+    uiRect(ctx, 0, H * 0.40, W, 30, S, C.black, 0.72 * Math.min(1, k * 3));
+    uiRect(ctx, 0, H * 0.40, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
+    uiRect(ctx, 0, H * 0.40 + 29, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
+    uiFont(ctx, 20, S);
+    ctx.textAlign = 'center';
+    uiText(ctx, o.chapterTitle, W / 2 + 1 - slide, H * 0.40 + 21 + 1, S, C.black, Math.min(1, k * 2.5) * 0.9);
+    uiText(ctx, o.chapterTitle, W / 2 - slide, H * 0.40 + 21, S, C.redHot, Math.min(1, k * 2.5));
+    ctx.textAlign = 'left';
+  }
+
+  // flow meter (barra in basso)
+  if (o.flow > 0.01) {
+    const bw = 80, bh = 3, bx = W / 2 - bw / 2, by = H - 16;
+    uiRect(ctx, bx - 1, by - 1, bw + 2, bh + 2, S, C.black, 0.5);
+    uiRect(ctx, bx, by, bw * o.flow, bh, S, o.flow > 0.66 ? C.redHot : C.red, 0.55 + 0.45 * (o.beat || 0));
+  }
+
+  // mash (barra della lotta)
+  if (o.mash && (o.mash.active || o.mash.won || o.mash.lost)) {
+    const bw = 120, bh = 8, bx = W / 2 - bw / 2, by = H - 40;
+    uiRect(ctx, bx - 2, by - 2, bw + 4, bh + 4, S, C.black, 0.85);
+    uiRect(ctx, bx, by, bw, bh, S, C.redDeep, 1);
+    const r = Math.max(0, Math.min(1, o.mash.progress));
+    uiRect(ctx, bx, by, bw * r, bh, S, r > 0.66 ? C.redHot : C.redBright, 0.7 + 0.3 * Math.abs(Math.sin((o.mash.hits || 0) * 1.1)));
+    uiRect(ctx, bx + bw - 2, by - 2, 2, bh + 4, S, C.white, 0.9);
+    uiFont(ctx, 9, S);
+    ctx.textAlign = 'center';
+    uiText(ctx, 'TI AFFERRA — MARTELLA!', W / 2 + 1, by - 7 + 1, S, C.black, 0.9);
+    uiText(ctx, 'TI AFFERRA — MARTELLA!', W / 2, by - 7, S, C.white, 1);
+    ctx.textAlign = 'left';
+  }
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
 // ---------------------------------------------------------------------------
 // ISCRIZIONE
 // ---------------------------------------------------------------------------
@@ -652,15 +789,28 @@ export function drawTitle(ctx, W, H, time) {
   const grad = ctx.createLinearGradient(0, 0, 0, H * 0.5);
   grad.addColorStop(0, 'rgba(0,0,0,0.95)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H * 0.5);
+}
 
-  ctx.font = '20px monospace';
+// Testo del titolo a RISOLUZIONE PIENA (nitido).
+export function drawTitleText(ctx, W, H, time, S) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.textAlign = 'center';
+  // VOX POPULI con ombra e leggerissima pulsazione
+  uiFont(ctx, 26, S);
+  const pulse = 1 + Math.sin(time * 2) * 0.01;
+  ctx.save();
+  ctx.translate(W / 2 * S, 40 * S); ctx.scale(pulse, pulse); ctx.translate(-W / 2 * S, -40 * S);
+  uiText(ctx, 'VOX POPULI', W / 2 + 1.5, 40 + 1.5, S, C.black, 0.95);
+  uiText(ctx, 'VOX POPULI', W / 2, 40, S, C.redHot, 1);
+  ctx.restore();
+  uiFont(ctx, 9, S);
+  uiText(ctx, 'I  T R E D I C I  G I R O N I', W / 2, 53, S, C.red, 0.9);
+  uiRect(ctx, W / 2 - 40, 57, 80, 0.6, S, C.red, 0.8);
+  if (Math.sin(time * 3) > -0.3) uiText(ctx, 'premi SPAZIO  ·  tocca ▲  per iniziare', W / 2, 74, S, C.white, 1);
+  uiFont(ctx, 8, S);
+  uiText(ctx, 'MOTUS — concept album · 13 tracce', W / 2, 88, S, C.redDark, 1);
+  ctx.restore();
   ctx.textAlign = 'left';
-  ctx.fillStyle = C.black;  ctx.fillText('VOX POPULI', 93, 45);
-  ctx.fillStyle = C.redHot; ctx.fillText('VOX POPULI', 92, 44);
-  ctx.font = '7px monospace';
-  ctx.fillStyle = C.red;    ctx.fillText('I  T R E D I C I  G I R O N I', 122, 58);
-  ctx.fillRect(122, 62, 76, 1);
-  if (Math.sin(time * 3) > -0.3) { ctx.fillStyle = C.white; ctx.fillText('premi SPAZIO  ·  tocca ▲  per iniziare', 44, 78); }
-  ctx.fillStyle = C.redDark; ctx.fillText('MOTUS — concept album · 13 tracce', 68, 92);
 }
 

@@ -8,7 +8,7 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline } from './art.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText } from './art.js';
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup } from './threats.js';
@@ -170,6 +170,8 @@ function doVerb(verb) {
   if (isAutoKind(kind)) return;   // helper/grabber non si scelgono con Z/X
   const eff = resolveEncounter(level.active, verb);
   const cl = level.climb;
+  level.active.reactT = 0.8;                    // animazione di reazione del PNG
+  level.active.reactVerb = verb;
   // l'esito sposta la scalata su/giù
   if (eff.dy) moveHands(cl, Math.round(-eff.dy / 24));
   loyalty += eff.loyal;
@@ -206,24 +208,32 @@ function updatePrompt() {
 
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
-  if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
-  // karaoke sincronizzato all'audio (se disponibile), altrimenti liriche a tempo interno
-  const pos = audio.position();
-  if (!SKIP.has('lyrics')) {
-    if (KARAOKE[lv.girone.audioId] && audio.currentTrack() === lv.girone.audioId && pos > 0.05)
-      drawKaraoke(ctx, KARAOKE[lv.girone.audioId], pos, time, VIEW_W, VIEW_H);
-    else
-      drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
-  }
-  if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
+  if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
+  if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
-  drawInscription(ctx, lv.girone.inscription.text, VIEW_W);
-  drawThreatMsg(ctx, lv.threatMsg, VIEW_W, VIEW_H);
-  drawFlow(ctx, flowRatio(juice), juice.beat, VIEW_W, VIEW_H);
+}
+
+// Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
+const uctx = canvas.getContext('2d');
+function drawOverlay() {
+  const lyr = level ? KARAOKE[level.girone.audioId] : null;
+  const pos = audio.position();
+  drawUIOverlay(uctx, SCALE, VIEW_W, VIEW_H, {
+    inscription: level ? level.girone.inscription.text : '',
+    threatMsg: level ? level.threatMsg : '',
+    chapterT: level ? level.chapter : 0,
+    chapterTitle: level ? level.girone.title : '',
+    flow: flowRatio(juice),
+    beat: juice.beat,
+    mash,
+    lyricLines: lyr,
+    pos,
+    time,
+  });
 }
 
 // Post-processing con JUICE: battito a tempo, flow, flash/shake, vignettatura.
@@ -269,13 +279,16 @@ function loop() {
   if (state.phase === 'title') {
     showCtaButton(false); setPrompt('');
     renderer.render(() => drawTitle(ctx, VIEW_W, VIEW_H, time), { post: applyPost('title') });
+    // testo del titolo nitido (full-res), sopra la scena
+    uctx.setTransform(1, 0, 0, 1, 0, 0);
+    drawTitleText(uctx, VIEW_W, VIEW_H, time, SCALE);
     if (input.consumeJump()) { state = advance(state, 'start'); level = loadGirone(state.gironeIndex); }
     return;
   }
   if (state.phase === 'cta') {
     showCtaButton(true); setPrompt('');
     if (!collapse) collapse = createCollapse({ bodies: level ? level.bodies : [], viewW: VIEW_W, viewH: VIEW_H, supported: Math.max(0, loyalty + 4) });
-    renderer.render(() => { drawCollapse(ctx, collapse, time); drawCta(ctx, VIEW_W, VIEW_H, time); }, { post: applyPost('cta') });
+    renderer.render(() => { drawCollapse(ctx, collapse, time); drawCta(ctx, VIEW_W, VIEW_H, time); }, { post: applyPost('cta') }); drawOverlay();
     return;
   }
   if (state.phase === 'collapse') {
@@ -350,11 +363,13 @@ function loop() {
       ctx.save(); ctx.translate(msh.x, msh.y);
       drawWorld(level, cameraY);
       ctx.restore();
-      drawChapterCard(ctx, g.title, level.chapter, VIEW_W, VIEW_H);
-      drawMash(ctx, mash, VIEW_W, VIEW_H, time);
     }, { post: playingPost(dt, 0) });
+    drawOverlay();
     return;
   }
+
+  // reazioni degli incontri (timer animazione)
+  for (const e of level.encounters) if (e.reactT > 0) e.reactT -= sdt;
 
   // L'incontro attivo FERMA il corpo: finché non scegli (o l'auto si risolve).
   level.active = encounterAt(cl, level.encounters);
@@ -476,12 +491,11 @@ function loop() {
     drawWorld(level, cameraY);
     ctx.restore();
     if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
-    drawChapterCard(ctx, g.title, level.chapter, VIEW_W, VIEW_H);
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
     ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
-    drawMash(ctx, mash, VIEW_W, VIEW_H);
   }, { post: playingPost(dt, 0) });
+  drawOverlay();
 }
 
 // --- debug: ?g=NN ---
@@ -499,6 +513,9 @@ if (_colParam) {
 window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb };
 
 loop();
+
+
+
 
 
 

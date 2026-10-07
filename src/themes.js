@@ -263,7 +263,7 @@ function thmBaghdadFront(P, camY, time, W, H) {
 function thmHosonnoBack(P, camY, time, W, H) {
   P.rect(0, 0, W, H, C.black, 1);
   const darkH = (time * 10) % (H + 60);
-  P.rect(0, 0, W, darkH, C.black, 0.85);
+  P.rect(0, 0, W, darkH, C.black, 0.45);
   P.rect(0, darkH, W, 2, C.redDeep, 0.5);
   for (let s = 0; s < 2; s++) {
     const dir = s === 0 ? 1 : -1;
@@ -280,7 +280,7 @@ function thmHosonnoBack(P, camY, time, W, H) {
   for (let i = 0; i < 4; i++) P.rect(W - 54 + i * 5, 30 + i * 8, 1, 24, C.redMid, 0.6);
 }
 function thmHosonnoFront(P, camY, time, W, H) {
-  P.rect(0, 0, W, H, C.black, 0.35 + 0.15 * Math.sin(time * 1.5));
+  P.rect(0, 0, W, H, C.black, 0.16 + 0.08 * Math.sin(time * 1.5));
 }
 
 // 06 PRIMO POSTO — rivali che si scavalcano, serpenti, corsa.
@@ -421,7 +421,7 @@ function thmLfineBack(P, camY, time, W, H) {
   for (let i = 0; i < 8; i++) P.dot(i * 42, wl + Math.sin(time * 3 + i) * 2, C.redMid, 0.6);
   for (let i = 0; i < 5; i++) P.rect(16 + i * 70, wl + 8, 1, 12, C.redDark, 0.4);
   const sh = ((time * 4) % (H + 80)) - 40;
-  P.rect(0, 0, W, Math.max(0, sh), C.black, 0.9);
+  P.rect(0, 0, W, Math.max(0, sh), C.black, 0.5);
   P.rect(0, sh, W, 1, C.redDark, 0.5);
   for (let i = 0; i < 4; i++) {
     const fx = 50 + i * 70;
@@ -478,7 +478,7 @@ function thmOutroBack(P, camY, time, W, H) {
   drawFigure(P.ctx, W * 0.5, gy + 16, { h: 15, color: C.redBright, state: 'idle', phase: time * 1.2, alpha: 0.85, detail: true });
 }
 function thmOutroFront(P, camY, time, W, H) {
-  P.rect(0, 0, W, H, C.black, 0.22 + 0.16 * (0.5 + 0.5 * Math.sin(time * 0.6)));
+  P.rect(0, 0, W, H, C.black, 0.12 + 0.1 * (0.5 + 0.5 * Math.sin(time * 0.6)));
 }
 
 // default — braci su nero (ripiego).
@@ -531,3 +531,5 @@ export function drawThemeFront(ctx, audioId, camY, time, W, H, fx) {
     ctx.globalAlpha = 1;
   } catch { /* idem */ }
 }
+
+

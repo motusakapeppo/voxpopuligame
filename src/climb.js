@@ -7,9 +7,9 @@
 // ============================================================================
 import { STEP_Y, TOP_Y } from './gironi.js';
 
-export const REACH_TIME = 0.17;     // durata di un movimento di mano (s)
-export const HOLD_TIME = 0.20;      // tempo di recupero della presa dopo lo spostamento
-const HANG = 15;                    // quanto il bacino pende sotto le mani (corpo appeso)
+export const REACH_TIME = 0.11;     // durata di un movimento di mano (s) — più veloce
+export const HOLD_TIME = 0.14;      // recupero della presa dopo lo spostamento
+const HANG = 13;                    // quanto il bacino pende sotto le mani (corpo appeso)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
