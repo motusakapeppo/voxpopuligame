@@ -186,7 +186,7 @@ const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').spli
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('lyrics')) drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
-  if (!SKIP.has('wall')) drawWall(ctx, lv.girone, camY, time, VIEW_W, VIEW_H);
+  if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);

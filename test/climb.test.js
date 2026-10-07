@@ -33,11 +33,15 @@ test('la griglia di appigli si restringe salendo (piramide)', () => {
 test('il movimento di mano è animato nel tempo', () => {
   const cl = createClimb(GIRONI[0]);
   const before = climbPos(cl);
-  // avvia il movimento, poi avanza oltre metà del tempo di reach
+  // avvia il ciclo di salita, poi avanza finché la mano non si è spostata
   stepClimb(cl, { left: false, right: false, up: true, down: false }, 0.016);
-  for (let i = 0; i < 5; i++) stepClimb(cl, { left: false, right: false, up: false, down: false }, 0.016);
-  const mid = climbPos(cl);
-  assert.ok(mid.ly !== before.ly || mid.ty !== before.ty, 'le mani non si muovono');
+  let moved = false;
+  for (let i = 0; i < 30; i++) {
+    stepClimb(cl, { left: false, right: false, up: false, down: false }, 0.016);
+    const mid = climbPos(cl);
+    if (mid.ly !== before.ly || mid.ry !== before.ry || mid.tx !== before.tx) { moved = true; break; }
+  }
+  assert.ok(moved, 'le mani non si muovono');
 });
 
 test('climbProgress va da 0 (base) a 1 (cima)', () => {

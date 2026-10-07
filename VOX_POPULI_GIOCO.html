@@ -370,16 +370,16 @@ function validateGironi(list) {
 
 // --- climb.js ---
 // ============================================================================
-// CLIMB — arrampicata. Non si salta: ci si aggrappa alla parete di corpi.
-// Il giocatore ha DUE mani; ogni mano tiene un appiglio (la testa/le spalle
-// di un corpo). Input:
-//   ← →  : sposta la mano sinistra/destra all'appiglio adiacente
-//   ↑    : entrambe le mani salgono di una fila (ti tiri su)
-//   ↓    : entrambe le mani scendono di una fila
-// Il tronco pende al centro tra le mani. Tutto deterministico e testabile.
+// CLIMB — arrampicata a due mani. Ogni mano ha una PRESA (hold): quando è a 1
+// è ben piantata, a 0 è staccata e sta raggiungendo l'appiglio. Le mani si
+// muovono ALTERNATE (sinistra, destra, sinistra…): è un vero ciclo di scalata.
+// Il bacino pende sotto le mani e le segue con ritardo (dondolio), così il
+// corpo "tira su" invece di teletrasportarsi. Tutto deterministico e testabile.
 // ============================================================================
-const REACH_TIME = 0.12;     // durata di un movimento di mano (s)
-const HANG = 11;                    // quanto il corpo pende sotto le mani
+const REACH_TIME = 0.17;     // durata di un movimento di mano (s)
+const HOLD_TIME = 0.20;      // tempo di recupero della presa dopo lo spostamento
+const HANG = 12;                    // quanto il bacino pende sotto le mani
+const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
 function createClimb(g) {
@@ -393,30 +393,38 @@ function createClimb(g) {
   const holds = rows.map((_, r) => cols.map((x, c) => Math.abs(x - cx) <= halfWidth(r)));
 
   const has = (c, r) => c >= 0 && c < cols.length && r >= 0 && r < nRows && holds[r][c];
-  // lookup ROBUSTA: gli indici possono essere float durante l'animazione;
-  // arrotondiamo e clampiamo per non produrre mai `undefined` → NaN.
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
 
-  // partenza: in basso, mani al centro
   const c0 = 3;
+  // posizione iniziale del bacino = centro presa + HANG
+  const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
+  const by0 = yOf(0) + HANG;
   return {
     cols, rows, holds, has, xOf, yOf, nRows, cx,
     lh: { c: c0, r: 0 }, rh: { c: c0 + 1, r: 0 },
     lhA: { c: c0, r: 0 }, rhA: { c: c0 + 1, r: 0 },  // animati (float)
+    lhHold: 1, rhHold: 1,                            // presa 0..1
+    bx: bx0, by: by0, vby: 0,                        // bacino (animato)
+    lead: 'l',                                      // quale mano sale per prossima
     reach: 0, reachDur: REACH_TIME,
     from: null, to: null, which: null,
     reached: false,
   };
 }
 
-// Le posizioni correnti (interpolate) di mani e tronco.
+// Le posizioni correnti di mani e corpo (usate da disegno, camera, effetti).
 function climbPos(cl) {
   const lx = cl.xOf(cl.lhA.c), ly = cl.yOf(cl.lhA.r);
   const rx = cl.xOf(cl.rhA.c), ry = cl.yOf(cl.rhA.r);
   const tx = (lx + rx) / 2;
-  const ty = (ly + ry) / 2 + HANG;
-  return { lx, ly, rx, ry, tx, ty };
+  return {
+    lx, ly, rx, ry, tx,
+    bx: cl.bx, by: cl.by,                       // bacino (hip)
+    ty: cl.by,                                  // compat: il corpo pende qui
+    shx: cl.bx, shy: cl.by - 8,                 // spalle (approssimazione per effetti)
+    reachL: cl.lhHold, reachR: cl.rhHold,        // 0 = mano staccata, 1 = piantata
+  };
 }
 
 // trova la colonna valida più vicina a `c` nella fila `r` (per restringersi salendo)
@@ -447,52 +455,80 @@ function centerCol(cl, r) {
   return best;
 }
 
-// Avvia un movimento di mano/i verso un bersaglio, se l'appiglio esiste.
-function reachTo(cl, which, target) {
-  if (cl.reach > 0) return false;
-  if (which === 'both') {
-    const lc = nearestCol(cl, cl.lh.c, target.r);
-    const rc = nearestCol(cl, cl.rh.c, target.r);
-    if (lc === null || rc === null) return false;
-    cl.from = { l: { ...cl.lhA }, r: { ...cl.rhA } };
-    cl.to = { l: { c: lc, r: target.r }, r: { c: rc, r: target.r } };
-    cl.which = 'both';
-  } else {
-    // spostamento laterale: cerca il prossimo appiglio valido in quella direzione
-    const dir = which === 'l' ? -1 : 1;
-    const cur = which === 'l' ? cl.lh : cl.rh;
-    let c = cur.c + dir;
-    while (c >= 0 && c < cl.cols.length && !cl.has(c, cur.r)) c += dir;
-    if (c < 0 || c >= cl.cols.length || !cl.has(c, cur.r)) return false;
-    cl.from = { [which]: { ...(which === 'l' ? cl.lhA : cl.rhA) } };
-    cl.to = { [which]: { c, r: cur.r } };
-    cl.which = which;
-  }
+// Prossima colonna valida spostandosi di lato, con fallback alla più vicina.
+function sideCol(cl, hold, dir) {
+  let c = hold.c + dir;
+  while (c >= 0 && c < cl.cols.length && !cl.has(c, hold.r)) c += dir;
+  if (c >= 0 && c < cl.cols.length && cl.has(c, hold.r)) return c;
+  return nearestCol(cl, hold.c, hold.r) ?? hold.c;
+}
+
+// Avvia il movimento di UNA mano verso un bersaglio (se l'appiglio esiste).
+function reachOne(cl, which, target) {
+  const cur = which === 'l' ? cl.lh : cl.rh;
+  if (!cl.has(target.c, target.r)) return false;
+  cl.from = { [which]: { ...(which === 'l' ? cl.lhA : cl.rhA) } };
+  cl.to = { [which]: { c: target.c, r: target.r } };
+  cl.which = which;
   cl.reach = cl.reachDur;
+  if (which === 'l') cl.lhHold = 0; else cl.rhHold = 0;
   return true;
 }
-function stepClimb(cl, input, dt) {
-  if (cl.reach > 0) {
-    cl.reach -= dt;
-    const k = 1 - Math.max(0, cl.reach) / cl.reachDur;
-    // interpolazione (ease) delle mani verso il bersaglio
-    const lerp = (a, b) => a + (b - a) * (k * k * (3 - 2 * k));
-    if (cl.to.l) {
-      cl.lhA.c = lerp(cl.from.l.c, cl.to.l.c); cl.lhA.r = lerp(cl.from.l.r, cl.to.l.r);
-      if (k >= 1) { cl.lh = { ...cl.to.l }; }
+
+// Sceglie la prossima mossa: la mano "lead" prova a salire di una fila;
+// se non c'è appiglio, l'altra mano; poi si alterna. Il bacino segue.
+function autoStep(cl) {
+  const order = cl.lead === 'l' ? ['l', 'r'] : ['r', 'l'];
+  for (const which of order) {
+    const cur = which === 'l' ? cl.lh : cl.rh;
+    const r = Math.min(cl.nRows - 1, cur.r + 1);
+    const c = nearestCol(cl, cur.c, r);
+    if (c !== null) {
+      reachOne(cl, which, { c, r });
+      cl.lead = which === 'l' ? 'r' : 'l';   // alterna
+      return true;
     }
-    if (cl.to.r) {
-      cl.rhA.c = lerp(cl.from.r.c, cl.to.r.c); cl.rhA.r = lerp(cl.from.r.r, cl.to.r.r);
-      if (k >= 1) { cl.rh = { ...cl.to.r }; }
-    }
-    if (cl.reach <= 0 && cl.to.l && cl.to.r) { cl.lh = { ...cl.to.l }; cl.rh = { ...cl.to.r }; }
-    return;
   }
-  // input discreti
-  if (input.left) reachTo(cl, 'l', { c: cl.lh.c - 1, r: cl.lh.r });
-  else if (input.right) reachTo(cl, 'r', { c: cl.rh.c + 1, r: cl.rh.r });
-  else if (input.up) reachTo(cl, 'both', { r: Math.min(cl.nRows - 1, cl.lh.r + 1) });
-  else if (input.down) reachTo(cl, 'both', { r: Math.max(0, cl.lh.r - 1) });
+  return false;
+}
+function stepClimb(cl, input, dt) {
+  const d = Number.isFinite(dt) ? dt : 0.016;
+  // presa: recupera verso 1 quando la mano è ferma
+  if (cl.reach <= 0) {
+    if (cl.which !== 'l') cl.lhHold = Math.min(1, cl.lhHold + d / HOLD_TIME);
+    if (cl.which !== 'r') cl.rhHold = Math.min(1, cl.rhHold + d / HOLD_TIME);
+  }
+
+  if (cl.reach > 0) {
+    cl.reach -= d;
+    const k = 1 - Math.max(0, cl.reach) / cl.reachDur;
+    const lerp = (a, b) => a + (b - a) * (k * k * (3 - 2 * k));
+    const w = cl.which, to = cl.to && cl.to[w], from = cl.from && cl.from[w];
+    if (to && from) {
+      const cur = w === 'l' ? cl.lhA : cl.rhA;
+      cur.c = lerp(from.c, to.c); cur.r = lerp(from.r, to.r);
+      if (k >= 1) { if (w === 'l') cl.lh = { ...to }; else cl.rh = { ...to }; cl.which = null; }
+    }
+  } else {
+    // input manuale. ↑ fa partire il ciclo di scalata (mani alternate);
+    // ← → spostano una singola mano di lato; ↓ scende.
+    if (input.left) reachOne(cl, 'l', { c: sideCol(cl, cl.lh, -1), r: cl.lh.r });
+    else if (input.right) reachOne(cl, 'r', { c: sideCol(cl, cl.rh, 1), r: cl.rh.r });
+    else if (input.up) autoStep(cl);
+    else if (input.down) reachOne(cl, 'l', { c: cl.lh.c, r: Math.max(0, cl.lh.r - 1) });
+  }
+
+  // bacino: segue il centro delle mani con ritardo (dondolio) e non supera
+  // mai la presa. Quando un corpo vicino cede (piantata), dà un "tirone" su.
+  const mx = (cl.xOf(cl.lhA.c) + cl.xOf(cl.rhA.c)) / 2;
+  const my = (cl.yOf(cl.lhA.r) + cl.yOf(cl.rhA.r)) / 2 + HANG;
+  const k = 1 - Math.pow(0.001, d);         // smorzamento indipendente dal frame
+  cl.vby += (my - cl.by) * 8 * d;           // molla verticale (il "tiro su")
+  cl.vby *= Math.pow(0.02, d);              // attrito
+  cl.by += cl.vby * d + (my - cl.by) * k;
+  cl.bx += (mx - cl.bx) * k * 0.8;
+  // non salire mai sopra le mani: il bacino resta appeso
+  if (cl.by < my - 2) { cl.by = my - 2; cl.vby = Math.max(0, cl.vby); }
 
   if (cl.lh.r >= cl.nRows - 1 && cl.rh.r >= cl.nRows - 1) cl.reached = true;
 }
@@ -2448,85 +2484,112 @@ function pose(state, phase) {
 }
 
 // ---------------------------------------------------------------------------
-// ARRAMPICATORE — figura appesa a due mani (lx,ly) e (rx,ry).
-// Il tronco pende al centro, le gambe oscillano.
-// Opzioni extra: detail (ciuffo/chele/brandelli), breathe (respiro 0..1),
-// grip (tensione presa 0..1: 1 = gomito piegato, 0 = braccio disteso), rim.
+// IK A 2 SEGMENTI — dato l'attacco (sx,sy) e il bersaglio (tx,ty) con lunghezze
+// FISSE l1,l2, restituisce gomito e mano. La mano non supera MAI la portata:
+// così le braccia si PIEGANO invece di allungarsi come tentacoli.
+// `bend` (+1/-1) sceglie da che lato piega il gomito/ginocchio.
+// ---------------------------------------------------------------------------
+function ik2(sx, sy, tx, ty, l1, l2, bend) {
+  sx = finiteOr(sx, 0); sy = finiteOr(sy, 0);
+  tx = finiteOr(tx, sx); ty = finiteOr(ty, sy);
+  l1 = finiteOr(l1, 10); l2 = finiteOr(l2, 10);
+  bend = finiteOr(bend, 1) < 0 ? -1 : 1;
+  const dx = tx - sx, dy = ty - sy;
+  let d = Math.hypot(dx, dy);
+  if (!Number.isFinite(d) || d < 0.001) d = 0.001;
+  const maxD = l1 + l2 - 0.02;
+  const minD = Math.abs(l1 - l2) + 0.02;
+  const dc = Math.max(minD, Math.min(maxD, d));
+  const ux = dx / d, uy = dy / d;
+  const a = (l1 * l1 - l2 * l2 + dc * dc) / (2 * dc);
+  const hgt = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const ex = sx + ux * a - uy * hgt * bend;
+  const ey = sy + uy * a + ux * hgt * bend;
+  const hx = sx + ux * dc, hy = sy + uy * dc;
+  return { ex, ey, hx, hy };
+}
+
+// ---------------------------------------------------------------------------
+// ARRAMPICATORE — figura APPESA a due mani (lx,ly) e (rx,ry), con il bacino
+// (bx,by) che pende sotto. Braccia e gambe usano IK: si piegano, non si
+// allungano. La posa cambia con `phase` per dare il ciclo di arrampicata.
+// Opzioni: detail, breathe (0..1 respiro), grip (0..1 tensione presa), rim.
 // ---------------------------------------------------------------------------
 function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const {
-    h = 17, color = C.redBright, phase = 0, thickness = 1, alpha = 1, outline = false,
+    h = 18, color = C.redBright, phase = 0, thickness = 1, alpha = 1,
     detail = false, breathe = 0, grip = 1, rim = false,
+    bx = null, by = null, lean = 0,
   } = opts;
-  const shHalf = Math.max(2, Math.round(h * 0.16));  // semilarghezza spalle
-  const cx = (lx + rx) / 2, cy = (ly + ry) / 2;
-  // respiro: offset verticale sinusoidale, max 1px, spento di default (0)
   const br = clamp(finiteOr(breathe, 0), 0, 1);
   const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br : 0;
-  const shY = cy + h * 0.20 + breatheOff;
-  const hipY = cy + h * 0.62 + breatheOff;
-  const sway = Math.sin(phase * 2.4) * 0.8;
-  const shX = cx;
-  const hipX = cx + sway;
-  const headX = cx + sway * 0.5;
-  const headY = shY - h * 0.14;
-  // presa: 1 = gomito piegato (default storico), 0 = braccio più disteso
-  const g = clamp(finiteOr(grip, 1), 0, 1);
-  const bendX = 1 + 2 * g;      // g=1 → 3 (invariato)
-  const bendY = 0.5 + 1.5 * g;  // g=1 → 2 (invariato)
+  const handMidX = (lx + rx) / 2, handMidY = (ly + ry) / 2;
+  const hipX = finiteOr(bx, handMidX);
+  const hipY = finiteOr(by, handMidY + h * 0.55) + breatheOff;
+  const shHalf = Math.max(3, Math.round(h * 0.17));
+  const shY = hipY - h * 0.46;
+  const leanX = Math.sin(clamp(finiteOr(lean, 0), -0.6, 0.6)) * h * 0.14;
+  const shX = hipX + leanX;
+  const shLx = shX - shHalf, shRx = shX + shHalf;
+  const headX = shX + leanX * 0.6, headY = shY - h * 0.16;
+  const hr = Math.max(1, Math.round(h * 0.085));
+  // portata del braccio: lunga abbastanza per le mani sopra la testa
+  const up = h * 0.75, lo = h * 0.75;
+  // leggera alternanza delle anche (dondolio) per il ritmo di salita
+  const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
+  // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.
+  void grip;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
-  const t = outline ? 3 : thickness;
+  const t = thickness;
+  const t0 = thickness;
 
-  // braccia a DUE segmenti: spalla → gomito → mano (gomito verso l'esterno/alto)
-  const arm = (hx, hy, side) => {
-    const shx = shX + side * shHalf;
-    const ex = (shx + hx) / 2 + side * bendX;
-    const ey = (shY + hy) / 2 - bendY;
-    line(ctx, shx, shY, ex, ey, t);
-    line(ctx, ex, ey, hx, hy, t);
-  };
-  arm(lx, ly, -1);
-  arm(rx, ry, 1);
+  // BRACCIA: IK spalla→mano, gomiti verso l'esterno (mai dritte a caso)
+  const aL = ik2(shLx, shY, lx, ly, up, lo, -1);
+  const aR = ik2(shRx, shY, rx, ry, up, lo, 1);
+  line(ctx, shLx, shY, aL.ex, aL.ey, t0);
+  line(ctx, aL.ex, aL.ey, aL.hx, aL.hy, t0);
+  line(ctx, shRx, shY, aR.ex, aR.ey, t0);
+  line(ctx, aR.ex, aR.ey, aR.hx, aR.hy, t0);
+  // mani sulle prese
+  if (detail) { claw(ctx, aL.hx, aL.hy, -1); claw(ctx, aR.hx, aR.hy, 1); }
+  else {
+    ctx.fillRect(Math.round(aL.hx) - 1, Math.round(aL.hy) - 1, 2, 2);
+    ctx.fillRect(Math.round(aR.hx) - 1, Math.round(aR.hy) - 1, 2, 2);
+  }
 
-  // tronco
-  line(ctx, shX, shY, hipX, hipY, t + (outline ? 1 : 0));
-  // collo + testa
-  line(ctx, shX, shY, headX, headY + h * 0.04, t);
-  const hr = Math.max(1, Math.round(h * 0.085));
+  // TRONCO dal bacino alle spalle (leggermente ricurvo verso la parete)
+  line(ctx, hipX + sway * 0.2, hipY, shX, shY, t + 1);
+  // COLLO + TESTA
+  line(ctx, shX, shY, headX, headY + h * 0.05, t);
   disc(ctx, headX, headY, hr);
-  // gambe penzolanti, ginocchia piegate
-  const k = Math.sin(phase * 2.4 + 1) * 1.2;
+
+  // GAMBE: IK bacino→piede, ginocchia verso l'esterno (posa da scalata)
+  const thigh = h * 0.34, shin = h * 0.34;
+  const kSw = Math.sin(finiteOr(phase, 0) * 2.4 + 1) * 1.4;
   for (const side of [-1, 1]) {
-    const kx = hipX + side * 2 + k;
-    const ky = hipY + h * 0.18;
-    line(ctx, hipX, hipY, kx, ky, t);
-    line(ctx, kx, ky, kx + side * 1, ky + h * 0.16, t);
+    const footX = hipX + side * h * 0.18 + kSw * side * 0.3;
+    const footY = hipY + h * 0.40 + (side > 0 ? 0 : kSw * 0.4);
+    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, -side);
+    line(ctx, hipX, hipY, lg.ex, lg.ey, t);
+    line(ctx, lg.ex, lg.ey, lg.hx, lg.hy, t);
   }
-  // mani (presa): chele a 3 pixel con detail, altrimenti il blocco storico
+
   if (detail) {
-    claw(ctx, lx, ly, 1);
-    claw(ctx, rx, ry, 1);
-  } else {
-    ctx.fillRect(Math.round(lx) - 1, Math.round(ly) - 1, 2, 2);
-    ctx.fillRect(Math.round(rx) - 1, Math.round(ry) - 1, 2, 2);
-  }
-  // dettagli opzionali: ciuffo di capelli + brandelli di stoffa sul tronco
-  if (detail) {
+    // ciuffo di capelli
     ctx.fillRect(Math.round(headX) - 1, Math.round(headY) - hr - 1, 2, 1);
     ctx.fillRect(Math.round(headX) + 1, Math.round(headY) - hr - 2, 1, 1);
-    const mx = hipX + (shX - hipX) * 0.4, my = hipY + (shY - hipY) * 0.4;
+    // brandello di stoffa sul tronco
+    const mx = hipX + (shX - hipX) * 0.5, my = hipY + (shY - hipY) * 0.5;
     line(ctx, mx - 2, my, mx - 1, my, 1);
-    line(ctx, mx + 1, my + 2, mx + 2, my + 2, 1);
   }
-  // luce di bordo: 1px sul lato destro, bianco solo per un pixel (testa)
   if (rim) {
     ctx.fillStyle = C.redHot;
     line(ctx, hipX + 1, hipY, shX + 1, shY, 1);
     ctx.fillStyle = C.white;
-    ctx.fillRect(Math.round(headX + hr), Math.round(headY), 1, 1);
+    ctx.fillRect(Math.round(headX) + hr, Math.round(headY), 1, 1);
   }
   ctx.restore();
 }
@@ -2744,43 +2807,50 @@ function drawBackground(ctx, g, cameraY, time, W, H) {
 }
 
 // ---------------------------------------------------------------------------
-// PARETE — la superficie della piramide: roccia scura (i "mattoni") che sono
-// anche corpi. Gli appigli sono teste di persone che emergono dalla parete.
-// ---------------------------------------------------------------------------function drawWall(ctx, g, cameraY, time, W, H) {
-  const bodies = g.bodies;
-  for (const b of bodies) {
-    const top = Math.round(b.y - cameraY);
-    if (top < -30 || top > H + 30) continue;
-    // fascia di pietra (la massa di corpi): corpo scuro + bordo rosso superiore
-    ctx.globalAlpha = 0.55;
+// PARETE — la piramide di CORPI. Non mensole: una massa continua che si
+// restringe salendo, con le teste/prese che emergono. Il giocatore la scala.
+// ---------------------------------------------------------------------------function drawWall(ctx, g, climb, cameraY, time, W, H) {
+  const cx = climb.cx, rows = climb.rows, nRows = climb.nRows;
+  const stepY = rows.length > 1 ? Math.abs(rows[1] - rows[0]) : 24;
+  // 1) massa della piramide: fascia per fascia, si restringe salendo
+  for (let r = 0; r < nRows; r++) {
+    const y = rows[r] - cameraY;
+    if (y < -stepY * 2 || y > H + stepY * 2) continue;
+    let lo = null, hi = null;
+    for (let c = 0; c < climb.cols.length; c++) if (climb.has(c, r)) { if (lo === null) lo = c; hi = c; }
+    if (lo === null) continue;
+    const x0 = climb.xOf(lo) - 18, x1 = climb.xOf(hi) + 18;
+    // corpo della massa (scuro), con bordo superiore acceso
+    ctx.globalAlpha = 0.5;
     ctx.fillStyle = C.redDeep;
-    ctx.fillRect(Math.round(b.x), top, Math.round(b.w), 4);
-    ctx.globalAlpha = 0.9;
+    ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), Math.round(stepY + 4));
+    ctx.globalAlpha = 0.7;
     ctx.fillStyle = C.redDark;
-    ctx.fillRect(Math.round(b.x), top, Math.round(b.w), 1);      // bordo acceso
+    ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), 1);
     ctx.globalAlpha = 1;
-
-    // gli appigli: teste di persone che emergono, varietà e respiro
-    const step = 18;
-    for (let x = b.x + 5; x < b.x + b.w - 3; x += step) {
-      const ph = time * 1.5 + (x + b.y) * 0.13;
-      const bob = Math.round(Math.sin(ph) * 0.6);
-      const s = Math.sin(ph * 1.7);
-      const state = s > 0.6 ? 'reach' : s < -0.6 ? 'idle' : 'climb';
-      const col = depthRed(0.25 + 0.3 * (0.5 + 0.5 * Math.sin(ph * 0.7)));
-      drawFigure(ctx, x, top + 2 + bob, { h: 12, color: col, state, phase: ph, facing: 1 });
+    // nervature: piccoli corpi incastrati (texture "muro di persone")
+    const span = x1 - x0;
+    const n = Math.max(3, Math.round(span / 16));
+    for (let i = 0; i < n; i++) {
+      const fx = x0 + (i + 0.5) * (span / n);
+      const ph = time * 1.2 + (fx + r * 7) * 0.2;
+      const st = Math.sin(ph * 1.3) > 0.5 ? 'idle' : 'climb';
+      drawFigure(ctx, fx, y + stepY * 0.7, { h: 11, color: C.redDeep, state: st, phase: ph, alpha: 0.5 });
     }
-  }
-  // accenti: figure più grandi che emergono dalla parete (teste sporgenti).
-  // Posa NON verticale: con il bloom un braccio dritto in su diventa una barra.
-  const r = rng(91);
-  for (let i = 0; i < 5; i++) {
-    const x = r() * W;
-    const y = ((r() * H * 3 - cameraY * 1.0) % (H * 3) + H * 3) % (H * 3) - H;
-    if (y < -20 || y > H + 20) continue;
-    const ph = time * 1.2 + i * 2.1;
-    const st = r() > 0.5 ? 'idle' : 'climb';
-    drawFigure(ctx, x, y, { h: 17, color: C.redDeep, state: st, phase: ph, alpha: 0.4, facing: r() > 0.5 ? 1 : -1 });
+    // 2) GLI APPIGLI: teste che emergono dove il giocatore può aggrapparsi
+    for (let c = 0; c < climb.cols.length; c++) {
+      if (!climb.has(c, r)) continue;
+      const hx = climb.xOf(c), hy = y + 1;
+      const ph = time * 1.6 + (hx + r * 13) * 0.1;
+      const bob = Math.round(Math.sin(ph) * 0.6);
+      // testa/nodo luminoso della presa
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = C.redDark;
+      ctx.fillRect(Math.round(hx) - 1, hy + bob, 3, 3);
+      ctx.fillStyle = depthRed(0.35 + 0.3 * (0.5 + 0.5 * Math.sin(ph * 0.8)));
+      ctx.fillRect(Math.round(hx), hy + 1 + bob, 1, 1);
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
@@ -2790,27 +2860,64 @@ function drawBackground(ctx, g, cameraY, time, W, H) {
 // ---------------------------------------------------------------------------function drawPlayer(ctx, cl, cameraY, time, action) {
   const p = climbPos(cl);
   const ly = p.ly - cameraY, ry = p.ry - cameraY;
+  const byc = p.by - cameraY;
   const ph = time;
-  // presa tesa mentre ci si tira su (reach), respiro a riposo
   const reachK = cl.reach > 0 && cl.reachDur ? Math.max(0, cl.reach / cl.reachDur) : 0;
   const breathe = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(time * 2));
+
+  // Animazioni di INTERAZIONE (Z = tendi, X = spingi): gesture chiare.
+  // tendi = braccio teso verso l'alto/avanti (offerta); spingi = braccio che
+  // spinge in basso/avanti e busto che si torce.
+  const t = (action === 'tendi' || action === 'spingi') ? Math.max(0, actionT) : 0;
+  const actK = t > 0 ? Math.min(1, t / 0.55) : 0;
+  let lx = p.lx, lyy = ly, rx = p.rx, ryy = ry;
+  let hipX = p.bx, hipYOff = 0, lean = 0;
+  if (actK > 0 && action === 'tendi') {
+    rx += 4 * actK; ryy -= 5 * actK;        // braccio destro teso verso l'alto
+    hipYOff = -1.5 * actK;
+    lean = -0.25 * actK;
+  } else if (actK > 0 && action === 'spingi') {
+    rx += 6 * actK; ryy += 4 * actK;        // braccio che spinge via
+    lx -= 2 * actK;
+    hipX += 2 * actK;
+    lean = 0.35 * actK;
+  }
+
   // alone caldo pulsante (ti fa trovare a colpo d'occhio)
   ctx.save();
-  ctx.globalAlpha = 0.16 + 0.08 * Math.sin(time * 5);
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.redHot, phase: ph, thickness: 3, h: 19 });
+  ctx.globalAlpha = 0.22 + 0.10 * Math.sin(time * 5);
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.redHot, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff });
   ctx.restore();
-  // contorno scuro sottile + corpo acceso con dettagli (chele, ciuffo, rim)
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.black, phase: ph, thickness: 3, h: 19 });
+  // corpo acceso con dettagli (chele, ciuffo, rim) + contorno scuro netto
   const col = (action === 'tendi' || action === 'spingi') ? C.redHot : C.redBright;
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: col, phase: ph, thickness: 1, h: 19,
-    breathe, grip: reachK > 0 ? 1 : 0.7, detail: true, rim: true });
-  // mani evidenziate: dove sei aggrappato
+  // riempimento acceso
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 20,
+    bx: hipX, by: byc + hipYOff, breathe, detail: true });
+  // contorno nero sottile attorno (stacca dalla parete)
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff });
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 20,
+    bx: hipX, by: byc + hipYOff, breathe, detail: true, rim: true, lean });
+
+  // mani evidenziate: dove sei aggrappato. La mano che si sta muovendo lampeggia.
   ctx.save();
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = C.white;
-  ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3);
-  ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3);
+  if (cl.lhHold >= 1) ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3);
+  else { ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(time * 20)); ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3); }
+  ctx.globalAlpha = 0.85; ctx.fillStyle = C.white;
+  if (cl.rhHold >= 1) ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3);
+  else { ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(time * 20)); ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3); }
   ctx.restore();
+
+  // scia del gesto durante l'interazione
+  if (actK > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.5 * actK;
+    ctx.fillStyle = action === 'spingi' ? C.redHot : C.red;
+    const gx = action === 'spingi' ? rx : rx, gy = action === 'spingi' ? ryy + 4 : ryy - 4;
+    for (let i = 0; i < 3; i++) ctx.fillRect(Math.round(rx + (action === 'spingi' ? i * 3 : i * 2)) - 1, Math.round(gy) + i, 2, 1);
+    ctx.restore();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3154,7 +3261,7 @@ const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').spli
 function drawWorld(lv, camY) {
   if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('lyrics')) drawLyrics(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H);
-  if (!SKIP.has('wall')) drawWall(ctx, lv.girone, camY, time, VIEW_W, VIEW_H);
+  if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);

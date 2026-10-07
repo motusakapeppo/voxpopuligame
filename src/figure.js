@@ -123,85 +123,112 @@ export function pose(state, phase) {
 }
 
 // ---------------------------------------------------------------------------
-// ARRAMPICATORE — figura appesa a due mani (lx,ly) e (rx,ry).
-// Il tronco pende al centro, le gambe oscillano.
-// Opzioni extra: detail (ciuffo/chele/brandelli), breathe (respiro 0..1),
-// grip (tensione presa 0..1: 1 = gomito piegato, 0 = braccio disteso), rim.
+// IK A 2 SEGMENTI — dato l'attacco (sx,sy) e il bersaglio (tx,ty) con lunghezze
+// FISSE l1,l2, restituisce gomito e mano. La mano non supera MAI la portata:
+// così le braccia si PIEGANO invece di allungarsi come tentacoli.
+// `bend` (+1/-1) sceglie da che lato piega il gomito/ginocchio.
+// ---------------------------------------------------------------------------
+export function ik2(sx, sy, tx, ty, l1, l2, bend) {
+  sx = finiteOr(sx, 0); sy = finiteOr(sy, 0);
+  tx = finiteOr(tx, sx); ty = finiteOr(ty, sy);
+  l1 = finiteOr(l1, 10); l2 = finiteOr(l2, 10);
+  bend = finiteOr(bend, 1) < 0 ? -1 : 1;
+  const dx = tx - sx, dy = ty - sy;
+  let d = Math.hypot(dx, dy);
+  if (!Number.isFinite(d) || d < 0.001) d = 0.001;
+  const maxD = l1 + l2 - 0.02;
+  const minD = Math.abs(l1 - l2) + 0.02;
+  const dc = Math.max(minD, Math.min(maxD, d));
+  const ux = dx / d, uy = dy / d;
+  const a = (l1 * l1 - l2 * l2 + dc * dc) / (2 * dc);
+  const hgt = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const ex = sx + ux * a - uy * hgt * bend;
+  const ey = sy + uy * a + ux * hgt * bend;
+  const hx = sx + ux * dc, hy = sy + uy * dc;
+  return { ex, ey, hx, hy };
+}
+
+// ---------------------------------------------------------------------------
+// ARRAMPICATORE — figura APPESA a due mani (lx,ly) e (rx,ry), con il bacino
+// (bx,by) che pende sotto. Braccia e gambe usano IK: si piegano, non si
+// allungano. La posa cambia con `phase` per dare il ciclo di arrampicata.
+// Opzioni: detail, breathe (0..1 respiro), grip (0..1 tensione presa), rim.
 // ---------------------------------------------------------------------------
 export function drawClimber(ctx, lx, ly, rx, ry, opts = {}) {
   const {
-    h = 17, color = C.redBright, phase = 0, thickness = 1, alpha = 1, outline = false,
+    h = 18, color = C.redBright, phase = 0, thickness = 1, alpha = 1,
     detail = false, breathe = 0, grip = 1, rim = false,
+    bx = null, by = null, lean = 0,
   } = opts;
-  const shHalf = Math.max(2, Math.round(h * 0.16));  // semilarghezza spalle
-  const cx = (lx + rx) / 2, cy = (ly + ry) / 2;
-  // respiro: offset verticale sinusoidale, max 1px, spento di default (0)
   const br = clamp(finiteOr(breathe, 0), 0, 1);
   const breatheOff = br > 0 ? Math.sin(phase * 2.4) * br : 0;
-  const shY = cy + h * 0.20 + breatheOff;
-  const hipY = cy + h * 0.62 + breatheOff;
-  const sway = Math.sin(phase * 2.4) * 0.8;
-  const shX = cx;
-  const hipX = cx + sway;
-  const headX = cx + sway * 0.5;
-  const headY = shY - h * 0.14;
-  // presa: 1 = gomito piegato (default storico), 0 = braccio più disteso
-  const g = clamp(finiteOr(grip, 1), 0, 1);
-  const bendX = 1 + 2 * g;      // g=1 → 3 (invariato)
-  const bendY = 0.5 + 1.5 * g;  // g=1 → 2 (invariato)
+  const handMidX = (lx + rx) / 2, handMidY = (ly + ry) / 2;
+  const hipX = finiteOr(bx, handMidX);
+  const hipY = finiteOr(by, handMidY + h * 0.55) + breatheOff;
+  const shHalf = Math.max(3, Math.round(h * 0.17));
+  const shY = hipY - h * 0.46;
+  const leanX = Math.sin(clamp(finiteOr(lean, 0), -0.6, 0.6)) * h * 0.14;
+  const shX = hipX + leanX;
+  const shLx = shX - shHalf, shRx = shX + shHalf;
+  const headX = shX + leanX * 0.6, headY = shY - h * 0.16;
+  const hr = Math.max(1, Math.round(h * 0.085));
+  // portata del braccio: lunga abbastanza per le mani sopra la testa
+  const up = h * 0.75, lo = h * 0.75;
+  // leggera alternanza delle anche (dondolio) per il ritmo di salita
+  const sway = Math.sin(finiteOr(phase, 0) * 2.4) * 0.9;
+  // presa: 0 = gomiti molto piegati, 1 = distesi. `grip` la modula.
+  void grip;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
-  const t = outline ? 3 : thickness;
+  const t = thickness;
+  const t0 = thickness;
 
-  // braccia a DUE segmenti: spalla → gomito → mano (gomito verso l'esterno/alto)
-  const arm = (hx, hy, side) => {
-    const shx = shX + side * shHalf;
-    const ex = (shx + hx) / 2 + side * bendX;
-    const ey = (shY + hy) / 2 - bendY;
-    line(ctx, shx, shY, ex, ey, t);
-    line(ctx, ex, ey, hx, hy, t);
-  };
-  arm(lx, ly, -1);
-  arm(rx, ry, 1);
+  // BRACCIA: IK spalla→mano, gomiti verso l'esterno (mai dritte a caso)
+  const aL = ik2(shLx, shY, lx, ly, up, lo, -1);
+  const aR = ik2(shRx, shY, rx, ry, up, lo, 1);
+  line(ctx, shLx, shY, aL.ex, aL.ey, t0);
+  line(ctx, aL.ex, aL.ey, aL.hx, aL.hy, t0);
+  line(ctx, shRx, shY, aR.ex, aR.ey, t0);
+  line(ctx, aR.ex, aR.ey, aR.hx, aR.hy, t0);
+  // mani sulle prese
+  if (detail) { claw(ctx, aL.hx, aL.hy, -1); claw(ctx, aR.hx, aR.hy, 1); }
+  else {
+    ctx.fillRect(Math.round(aL.hx) - 1, Math.round(aL.hy) - 1, 2, 2);
+    ctx.fillRect(Math.round(aR.hx) - 1, Math.round(aR.hy) - 1, 2, 2);
+  }
 
-  // tronco
-  line(ctx, shX, shY, hipX, hipY, t + (outline ? 1 : 0));
-  // collo + testa
-  line(ctx, shX, shY, headX, headY + h * 0.04, t);
-  const hr = Math.max(1, Math.round(h * 0.085));
+  // TRONCO dal bacino alle spalle (leggermente ricurvo verso la parete)
+  line(ctx, hipX + sway * 0.2, hipY, shX, shY, t + 1);
+  // COLLO + TESTA
+  line(ctx, shX, shY, headX, headY + h * 0.05, t);
   disc(ctx, headX, headY, hr);
-  // gambe penzolanti, ginocchia piegate
-  const k = Math.sin(phase * 2.4 + 1) * 1.2;
+
+  // GAMBE: IK bacino→piede, ginocchia verso l'esterno (posa da scalata)
+  const thigh = h * 0.34, shin = h * 0.34;
+  const kSw = Math.sin(finiteOr(phase, 0) * 2.4 + 1) * 1.4;
   for (const side of [-1, 1]) {
-    const kx = hipX + side * 2 + k;
-    const ky = hipY + h * 0.18;
-    line(ctx, hipX, hipY, kx, ky, t);
-    line(ctx, kx, ky, kx + side * 1, ky + h * 0.16, t);
+    const footX = hipX + side * h * 0.18 + kSw * side * 0.3;
+    const footY = hipY + h * 0.40 + (side > 0 ? 0 : kSw * 0.4);
+    const lg = ik2(hipX, hipY, footX, footY, thigh, shin, -side);
+    line(ctx, hipX, hipY, lg.ex, lg.ey, t);
+    line(ctx, lg.ex, lg.ey, lg.hx, lg.hy, t);
   }
-  // mani (presa): chele a 3 pixel con detail, altrimenti il blocco storico
+
   if (detail) {
-    claw(ctx, lx, ly, 1);
-    claw(ctx, rx, ry, 1);
-  } else {
-    ctx.fillRect(Math.round(lx) - 1, Math.round(ly) - 1, 2, 2);
-    ctx.fillRect(Math.round(rx) - 1, Math.round(ry) - 1, 2, 2);
-  }
-  // dettagli opzionali: ciuffo di capelli + brandelli di stoffa sul tronco
-  if (detail) {
+    // ciuffo di capelli
     ctx.fillRect(Math.round(headX) - 1, Math.round(headY) - hr - 1, 2, 1);
     ctx.fillRect(Math.round(headX) + 1, Math.round(headY) - hr - 2, 1, 1);
-    const mx = hipX + (shX - hipX) * 0.4, my = hipY + (shY - hipY) * 0.4;
+    // brandello di stoffa sul tronco
+    const mx = hipX + (shX - hipX) * 0.5, my = hipY + (shY - hipY) * 0.5;
     line(ctx, mx - 2, my, mx - 1, my, 1);
-    line(ctx, mx + 1, my + 2, mx + 2, my + 2, 1);
   }
-  // luce di bordo: 1px sul lato destro, bianco solo per un pixel (testa)
   if (rim) {
     ctx.fillStyle = C.redHot;
     line(ctx, hipX + 1, hipY, shX + 1, shY, 1);
     ctx.fillStyle = C.white;
-    ctx.fillRect(Math.round(headX + hr), Math.round(headY), 1, 1);
+    ctx.fillRect(Math.round(headX) + hr, Math.round(headY), 1, 1);
   }
   ctx.restore();
 }

@@ -125,44 +125,51 @@ export function drawVignette(ctx, W, H) {
 }
 
 // ---------------------------------------------------------------------------
-// PARETE — la superficie della piramide: roccia scura (i "mattoni") che sono
-// anche corpi. Gli appigli sono teste di persone che emergono dalla parete.
+// PARETE — la piramide di CORPI. Non mensole: una massa continua che si
+// restringe salendo, con le teste/prese che emergono. Il giocatore la scala.
 // ---------------------------------------------------------------------------
-export function drawWall(ctx, g, cameraY, time, W, H) {
-  const bodies = g.bodies;
-  for (const b of bodies) {
-    const top = Math.round(b.y - cameraY);
-    if (top < -30 || top > H + 30) continue;
-    // fascia di pietra (la massa di corpi): corpo scuro + bordo rosso superiore
-    ctx.globalAlpha = 0.55;
+export function drawWall(ctx, g, climb, cameraY, time, W, H) {
+  const cx = climb.cx, rows = climb.rows, nRows = climb.nRows;
+  const stepY = rows.length > 1 ? Math.abs(rows[1] - rows[0]) : 24;
+  // 1) massa della piramide: fascia per fascia, si restringe salendo
+  for (let r = 0; r < nRows; r++) {
+    const y = rows[r] - cameraY;
+    if (y < -stepY * 2 || y > H + stepY * 2) continue;
+    let lo = null, hi = null;
+    for (let c = 0; c < climb.cols.length; c++) if (climb.has(c, r)) { if (lo === null) lo = c; hi = c; }
+    if (lo === null) continue;
+    const x0 = climb.xOf(lo) - 18, x1 = climb.xOf(hi) + 18;
+    // corpo della massa (scuro), con bordo superiore acceso
+    ctx.globalAlpha = 0.5;
     ctx.fillStyle = C.redDeep;
-    ctx.fillRect(Math.round(b.x), top, Math.round(b.w), 4);
-    ctx.globalAlpha = 0.9;
+    ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), Math.round(stepY + 4));
+    ctx.globalAlpha = 0.7;
     ctx.fillStyle = C.redDark;
-    ctx.fillRect(Math.round(b.x), top, Math.round(b.w), 1);      // bordo acceso
+    ctx.fillRect(Math.round(x0), Math.round(y + 2), Math.round(x1 - x0), 1);
     ctx.globalAlpha = 1;
-
-    // gli appigli: teste di persone che emergono, varietà e respiro
-    const step = 18;
-    for (let x = b.x + 5; x < b.x + b.w - 3; x += step) {
-      const ph = time * 1.5 + (x + b.y) * 0.13;
-      const bob = Math.round(Math.sin(ph) * 0.6);
-      const s = Math.sin(ph * 1.7);
-      const state = s > 0.6 ? 'reach' : s < -0.6 ? 'idle' : 'climb';
-      const col = depthRed(0.25 + 0.3 * (0.5 + 0.5 * Math.sin(ph * 0.7)));
-      drawFigure(ctx, x, top + 2 + bob, { h: 12, color: col, state, phase: ph, facing: 1 });
+    // nervature: piccoli corpi incastrati (texture "muro di persone")
+    const span = x1 - x0;
+    const n = Math.max(3, Math.round(span / 16));
+    for (let i = 0; i < n; i++) {
+      const fx = x0 + (i + 0.5) * (span / n);
+      const ph = time * 1.2 + (fx + r * 7) * 0.2;
+      const st = Math.sin(ph * 1.3) > 0.5 ? 'idle' : 'climb';
+      drawFigure(ctx, fx, y + stepY * 0.7, { h: 11, color: C.redDeep, state: st, phase: ph, alpha: 0.5 });
     }
-  }
-  // accenti: figure più grandi che emergono dalla parete (teste sporgenti).
-  // Posa NON verticale: con il bloom un braccio dritto in su diventa una barra.
-  const r = rng(91);
-  for (let i = 0; i < 5; i++) {
-    const x = r() * W;
-    const y = ((r() * H * 3 - cameraY * 1.0) % (H * 3) + H * 3) % (H * 3) - H;
-    if (y < -20 || y > H + 20) continue;
-    const ph = time * 1.2 + i * 2.1;
-    const st = r() > 0.5 ? 'idle' : 'climb';
-    drawFigure(ctx, x, y, { h: 17, color: C.redDeep, state: st, phase: ph, alpha: 0.4, facing: r() > 0.5 ? 1 : -1 });
+    // 2) GLI APPIGLI: teste che emergono dove il giocatore può aggrapparsi
+    for (let c = 0; c < climb.cols.length; c++) {
+      if (!climb.has(c, r)) continue;
+      const hx = climb.xOf(c), hy = y + 1;
+      const ph = time * 1.6 + (hx + r * 13) * 0.1;
+      const bob = Math.round(Math.sin(ph) * 0.6);
+      // testa/nodo luminoso della presa
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = C.redDark;
+      ctx.fillRect(Math.round(hx) - 1, hy + bob, 3, 3);
+      ctx.fillStyle = depthRed(0.35 + 0.3 * (0.5 + 0.5 * Math.sin(ph * 0.8)));
+      ctx.fillRect(Math.round(hx), hy + 1 + bob, 1, 1);
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
@@ -173,27 +180,64 @@ export function drawWall(ctx, g, cameraY, time, W, H) {
 export function drawPlayer(ctx, cl, cameraY, time, action) {
   const p = climbPos(cl);
   const ly = p.ly - cameraY, ry = p.ry - cameraY;
+  const byc = p.by - cameraY;
   const ph = time;
-  // presa tesa mentre ci si tira su (reach), respiro a riposo
   const reachK = cl.reach > 0 && cl.reachDur ? Math.max(0, cl.reach / cl.reachDur) : 0;
   const breathe = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(time * 2));
+
+  // Animazioni di INTERAZIONE (Z = tendi, X = spingi): gesture chiare.
+  // tendi = braccio teso verso l'alto/avanti (offerta); spingi = braccio che
+  // spinge in basso/avanti e busto che si torce.
+  const t = (action === 'tendi' || action === 'spingi') ? Math.max(0, actionT) : 0;
+  const actK = t > 0 ? Math.min(1, t / 0.55) : 0;
+  let lx = p.lx, lyy = ly, rx = p.rx, ryy = ry;
+  let hipX = p.bx, hipYOff = 0, lean = 0;
+  if (actK > 0 && action === 'tendi') {
+    rx += 4 * actK; ryy -= 5 * actK;        // braccio destro teso verso l'alto
+    hipYOff = -1.5 * actK;
+    lean = -0.25 * actK;
+  } else if (actK > 0 && action === 'spingi') {
+    rx += 6 * actK; ryy += 4 * actK;        // braccio che spinge via
+    lx -= 2 * actK;
+    hipX += 2 * actK;
+    lean = 0.35 * actK;
+  }
+
   // alone caldo pulsante (ti fa trovare a colpo d'occhio)
   ctx.save();
-  ctx.globalAlpha = 0.16 + 0.08 * Math.sin(time * 5);
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.redHot, phase: ph, thickness: 3, h: 19 });
+  ctx.globalAlpha = 0.22 + 0.10 * Math.sin(time * 5);
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.redHot, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff });
   ctx.restore();
-  // contorno scuro sottile + corpo acceso con dettagli (chele, ciuffo, rim)
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: C.black, phase: ph, thickness: 3, h: 19 });
+  // corpo acceso con dettagli (chele, ciuffo, rim) + contorno scuro netto
   const col = (action === 'tendi' || action === 'spingi') ? C.redHot : C.redBright;
-  drawClimber(ctx, p.lx, ly, p.rx, ry, { color: col, phase: ph, thickness: 1, h: 19,
-    breathe, grip: reachK > 0 ? 1 : 0.7, detail: true, rim: true });
-  // mani evidenziate: dove sei aggrappato
+  // riempimento acceso
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 3, h: 20,
+    bx: hipX, by: byc + hipYOff, breathe, detail: true });
+  // contorno nero sottile attorno (stacca dalla parete)
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: C.black, phase: ph, thickness: 5, h: 20, bx: hipX, by: byc + hipYOff });
+  drawClimber(ctx, lx, lyy, rx, ryy, { color: col, phase: ph, thickness: 2, h: 20,
+    bx: hipX, by: byc + hipYOff, breathe, detail: true, rim: true, lean });
+
+  // mani evidenziate: dove sei aggrappato. La mano che si sta muovendo lampeggia.
   ctx.save();
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = C.white;
-  ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3);
-  ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3);
+  if (cl.lhHold >= 1) ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3);
+  else { ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(time * 20)); ctx.fillRect(Math.round(p.lx) - 1, Math.round(ly) - 1, 3, 3); }
+  ctx.globalAlpha = 0.85; ctx.fillStyle = C.white;
+  if (cl.rhHold >= 1) ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3);
+  else { ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(time * 20)); ctx.fillRect(Math.round(p.rx) - 1, Math.round(ry) - 1, 3, 3); }
   ctx.restore();
+
+  // scia del gesto durante l'interazione
+  if (actK > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.5 * actK;
+    ctx.fillStyle = action === 'spingi' ? C.redHot : C.red;
+    const gx = action === 'spingi' ? rx : rx, gy = action === 'spingi' ? ryy + 4 : ryy - 4;
+    for (let i = 0; i < 3; i++) ctx.fillRect(Math.round(rx + (action === 'spingi' ? i * 3 : i * 2)) - 1, Math.round(gy) + i, 2, 1);
+    ctx.restore();
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pose, drawFigure, drawClimber } from '../src/figure.js';
+import { pose, drawFigure, drawClimber, ik2 } from '../src/figure.js';
 
 // Verifica che le pose siano articolate (angoli delle ossa) e che cambino
 // nel tempo: è ciò che rende il gioco animato e non statico.
@@ -122,4 +122,37 @@ test('drawClimber: default identico a detail/breathe/grip/rim espliciti a zero',
   drawClimber(a, 20, 10, 40, 12, { h: 17, phase: 0.8 });
   drawClimber(b, 20, 10, 40, 12, { h: 17, phase: 0.8, detail: false, breathe: 0, grip: 1, rim: false });
   assert.deepEqual(a.calls, b.calls, 'i nuovi default alterano il rendering storico');
+});
+
+// ---------------------------------------------------------------------------
+// IK � le braccia NON sono tentacoli: la mano non supera mai la portata.
+// ---------------------------------------------------------------------------
+test('ik2: la distanza spalla?mano non supera mai la portata (anti-tentacolo)', () => {
+  const l1 = 13, l2 = 13;
+  for (const [tx, ty] of [[0, 0], [5, -3], [100, 100], [-200, -50], [0, -999], [1e6, 1e6]]) {
+    const r = ik2(20, 30, tx, ty, l1, l2, 1);
+    const d = Math.hypot(r.hx - 20, r.hy - 30);
+    assert.ok(d <= l1 + l2 + 0.05, 'braccio allungato oltre la portata: ' + d.toFixed(2));
+    assert.ok(Number.isFinite(r.ex) && Number.isFinite(r.ey) && Number.isFinite(r.hx) && Number.isFinite(r.hy));
+  }
+});
+
+test('ik2: gomito e mano restano finiti anche con input degeneri', () => {
+  for (const args of [
+    [0, 0, 0, 0, 12, 12, 1], [0, 0, 0, 0, 12, 12, -1],
+    [0, 0, NaN, NaN, 12, 12, 1], [0, 0, 5, 5, NaN, NaN, 1],
+  ]) {
+    const r = ik2(...args);
+    assert.ok(Number.isFinite(r.hx) && Number.isFinite(r.hy) && Number.isFinite(r.ex) && Number.isFinite(r.ey));
+  }
+});
+
+test('drawClimber: braccia piegate (gomito non collineare su presa ampia)', () => {
+  const a = stubCtx();
+  // mani molto distanti: con la vecchia versione il braccio si allungava dritto
+  drawClimber(a, 5, 5, 60, 5, { h: 18, bx: 32, by: 40 });
+  assert.ok(a.calls.length > 0);
+  for (const [x, y, w, hh] of a.calls) {
+    assert.ok(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(hh));
+  }
 });

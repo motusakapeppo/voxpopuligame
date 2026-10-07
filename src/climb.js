@@ -1,16 +1,16 @@
 // ============================================================================
-// CLIMB — arrampicata. Non si salta: ci si aggrappa alla parete di corpi.
-// Il giocatore ha DUE mani; ogni mano tiene un appiglio (la testa/le spalle
-// di un corpo). Input:
-//   ← →  : sposta la mano sinistra/destra all'appiglio adiacente
-//   ↑    : entrambe le mani salgono di una fila (ti tiri su)
-//   ↓    : entrambe le mani scendono di una fila
-// Il tronco pende al centro tra le mani. Tutto deterministico e testabile.
+// CLIMB — arrampicata a due mani. Ogni mano ha una PRESA (hold): quando è a 1
+// è ben piantata, a 0 è staccata e sta raggiungendo l'appiglio. Le mani si
+// muovono ALTERNATE (sinistra, destra, sinistra…): è un vero ciclo di scalata.
+// Il bacino pende sotto le mani e le segue con ritardo (dondolio), così il
+// corpo "tira su" invece di teletrasportarsi. Tutto deterministico e testabile.
 // ============================================================================
 import { STEP_Y, TOP_Y } from './gironi.js';
 
-export const REACH_TIME = 0.12;     // durata di un movimento di mano (s)
-const HANG = 11;                    // quanto il corpo pende sotto le mani
+export const REACH_TIME = 0.17;     // durata di un movimento di mano (s)
+export const HOLD_TIME = 0.20;      // tempo di recupero della presa dopo lo spostamento
+const HANG = 12;                    // quanto il bacino pende sotto le mani
+const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
 export function createClimb(g) {
@@ -24,30 +24,38 @@ export function createClimb(g) {
   const holds = rows.map((_, r) => cols.map((x, c) => Math.abs(x - cx) <= halfWidth(r)));
 
   const has = (c, r) => c >= 0 && c < cols.length && r >= 0 && r < nRows && holds[r][c];
-  // lookup ROBUSTA: gli indici possono essere float durante l'animazione;
-  // arrotondiamo e clampiamo per non produrre mai `undefined` → NaN.
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
 
-  // partenza: in basso, mani al centro
   const c0 = 3;
+  // posizione iniziale del bacino = centro presa + HANG
+  const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
+  const by0 = yOf(0) + HANG;
   return {
     cols, rows, holds, has, xOf, yOf, nRows, cx,
     lh: { c: c0, r: 0 }, rh: { c: c0 + 1, r: 0 },
     lhA: { c: c0, r: 0 }, rhA: { c: c0 + 1, r: 0 },  // animati (float)
+    lhHold: 1, rhHold: 1,                            // presa 0..1
+    bx: bx0, by: by0, vby: 0,                        // bacino (animato)
+    lead: 'l',                                      // quale mano sale per prossima
     reach: 0, reachDur: REACH_TIME,
     from: null, to: null, which: null,
     reached: false,
   };
 }
 
-// Le posizioni correnti (interpolate) di mani e tronco.
+// Le posizioni correnti di mani e corpo (usate da disegno, camera, effetti).
 export function climbPos(cl) {
   const lx = cl.xOf(cl.lhA.c), ly = cl.yOf(cl.lhA.r);
   const rx = cl.xOf(cl.rhA.c), ry = cl.yOf(cl.rhA.r);
   const tx = (lx + rx) / 2;
-  const ty = (ly + ry) / 2 + HANG;
-  return { lx, ly, rx, ry, tx, ty };
+  return {
+    lx, ly, rx, ry, tx,
+    bx: cl.bx, by: cl.by,                       // bacino (hip)
+    ty: cl.by,                                  // compat: il corpo pende qui
+    shx: cl.bx, shy: cl.by - 8,                 // spalle (approssimazione per effetti)
+    reachL: cl.lhHold, reachR: cl.rhHold,        // 0 = mano staccata, 1 = piantata
+  };
 }
 
 // trova la colonna valida più vicina a `c` nella fila `r` (per restringersi salendo)
@@ -78,53 +86,81 @@ export function centerCol(cl, r) {
   return best;
 }
 
-// Avvia un movimento di mano/i verso un bersaglio, se l'appiglio esiste.
-function reachTo(cl, which, target) {
-  if (cl.reach > 0) return false;
-  if (which === 'both') {
-    const lc = nearestCol(cl, cl.lh.c, target.r);
-    const rc = nearestCol(cl, cl.rh.c, target.r);
-    if (lc === null || rc === null) return false;
-    cl.from = { l: { ...cl.lhA }, r: { ...cl.rhA } };
-    cl.to = { l: { c: lc, r: target.r }, r: { c: rc, r: target.r } };
-    cl.which = 'both';
-  } else {
-    // spostamento laterale: cerca il prossimo appiglio valido in quella direzione
-    const dir = which === 'l' ? -1 : 1;
-    const cur = which === 'l' ? cl.lh : cl.rh;
-    let c = cur.c + dir;
-    while (c >= 0 && c < cl.cols.length && !cl.has(c, cur.r)) c += dir;
-    if (c < 0 || c >= cl.cols.length || !cl.has(c, cur.r)) return false;
-    cl.from = { [which]: { ...(which === 'l' ? cl.lhA : cl.rhA) } };
-    cl.to = { [which]: { c, r: cur.r } };
-    cl.which = which;
-  }
+// Prossima colonna valida spostandosi di lato, con fallback alla più vicina.
+function sideCol(cl, hold, dir) {
+  let c = hold.c + dir;
+  while (c >= 0 && c < cl.cols.length && !cl.has(c, hold.r)) c += dir;
+  if (c >= 0 && c < cl.cols.length && cl.has(c, hold.r)) return c;
+  return nearestCol(cl, hold.c, hold.r) ?? hold.c;
+}
+
+// Avvia il movimento di UNA mano verso un bersaglio (se l'appiglio esiste).
+function reachOne(cl, which, target) {
+  const cur = which === 'l' ? cl.lh : cl.rh;
+  if (!cl.has(target.c, target.r)) return false;
+  cl.from = { [which]: { ...(which === 'l' ? cl.lhA : cl.rhA) } };
+  cl.to = { [which]: { c: target.c, r: target.r } };
+  cl.which = which;
   cl.reach = cl.reachDur;
+  if (which === 'l') cl.lhHold = 0; else cl.rhHold = 0;
   return true;
 }
 
-export function stepClimb(cl, input, dt) {
-  if (cl.reach > 0) {
-    cl.reach -= dt;
-    const k = 1 - Math.max(0, cl.reach) / cl.reachDur;
-    // interpolazione (ease) delle mani verso il bersaglio
-    const lerp = (a, b) => a + (b - a) * (k * k * (3 - 2 * k));
-    if (cl.to.l) {
-      cl.lhA.c = lerp(cl.from.l.c, cl.to.l.c); cl.lhA.r = lerp(cl.from.l.r, cl.to.l.r);
-      if (k >= 1) { cl.lh = { ...cl.to.l }; }
+// Sceglie la prossima mossa: la mano "lead" prova a salire di una fila;
+// se non c'è appiglio, l'altra mano; poi si alterna. Il bacino segue.
+function autoStep(cl) {
+  const order = cl.lead === 'l' ? ['l', 'r'] : ['r', 'l'];
+  for (const which of order) {
+    const cur = which === 'l' ? cl.lh : cl.rh;
+    const r = Math.min(cl.nRows - 1, cur.r + 1);
+    const c = nearestCol(cl, cur.c, r);
+    if (c !== null) {
+      reachOne(cl, which, { c, r });
+      cl.lead = which === 'l' ? 'r' : 'l';   // alterna
+      return true;
     }
-    if (cl.to.r) {
-      cl.rhA.c = lerp(cl.from.r.c, cl.to.r.c); cl.rhA.r = lerp(cl.from.r.r, cl.to.r.r);
-      if (k >= 1) { cl.rh = { ...cl.to.r }; }
-    }
-    if (cl.reach <= 0 && cl.to.l && cl.to.r) { cl.lh = { ...cl.to.l }; cl.rh = { ...cl.to.r }; }
-    return;
   }
-  // input discreti
-  if (input.left) reachTo(cl, 'l', { c: cl.lh.c - 1, r: cl.lh.r });
-  else if (input.right) reachTo(cl, 'r', { c: cl.rh.c + 1, r: cl.rh.r });
-  else if (input.up) reachTo(cl, 'both', { r: Math.min(cl.nRows - 1, cl.lh.r + 1) });
-  else if (input.down) reachTo(cl, 'both', { r: Math.max(0, cl.lh.r - 1) });
+  return false;
+}
+
+export function stepClimb(cl, input, dt) {
+  const d = Number.isFinite(dt) ? dt : 0.016;
+  // presa: recupera verso 1 quando la mano è ferma
+  if (cl.reach <= 0) {
+    if (cl.which !== 'l') cl.lhHold = Math.min(1, cl.lhHold + d / HOLD_TIME);
+    if (cl.which !== 'r') cl.rhHold = Math.min(1, cl.rhHold + d / HOLD_TIME);
+  }
+
+  if (cl.reach > 0) {
+    cl.reach -= d;
+    const k = 1 - Math.max(0, cl.reach) / cl.reachDur;
+    const lerp = (a, b) => a + (b - a) * (k * k * (3 - 2 * k));
+    const w = cl.which, to = cl.to && cl.to[w], from = cl.from && cl.from[w];
+    if (to && from) {
+      const cur = w === 'l' ? cl.lhA : cl.rhA;
+      cur.c = lerp(from.c, to.c); cur.r = lerp(from.r, to.r);
+      if (k >= 1) { if (w === 'l') cl.lh = { ...to }; else cl.rh = { ...to }; cl.which = null; }
+    }
+  } else {
+    // input manuale. ↑ fa partire il ciclo di scalata (mani alternate);
+    // ← → spostano una singola mano di lato; ↓ scende.
+    if (input.left) reachOne(cl, 'l', { c: sideCol(cl, cl.lh, -1), r: cl.lh.r });
+    else if (input.right) reachOne(cl, 'r', { c: sideCol(cl, cl.rh, 1), r: cl.rh.r });
+    else if (input.up) autoStep(cl);
+    else if (input.down) reachOne(cl, 'l', { c: cl.lh.c, r: Math.max(0, cl.lh.r - 1) });
+  }
+
+  // bacino: segue il centro delle mani con ritardo (dondolio) e non supera
+  // mai la presa. Quando un corpo vicino cede (piantata), dà un "tirone" su.
+  const mx = (cl.xOf(cl.lhA.c) + cl.xOf(cl.rhA.c)) / 2;
+  const my = (cl.yOf(cl.lhA.r) + cl.yOf(cl.rhA.r)) / 2 + HANG;
+  const k = 1 - Math.pow(0.001, d);         // smorzamento indipendente dal frame
+  cl.vby += (my - cl.by) * 8 * d;           // molla verticale (il "tiro su")
+  cl.vby *= Math.pow(0.02, d);              // attrito
+  cl.by += cl.vby * d + (my - cl.by) * k;
+  cl.bx += (mx - cl.bx) * k * 0.8;
+  // non salire mai sopra le mani: il bacino resta appeso
+  if (cl.by < my - 2) { cl.by = my - 2; cl.vby = Math.max(0, cl.vby); }
 
   if (cl.lh.r >= cl.nRows - 1 && cl.rh.r >= cl.nRows - 1) cl.reached = true;
 }
