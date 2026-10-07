@@ -187,6 +187,7 @@ export function createRenderer(canvas, W, H) {
   // scala a ogni frame) e stringa rgb della soglia bloom (evita di allocarla).
   let cw = -1, ch = -1;
   let lastGv = -1, lastGvStr = '';
+  let lutImg = null;   // ImageData riusato per il color grading (LUT rossa)
   // Legge un parametro post SENZA allocare un oggetto per frame: opts.post
   // vince se la chiave è propria, altrimenti fallback su api.post (stessa
   // semantica di Object.assign({}, api.post, opts.post), zero allocazioni).
@@ -373,6 +374,33 @@ export function createRenderer(canvas, W, H) {
         outCtx.globalAlpha = flash * 0.30;
         outCtx.fillStyle = C.white;
         outCtx.fillRect(w * 0.3, h * 0.3, w * 0.4, h * 0.4);
+      }
+
+      // 8.5 COLOR GRADING (W3-RENDER): LUT rossa + tonemap. Feature-flagged
+      // (post.lut). Applicata al buffer `out` a 320x180 (57.600 px, costo basso).
+      // Riusa l'ImageData del buffer (nessuna alloc se le dimensioni non cambiano).
+      const lutAmt = rdrClamp01(postVal(o, 'lut'));
+      if (lutAmt > 0.001) {
+        try {
+          if (!lutImg || lutImg.width !== w || lutImg.height !== h) {
+            lutImg = outCtx.createImageData(w, h);
+          }
+          const img = outCtx.getImageData(0, 0, w, h);
+          const d = img.data;
+          for (let i = 0; i < d.length; i += 4) {
+            const rr = d[i], gg = d[i + 1], bb = d[i + 2];
+            const m = rr > gg ? (rr > bb ? rr : bb) : (gg > bb ? gg : bb);
+            const v = m / 255;
+            const toned = v <= 0 ? 0 : v / (1 + v);
+            const idx = Math.max(0, Math.min(255, Math.round(toned * 1.6 * 255)));
+            const c = RED_LUT[idx];
+            // miscela con l'originale secondo l'intensità del grade
+            d[i]     = Math.round(rr + (c[0] - rr) * lutAmt);
+            d[i + 1] = Math.round(gg + (c[1] - gg) * lutAmt);
+            d[i + 2] = Math.round(bb + (c[2] - bb) * lutAmt);
+          }
+          outCtx.putImageData(img, 0, 0);
+        } catch { /* niente grading */ }
       }
 
       // 9. blit scalato sul canvas visibile (usa la cache di resize: qui non

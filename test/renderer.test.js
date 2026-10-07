@@ -11,7 +11,7 @@ import { createRenderer, createPostDefaults, scanlineAlpha, clamp01, bloomPassOn
 
 function makeStub() {
   const log = [];
-  const counts = { createElement: 0, createPattern: 0, createRadialGradient: 0, createImageData: 0, getContext: 0 };
+  const counts = { createElement: 0, createPattern: 0, createRadialGradient: 0, createImageData: 0, getContext: 0, getImageData: 0 };
   const canvasSizeReads = { width: 0, height: 0 };
 
   function makeCtx() {
@@ -42,6 +42,7 @@ function makeStub() {
       },
       putImageData: (...a) => log.push(['putImageData', ...a]),
       getImageData: (x, y, w, h) => {
+        counts.getImageData++;
         log.push(['getImageData', x, y, w, h]);
         return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
       },
@@ -253,4 +254,21 @@ test('lightmap: default disattivata (nessun cambio alla sequenza base)', () => {
   const api = createRenderer(s.visible, 320, 180);
   assert.equal(api.post.lights | 0, 0, 'lights deve essere 0 di default');
   assert.equal(api.post.lut | 0, 0, 'lut deve essere 0 di default');
+});
+
+// ---------------------------------------------------------------------------
+// W3-RENDER: il flag post.lut deve APPLICARE davvero la LUT rossa (prima era morto).
+// ---------------------------------------------------------------------------
+test('render: post.lut=0 non tocca i pixel; post.lut>0 applica la LUT', () => {
+  const s = makeStub();
+  const r = createRenderer(s.visible, 320, 180);
+  const s2 = makeStub();
+  const r2 = createRenderer(s2.visible, 320, 180);
+  // luci/LUT spente di default
+  r.post.lut = 0;
+  r.render(() => {}, { post: { lut: 0 } });
+  // con LUT accesa deve leggere/scrubbare i pixel del buffer out
+  r2.post.lut = 1;
+  r2.render(() => {}, { post: { lut: 0.8 } });
+  assert.ok(s2.counts.getImageData >= 1, 'lut attiva deve applicare la LUT (getImageData)');
 });
