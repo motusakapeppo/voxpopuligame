@@ -7412,6 +7412,8 @@ let actionT = 0;
 let mash = createMash();
 let juice = createJuice();
 let verbHeld = false;   // tasto-verbo (Z/X) tenuto premuto: per i gimmick 'hold'
+let verbLast = null;    // ultimo verbo premuto (per il gimmick 'hold': esegui a fine accumulo)
+let verbFired = false;  // evita di rieseguire il verbo ogni frame mentre è tenuto
 // stepper fisso 1/120 per il crollo ragdoll (stabilità + determinismo indipendente dal refresh)
 const collapseStepper = createStepper({ step: 1 / 120, maxFrame: 0.05, maxSteps: 6 });
 
@@ -7535,12 +7537,11 @@ function setPrompt(txt) {
 }
 function doVerb(verb) {
   if (state.phase !== 'playing' || !level) return;
-  // GIMMICK: per il tieni-premuto accumula pressione; per ritmico/sync accetta
-  // il gesto solo nella finestra del battito. Se non accettato, niente effetto.
-  if (level.gimmick && level.gimmick.kind !== 'none') {
-    const ok = gimmickAccepts(level.gimmick);
-    if (!ok) {                       // gesto fuori tempo / pressione insufficiente
-      action = verb; actionT = 0.2;
+  // GIMMICK: per ritmico/sync accetta il gesto solo nella finestra del battito.
+  // Per 'hold' l'accettazione è già avvenuta (l'azione parte a fine accumulo).
+  if (level.gimmick && (level.gimmick.kind === 'rhythmic' || level.gimmick.kind === 'sync')) {
+    if (!gimmickAccepts(level.gimmick)) {
+      action = verb; actionT = 0.2;   // fuori tempo: nessun effetto
       return;
     }
   }
@@ -7603,15 +7604,29 @@ function gripCheck(cl) {
 function mashPress() {
   if (mash.active) { mashHit(mash); action = 'spingi'; actionT = 0.2; }
 }
-if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); verbHeld = true; mash.active ? mashPress() : doVerb('tendi'); });
-if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); verbHeld = true; mash.active ? mashPress() : doVerb('spingi'); });
-if (btnTendi) btnTendi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; });
-if (btnSpingi) btnSpingi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; });
-if (btnTendi) btnTendi.addEventListener('pointercancel', () => { verbHeld = false; });
-if (btnSpingi) btnSpingi.addEventListener('pointercancel', () => { verbHeld = false; });
+if (btnTendi) btnTendi.addEventListener('pointerdown', ev => {
+  ev.preventDefault(); verbHeld = true; verbLast = 'tendi'; verbFired = false;
+  if (level && level.gimmick && level.gimmick.kind === 'hold') return;   // parte a fine accumulo
+  mash.active ? mashPress() : doVerb('tendi');
+});
+if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => {
+  ev.preventDefault(); verbHeld = true; verbLast = 'spingi'; verbFired = false;
+  if (level && level.gimmick && level.gimmick.kind === 'hold') return;
+  mash.active ? mashPress() : doVerb('spingi');
+});
+if (btnTendi) btnTendi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; verbLast = null; verbFired = false; });
+if (btnSpingi) btnSpingi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; verbLast = null; verbFired = false; });
+if (btnTendi) btnTendi.addEventListener('pointercancel', () => { verbHeld = false; verbLast = null; verbFired = false; });
+if (btnSpingi) btnSpingi.addEventListener('pointercancel', () => { verbHeld = false; verbLast = null; verbFired = false; });
 if (btnCta) btnCta.addEventListener('pointerdown', ev => { ev.preventDefault(); goToCta(); });
 window.addEventListener('keydown', ev => {
-  if (ev.code === 'KeyZ' || ev.code === 'KeyX') verbHeld = true;   // per gimmick 'hold'
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX') {
+    verbHeld = true;
+    verbLast = ev.code === 'KeyZ' ? 'tendi' : 'spingi';
+    // gimmick 'hold': NON eseguire subito (held=0); l'azione parte nel loop a
+    // fine accumulo.
+    if (level && level.gimmick && level.gimmick.kind === 'hold') return;
+  }
   if (ev.code === 'KeyZ' || ev.code === 'KeyX' || ev.code === 'Space' || ev.code === 'ArrowUp') {
     if (mash.active) { mashPress(); }
     else if (ev.code === 'KeyZ') doVerb('tendi');
@@ -7619,7 +7634,7 @@ window.addEventListener('keydown', ev => {
   }
 });
 window.addEventListener('keyup', ev => {
-  if (ev.code === 'KeyZ' || ev.code === 'KeyX') verbHeld = false;
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX') { verbHeld = false; verbLast = null; verbFired = false; }
 });
 
 const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').split(',').filter(Boolean));
@@ -8069,6 +8084,11 @@ function loop(now) {
   if (level.gimmick) {
     const gr = stepGimmick(level.gimmick, sdt, verbHeld);
     level.gimmickReady = gr.ready;
+    // gimmick 'hold': quando l'accumulo è completo, ESEGUI il verbo tenuto (una volta).
+    if (level.gimmick.kind === 'hold' && gr.ready && verbHeld && verbLast && !verbFired) {
+      verbFired = true;
+      doVerb(verbLast);
+    }
     if (gr.shove) {                       // 'shove': una spinta ti butta giù di 1
       const mp = climbPos(cl);
       moveHands(cl, -1); gripHit(level.grip, 0.12);
