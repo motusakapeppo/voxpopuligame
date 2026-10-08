@@ -171,6 +171,24 @@ test('drawLyricsOverlay: riga attiva ben visibile (bianco alpha >= 0.9, banda >=
   assert.ok(band.length >= 1, 'banda scura sotto alpha 0.55');
 });
 
+// ISTERESI: il render deve rispettare il floor minIdx (indice mai indietro) —
+// senza, l'utente vede righe sbagliate/flippare veloci. Param opzionale,
+// retrocompatibile quando omesso.
+test('drawLyricsPixel: minIdx (isteresi) blocca il regresso dell\'indice', () => {
+  const W = 320, H = 180;
+  // a pos=1 l'indice naturale è 0 ('prima riga'); con minIdx=2 deve restare 2.
+  const ctx = recCtx();
+  drawLyricsPixel(ctx, LINES, 1, 2, W, H, 2);
+  const texts = ctx.calls.filter(c => c.op === 'fillText').map(c => c.text);
+  assert.ok(texts.includes('terza riga'), 'con minIdx=2 deve mostrare l\'indice 2, non la 0: ' + JSON.stringify(texts));
+  assert.ok(!texts.includes('prima riga'), 'non deve regredire alla riga 0');
+  // retrocompatibile: senza minIdx torna il comportamento storico (indice 0)
+  const ctx2 = recCtx();
+  drawLyricsPixel(ctx2, LINES, 1, 2, W, H);
+  const t2 = ctx2.calls.filter(c => c.op === 'fillText').map(c => c.text);
+  assert.ok(t2.includes('prima riga'), 'senza minIdx comportamento storico');
+});
+
 test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + alone nero, NIENTE banda full-width)', () => {
   const W = 320, H = 180;
   const ctx = recCtx();

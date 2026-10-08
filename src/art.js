@@ -1348,12 +1348,14 @@ export function drawUIOverlay(ctx, S, W, H, o) {
 // ortogonali + 4 diagonali) + ombra morbida offset. Il contrasto ABBRACCIA IL
 // TESTO (niente banda full-width, niente righe rosse): la lirica resta nella
 // scena, amalgamata, ma sempre leggibile. La riga precedente è un fantasma rosso.
-export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
+export function drawLyricsPixel(ctx, lines, pos, time, W, H, minIdx) {
   if (!lines || !lines.length) return;
   const w = Number.isFinite(W) ? W : 320;
   const h = Number.isFinite(H) ? H : 180;
   const t = Number.isFinite(time) ? time : 0;
-  const idx = lyricIndexAt(lines, pos);
+  // minIdx (opzionale): isteresi — l'indice mostrato non regredisce mai, così
+  // la riga non "flippa" all'indietro su testi con start ravvicinati.
+  const idx = lyricIndexAt(lines, pos, minIdx);
   if (idx < 0) return;
   const cur = lines[idx];
   const text = cur[2] != null ? cur[2] : cur[1];
