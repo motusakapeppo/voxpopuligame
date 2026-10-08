@@ -342,56 +342,56 @@ function isTopReached(g, p) {
 }
 const GIRONI = [
   { id:'01', track:'INTRO', title:'INTRO', audioId:'01-intro', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'tutorial'}], climb:{reach:0.14,hold:0.18,hang:11,weakEvery:10},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'tutorial'}], climb:{reach:0.14,hold:0.18,hang:11,weakEvery:10,shape:'pyramid'},
     npcScenes:['sleepers','seaWall'], inscription:{ text:'INTRO' } },
 
   { id:'02', track:'IL VENTO DAL SUD', title:'IL VENTO DAL SUD', audioId:'02-vento', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'wind', period:4, strength:2.5, dust:true}], climb:{reach:0.11,hold:0.14,hang:12,weakEvery:9},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'wind', period:4, strength:2.5, dust:true}], climb:{reach:0.11,hold:0.14,hang:12,weakEvery:9,shape:'pyramid'},
     npcScenes:['blownBodies','domeHouses'], inscription:{ text:'IL VENTO DAL SUD' } },
 
   { id:'03', track:'COME I TUONI', title:'COME I TUONI', audioId:'03-tuoni', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'quake', every:5, shakeT:0.8, shakeAmp:6}], climb:{reach:0.12,hold:0.20,hang:11,weakEvery:6},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'quake', every:5, shakeT:0.8, shakeAmp:6}], climb:{reach:0.12,hold:0.20,hang:11,weakEvery:6,shape:'pyramid'},
     npcScenes:['separatedMothers','trembling'], inscription:{ text:'COME I TUONI' } },
 
   { id:'04', track:'BAGHDAD', title:'BAGHDAD', audioId:'04-baghdad', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'fallingBlades', every:3, speed:3}], climb:{reach:0.10,hold:0.13,hang:12,weakEvery:5},
+    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'fallingBlades', every:3, speed:3}], climb:{reach:0.10,hold:0.13,hang:12,weakEvery:5,shape:'gaps'},
     npcScenes:['repressedProtest','stillBody'], inscription:{ text:'BAGHDAD' } },
 
   { id:'05', track:'HO SONNO', title:'HO SONNO', audioId:'05-hosonno', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'sleep', dimTo:0.35, wakeTouchEvery:1.2}], climb:{reach:0.16,hold:0.24,hang:10,weakEvery:9},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'sleep', dimTo:0.35, wakeTouchEvery:1.2}], climb:{reach:0.16,hold:0.24,hang:10,weakEvery:9,shape:'pyramid'},
     npcScenes:['workLoop','timecard','sirene'], inscription:{ text:'HO SONNO' } },
 
   { id:'06', track:'PRIMO POSTO', title:'PRIMO POSTO', audioId:'06-primoposto', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rivals', count:3, pushForce:2}], climb:{reach:0.09,hold:0.12,hang:13,weakEvery:8},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rivals', count:3, pushForce:2}], climb:{reach:0.09,hold:0.12,hang:13,weakEvery:8,shape:'overhang'},
     npcScenes:['snakes','climbers'], inscription:{ text:'PRIMO POSTO' } },
 
   { id:'07', track:'TIC-TAC', title:'TIC-TAC', audioId:'07-tictac', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'timer', total:35, collapseSpeed:0.6}], climb:{reach:0.08,hold:0.11,hang:11,weakEvery:7},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'timer', total:35, collapseSpeed:0.6}], climb:{reach:0.08,hold:0.11,hang:11,weakEvery:7,shape:'pyramid'},
     npcScenes:['clocks','wornBodies','crackedMirror'], inscription:{ text:'TIC-TAC' } },
 
   { id:'08', track:'TUTTO FINTO', title:'TUTTO FINTO', audioId:'08-tuttofinto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720).map((b, i) => i % 3 === 1 ? { ...b, kind:'fake' } : b)],
-    modifiers:[{kind:'illusion', fakeRatio:0.4, flames:true}], climb:{reach:0.12,hold:0.16,hang:12,weakEvery:6},
+    modifiers:[{kind:'illusion', fakeRatio:0.4, flames:true}], climb:{reach:0.12,hold:0.16,hang:12,weakEvery:6,shape:'pyramid'},
     npcScenes:['redCurtain','maskedOrchestra','delta'], inscription:{ text:'TUTTO FINTO' } },
 
   { id:'09', track:'EDERA', title:'EDERA', audioId:'09-edera', direction:'down', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'descent', verlet:true, verletFor:15, ivy:true}], climb:{reach:0.15,hold:0.22,hang:9,weakEvery:5},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'descent', verlet:true, verletFor:15, ivy:true}], climb:{reach:0.15,hold:0.22,hang:9,weakEvery:5,shape:'spiral'},
     npcScenes:['snakes','cerberus','double'], inscription:{ text:'EDERA' } },
 
   { id:'10', track:'SCENDI', title:'SCENDI', audioId:'10-scendi', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rain', slip:true, pushers:3}], climb:{reach:0.11,hold:0.15,hang:12,weakEvery:7},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rain', slip:true, pushers:3}], climb:{reach:0.11,hold:0.15,hang:12,weakEvery:7,shape:'pyramid'},
     npcScenes:['protest','raisedFists','wetCrowd'], inscription:{ text:'SCENDI' } },
 
   { id:'11', track:'LA FINE DEL MONDO', title:'LA FINE DEL MONDO', audioId:'11-lafinedelmondo', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'risingWater', riseSpeed:0.8}, {kind:'fallingBlades', every:2.5, speed:3}], climb:{reach:0.13,hold:0.17,hang:10,weakEvery:6},
+    bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'risingWater', riseSpeed:0.8}, {kind:'fallingBlades', every:2.5, speed:3}], climb:{reach:0.13,hold:0.17,hang:10,weakEvery:6,shape:'gaps'},
     npcScenes:['screamingWorld','wiltingFlowers','blackShroud'], inscription:{ text:'LA FINE DEL MONDO' } },
 
   { id:'12', track:'MARANATHA', title:'MARANATHA', audioId:'12-maranatha', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true}], climb:{reach:0.12,hold:0.15,hang:11,weakEvery:12},
+    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true}], climb:{reach:0.12,hold:0.15,hang:11,weakEvery:12,shape:'pyramid'},
     npcScenes:['popoliInCammino','chorus'], inscription:{ text:'MARANATHA' } },
 
   { id:'13', track:'OUTRO', title:'OUTRO', audioId:'13-outro', direction:'up', height:720,
-    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true, final:true}], climb:{reach:0.13,hold:0.16,hang:11,weakEvery:14},
+    bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true, final:true}], climb:{reach:0.13,hold:0.16,hang:11,weakEvery:14,shape:'overhang'},
     npcScenes:['theTop'], inscription:{ text:'OUTRO' } },
 ];
 
@@ -430,6 +430,65 @@ const HOLD_TIME = 0.14;      // recupero della presa dopo lo spostamento
 const HANG = 11;                    // bacino sotto le mani ≈ 0.5h (posa "X" reale)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
+// V4: FORME della parete. Ogni girone può scegliere una struttura diversa, così
+// i brani non si sentono tutti uguali. 'pyramid' = comportamento storico ESATTO.
+const SHAPES = ['pyramid', 'gaps', 'spiral', 'overhang'];
+
+// REPAIR PASS: garantisce che OGNI fila abbia almeno un appiglio. Il bot di
+// scalata (nearestCol) e i test "almeno un appiglio per fila" ci contano: senza
+// questa pass una forma potrebbe svuotare una fila e bloccare l'ascesa.
+function repairRows(holds, nRows, nCols, cx, cols) {
+  let center = 0;
+  for (let c = 1; c < nCols; c++)
+    if (Math.abs(cols[c] - cx) < Math.abs(cols[center] - cx)) center = c;
+  for (let r = 0; r < nRows; r++) {
+    if (holds[r].some(Boolean)) continue;
+    holds[r][center] = true;
+  }
+}
+
+// Applica una forma alla griglia di appigli (mutazione in place, ritorna holds).
+// Deterministico: nessun RNG. `cols` = coordinate x delle colonne, `cx` = centro.
+function applyShape(holds, nRows, nCols, shape, cx, cols) {
+  if (shape === 'gaps') {
+    // buchi deterministici: alcune prese mancano, la parete è più "rotta"
+    for (let r = 0; r < nRows; r++)
+      for (let c = 0; c < nCols; c++)
+        if ((r * 7 + c * 3) % 11 === 0) holds[r][c] = false;
+    repairRows(holds, nRows, nCols, cx, cols);
+    return holds;
+  }
+  if (shape === 'spiral') {
+    // la fascia valida si sposta di lato salendo (serpentina deterministica)
+    for (let r = 0; r < nRows; r++) {
+      const shift = Math.round(Math.sin(r * 0.3) * 4);
+      if (shift === 0) continue;
+      let lo = -1, hi = -1;
+      for (let c = 0; c < nCols; c++) if (holds[r][c]) { if (lo < 0) lo = c; hi = c; }
+      if (lo < 0) continue;
+      for (let c = 0; c < nCols; c++) holds[r][c] = false;
+      for (let c = lo + shift; c <= hi + shift; c++)
+        if (c >= 0 && c < nCols) holds[r][c] = true;
+    }
+    repairRows(holds, nRows, nCols, cx, cols);
+    return holds;
+  }
+  if (shape === 'overhang') {
+    // larghezza NON monotona: alcune file sporgono oltre quelle sotto
+    for (let r = 0; r < nRows; r++) {
+      if (r % 3 !== 1) continue;
+      let lo = -1, hi = -1;
+      for (let c = 0; c < nCols; c++) if (holds[r][c]) { if (lo < 0) lo = c; hi = c; }
+      if (lo < 0) continue;
+      for (let c = lo - 2; c <= hi + 2; c++)
+        if (c >= 0 && c < nCols) holds[r][c] = true;
+    }
+    repairRows(holds, nRows, nCols, cx, cols);
+    return holds;
+  }
+  return holds;   // 'pyramid' (default) o sconosciuta: identità
+}
+
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
 function createClimb(g) {
   const cx = 160;
@@ -451,6 +510,10 @@ function createClimb(g) {
   const halfWidth = r => 120 - (r / Math.max(1, nRows - 1)) * 90;
   const holds = rows.map((_, r) => cols.map((x, c) => Math.abs(x - cx) <= halfWidth(r)));
 
+  // V4: forma della parete (default 'pyramid' = griglia storica invariata).
+  const shape = SHAPES.includes(pc.shape) ? pc.shape : 'pyramid';
+  applyShape(holds, nRows, cols.length, shape, cx, cols);
+
   const has = (c, r) => c >= 0 && c < cols.length && r >= 0 && r < nRows && holds[r][c];
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
@@ -468,7 +531,7 @@ function createClimb(g) {
   const seed = String(g.id || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 5, 0);
   for (let r = 4 + seed; r < nRows - 3; r += weakEvery) weakRows.add(r);
   return {
-    cols, rows, holds, has, xOf, yOf, nRows, cx, dir,
+    cols, rows, holds, has, xOf, yOf, nRows, cx, dir, shape,
     reachDur: reach, holdTime: hold, hang, weakEvery,
     lh: { c: c0, r: startR }, rh: { c: c0 + 1, r: startR },
     lhA: { c: c0, r: startR }, rhA: { c: c0 + 1, r: startR },  // animati (float)
@@ -4617,7 +4680,7 @@ function drawFigure(ctx, x, y, opts = {}) {
 // ============================================================================
 // ART — VOX POPULI. Figure rosse animate su nero, come la copertina.
 // Tutto il disegno delle persone passa da figure.js (scheletro animato).
-// ============================================================================
+// ============================================================================
 
 // ---------------------------------------------------------------------------
 // LIRICHE ANIMATE — i versi del brano scorrono sullo sfondo, stile dark.
@@ -5323,7 +5386,94 @@ function drawEncounterFlourish(ctx, kind, x, y, time, isActive) {
 }
 
 // ---------------------------------------------------------------------------
-// MISSION HUD — la missione del variety nella SUA banda (sopra la lirica).
+// OMINI — i piccoli della scala. Una figura pixel per OGNI animazione di
+// OMINI_ANIMS: tutte DIVERSE e riconoscibili a colpo d'occhio. Deterministico,
+// NaN-safe, solo fillRect/alpha, coordinate intere. `active` accende l'omino
+// (chevron sopra la testa + tinta calda): è quello con cui puoi interagire.
+// ---------------------------------------------------------------------------function drawOmino(ctx, omino, climb, camY, time, active) {
+  if (!omino || !climb) return;
+  const cam = artNum(camY, 0);
+  const t = artNum(time, 0);
+  const x = climb.xOf(omino.c);
+  const y = climb.yOf(omino.row) - cam;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  if (y < -24 || y > ART_VIEW_H + 24) return;   // cull verticale
+  const px = Math.round(x), py = Math.round(y);
+  const ph = artNum(omino.phase, 0);
+  // guardia bundle: finché omini.js non entra nell'ORDER di build.mjs (task
+  // main.js successivo), OMINI_ANIMS può non esistere nello scope IIFE.
+  const anim = (typeof OMINI_ANIMS !== 'undefined' && OMINI_ANIMS.includes(omino.anim)) ? omino.anim : 'wave';
+  const on = !!active && !omino.resolved;
+  const base = omino.resolved ? 0.45 : 1;
+
+  ctx.save();
+  // ombra a terra: ancora l'omino alla parete
+  ctx.globalAlpha = 0.30 * base;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(px - 4, py, 8, 1);
+
+  if (anim === 'climbUp') {
+    // arrampicata: mani in alto sulla presa, bacino appeso, gambe sulla parete
+    const sway = Math.sin(ph * 2.4);
+    ctx.globalAlpha = base;
+    drawClimber(ctx, px - 4, py - 16, px + 4, py - 15, {
+      h: 14, color: on ? C.redHot : C.redBright, phase: ph, thickness: 1,
+      bx: px + sway, by: py - 4, swing: sway * 0.4,
+    });
+  } else if (anim === 'shove') {
+    // spinta: torso proteso in avanti, braccia distese, scie di forza dietro
+    ctx.globalAlpha = base;
+    drawFigure(ctx, px, py, { h: 14, color: on ? C.redHot : C.red, state: 'push', phase: ph * 3 });
+    ctx.globalAlpha = 0.5 * base;
+    ctx.fillStyle = C.redHot;
+    for (let i = 1; i <= 3; i++) ctx.fillRect(px - 6 - i * 2, py - 9 + i, 2, 1);
+  } else if (anim === 'tumble') {
+    // caduta: figura raccolta che RUOTA (pixel attorno al centro), stordita
+    const a = ph * 3.2;
+    const cx = px, cy = py - 8;
+    ctx.globalAlpha = base;
+    ctx.fillStyle = on ? C.redHot : C.redMid;
+    for (let i = 0; i < 8; i++) {
+      const ang = a + (i / 8) * Math.PI * 2;
+      ctx.fillRect(Math.round(cx + Math.cos(ang) * 6), Math.round(cy + Math.sin(ang) * 6), 2, 2);
+    }
+    ctx.fillRect(cx - 2, cy - 2, 4, 4);   // corpo raccolto
+    ctx.globalAlpha = 0.6 * base;
+    ctx.fillStyle = C.redHot;
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);   // testa
+  } else if (anim === 'carry') {
+    // trasporto: figura con un carico sopra la testa, passo lento
+    ctx.globalAlpha = base;
+    drawFigure(ctx, px, py, { h: 14, color: on ? C.redHot : C.redDark, state: 'walk', phase: ph * 1.6 });
+    ctx.fillStyle = on ? C.redHot : C.red;
+    ctx.fillRect(px - 3, py - 19, 6, 4);  // carico
+    ctx.fillRect(px - 4, py - 15, 1, 3);  // braccio sx su
+    ctx.fillRect(px + 3, py - 15, 1, 3);  // braccio dx su
+  } else {
+    // 'wave' (default): saluto — un braccio in alto che oscilla
+    ctx.globalAlpha = base;
+    drawFigure(ctx, px, py, { h: 14, color: on ? C.redHot : C.redBright, state: 'reach', phase: ph * 2.2 });
+    const wv = Math.round(Math.sin(ph * 6) * 2);
+    ctx.fillStyle = on ? C.redHot : C.red;
+    ctx.fillRect(px + 5 + wv, py - 17, 1, 1);
+    ctx.fillRect(px + 6 + wv, py - 19, 1, 1);
+    ctx.fillRect(px + 7 + wv, py - 21, 1, 1);
+  }
+
+  // active: chevron sopra la testa (l'omino con cui puoi interagire)
+  if (on) {
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 6);
+    ctx.fillStyle = C.redHot;
+    ctx.fillRect(px - 2, py - 24, 5, 1);
+    ctx.fillRect(px - 1, py - 23, 3, 1);
+    ctx.fillRect(px, py - 22, 1, 1);
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// MISSION HUD — la missione del variety nella SUA banda (slot chiaro sopra il
+// prompt, sotto il messaggio evento). Testo CENTRATO: si legge a colpo d'occhio.
 // Formato: `◈ <text>   current/target`; done → redHot + check ✓.
 // ---------------------------------------------------------------------------function drawMissionHUD(ctx, S, W, H, o) {
   const s = Number.isFinite(S) && S > 0 ? S : 1;
@@ -5335,14 +5485,14 @@ function drawEncounterFlourish(ctx, kind, x, y, time, isActive) {
   const tgt = Number.isFinite(opt.target) ? opt.target : 0;
   const done = !!opt.done;
   const B = overlayBands(h);
-  const y = B.mission.y0 + (B.mission.y1 - B.mission.y0) * 0.72;   // TOP della banda
+  const y = B.mission.y0 + (B.mission.y1 - B.mission.y0) * 0.72;   // dentro la banda
   const label = (done ? '✓ ' : '◈ ') + text + '   ' + cur + '/' + tgt;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'center';
   uiFont(ctx, uiFitSize(ctx, label, (w - 16) * s * 0.94, s, 8, 5), s);
-  uiTextShadow(ctx, label, 8, y, s, done ? C.redHot : C.red, 1);
+  uiTextShadow(ctx, label, w / 2, y, s, done ? C.redHot : C.red, 1);
   ctx.restore();
   ctx.textAlign = 'left';
 }
@@ -5736,19 +5886,21 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
 }
 
 // Bande verticali DISGIUNTE dell'overlay UI (px logici, top→bottom). PURA e
-// NaN-safe: garantisce che iscrizione, lirica, chapter, mash, threatMsg, prompt
-// e flow non si sovrappongano MAI (bug: barra mash sopra i testi, lirica persa).function overlayBands(H) {
+// NaN-safe: garantisce che iscrizione, lirica, chapter, mash, threatMsg, mission,
+// prompt e flow non si sovrappongano MAI (bug: barra mash sopra i testi, lirica persa).
+// La MISSIONE vive nello slot chiaro SOPRA il prompt (non più incollata sotto
+// l'iscrizione, dove si confondeva con il titolo del brano).function overlayBands(H) {
   const h = Number.isFinite(H) && H > 0 ? H : 180;
   const gap = Math.max(1, Math.round(h * 0.011));   // ~2px @180
   const cut = f => Math.round(h * f);
   const mk = (y0, y1) => { const a = Math.max(0, y0); return { y0: a, y1: Math.max(a + 1, y1) }; };
   const inscription = mk(0, cut(0.10));
-  const mission = mk(inscription.y1 + gap, cut(0.17));
-  const lyric = mk(mission.y1 + gap, cut(0.36));
+  const lyric = mk(inscription.y1 + gap, cut(0.36));
   const chapter = mk(lyric.y1 + gap, cut(0.58));
   const mash = mk(chapter.y1 + gap, cut(0.82));
-  const threatMsg = mk(mash.y1 + gap, cut(0.88));
-  const prompt = mk(threatMsg.y1 + gap, cut(0.93));
+  const threatMsg = mk(mash.y1 + gap, cut(0.86));
+  const mission = mk(threatMsg.y1 + gap, cut(0.90));
+  const prompt = mk(mission.y1 + gap, cut(0.95));
   const flow = mk(prompt.y1 + gap, h);
   return { inscription, mission, lyric, chapter, mash, threatMsg, prompt, flow };
 }
@@ -5941,7 +6093,9 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
 // ---------------------------------------------------------------------------
 
 // Indice della riga attiva per una posizione in secondi: ultima voce con
-// start <= pos; 0 se pos precede la prima; -1 se vuoto. NaN → 0 (sicuro).function lyricIndexAt(lines, pos) {
+// start <= pos; 0 se pos precede la prima; -1 se vuoto. NaN → 0 (sicuro).
+// `minIdx` opzionale: floor monotono (isteresi) — l'indice non torna mai
+// indietro sotto il valore imposto dal chiamante. NaN/omesso → storico.function lyricIndexAt(lines, pos, minIdx) {
   if (!lines || !lines.length) return -1;
   const p = (typeof pos === 'number' && !Number.isNaN(pos)) ? pos : 0;
   let idx = 0;
@@ -5949,7 +6103,8 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
     const start = Number.isFinite(lines[i][0]) ? lines[i][0] : 0;
     if (p >= start) idx = i;
   }
-  return idx;
+  const floor = Number.isFinite(minIdx) ? Math.max(0, Math.floor(minIdx)) : 0;
+  return Math.max(floor, idx);
 }function drawLyricsOverlay(uctx, S, lines, pos, W, H, time) {
   if (!lines || !lines.length) return;
   const s = Number.isFinite(S) && S > 0 ? S : 1;
@@ -6398,9 +6553,12 @@ function advance(state, event) {
 // kind: 'item' | 'friend' | 'enemy' | 'egg'
 // effect: 'loyal+1' (amico) | 'loyal-1' (nemico) | 'boost'|'firm'|'reveal' (item) | 'egg'
 const it = (kind, name, at, effect) => ({ kind, name, at, effect });
+
+// mission.kind: 'collect' | 'survive' | 'help' | 'descend' | 'resist'
+// Ogni brano ha un OBIETTIVO diverso: testo distinto + kind che ne dice il sapore.
 const VARIETY = {
   '01-intro': {
-    mission: { text: 'Trova un motivo per restare sveglio', target: 3 },
+    mission: { kind: 'resist', text: 'Resta sveglio finché non sorge il sole', target: 3 },
     items: [
       it('friend', 'Vicino di letto', 0.30, 'loyal+1'),
       it('item', 'Letto sfatto', 0.44, 'boost'),
@@ -6412,19 +6570,18 @@ const VARIETY = {
     ],
   },
   '02-vento': {
-    mission: { text: 'Tieni la rotta contro il vento', target: 3 },
+    mission: { kind: 'resist', text: 'Tieni la rotta mentre il vento ti spinge indietro', target: 3 },
     items: [
       it('friend', 'Compagno di viaggio', 0.28, 'loyal+1'),
       it('item', 'Bussola storta', 0.42, 'firm'),
       it('item', 'Vela strappata', 0.55, 'boost'),
       it('enemy', 'Raffica del sud', 0.68, 'loyal-1'),
       it('item', 'Brivido improvviso', 0.80, 'reveal'),
-      it('item', 'Graffito mai visto', 0.88, 'firm'),
       it('egg', 'Microfono rotto', 0.14, 'egg'),
     ],
   },
   '03-tuoni': {
-    mission: { text: 'Riparati dal sole dei suoi occhi', target: 3 },
+    mission: { kind: 'survive', text: 'Sopravvivi al tuono che ti cade addosso', target: 3 },
     items: [
       it('friend', 'La mamma', 0.26, 'loyal+1'),
       it('item', 'Collana di pianeti', 0.40, 'reveal'),
@@ -6436,9 +6593,10 @@ const VARIETY = {
     ],
   },
   '04-baghdad': {
-    mission: { text: 'Uccidi i mostri che vivono in te', target: 4 },
+    mission: { kind: 'resist', text: 'Resisti ai mostri che ti crescono dentro', target: 4 },
     items: [
       it('friend', 'Il vicino che tace', 0.26, 'loyal+1'),
+      it('item', 'Cenere sul davanzale', 0.34, 'reveal'),
       it('item', 'Foglio nella stanza', 0.40, 'reveal'),
       it('item', 'Scudo di cranio', 0.54, 'firm'),
       it('enemy', 'Effetto domino', 0.66, 'loyal-1'),
@@ -6448,19 +6606,18 @@ const VARIETY = {
     ],
   },
   '05-hosonno': {
-    mission: { text: 'Resisti al sonno fino all\u2019alba', target: 4 },
+    mission: { kind: 'survive', text: 'Sopravvivi al sonno fino all\u2019alba', target: 4 },
     items: [
       it('friend', 'Morfeo', 0.28, 'loyal+1'),
       it('item', 'Caffè caldo', 0.42, 'boost'),
       it('item', 'Latte fresco', 0.55, 'firm'),
       it('enemy', 'La Sirena', 0.68, 'loyal-1'),
       it('item', 'Pozzo della moneta', 0.80, 'reveal'),
-      it('item', 'Sveglia showtime', 0.90, 'boost'),
       it('egg', 'Cielo dentro il mare', 0.14, 'egg'),
     ],
   },
   '06-primoposto': {
-    mission: { text: 'Scala senza diventare come loro', target: 3 },
+    mission: { kind: 'resist', text: 'Resisti alla voglia di scavalcare gli altri', target: 3 },
     items: [
       it('friend', 'Il rivale onesto', 0.28, 'loyal+1'),
       it('item', 'Sorriso e lacrima', 0.44, 'firm'),
@@ -6472,9 +6629,10 @@ const VARIETY = {
     ],
   },
   '07-tictac': {
-    mission: { text: 'Arriva prima che il tempo scada', target: 4 },
+    mission: { kind: 'survive', text: 'Sopravvivi al tempo che ti scade tra le mani', target: 4 },
     items: [
       it('friend', 'Il vecchio dell\u2019orologio', 0.26, 'loyal+1'),
+      it('item', 'Sabbia nella clessidra', 0.34, 'boost'),
       it('item', 'Chicco di personalità', 0.40, 'boost'),
       it('item', 'Affitto pagato', 0.54, 'firm'),
       it('enemy', 'La lancetta', 0.66, 'loyal-1'),
@@ -6484,19 +6642,18 @@ const VARIETY = {
     ],
   },
   '08-tuttofinto': {
-    mission: { text: 'Riconosci ciò che è vero', target: 3 },
+    mission: { kind: 'collect', text: 'Raccogli le prove di ciò che è vero', target: 3 },
     items: [
       it('friend', 'Il violinista', 0.28, 'loyal+1'),
       it('item', 'Sipario rosso', 0.42, 'reveal'),
       it('item', 'Applauso finto', 0.55, 'firm'),
       it('enemy', 'La maschera', 0.68, 'loyal-1'),
       it('item', 'Sipario che si alza', 0.80, 'boost'),
-      it('item', 'Applauso del pubblico', 0.90, 'reveal'),
       it('egg', 'Passamontagna', 0.13, 'egg'),
     ],
   },
   '09-edera': {
-    mission: { text: 'Scendi e liberati dall\u2019edera', target: 4 },
+    mission: { kind: 'descend', text: 'Scendi e strappa l\u2019edera che ti trattiene', target: 4 },
     items: [
       it('friend', 'Anima di sotto', 0.28, 'loyal+1'),
       it('item', 'Ramo reciso', 0.42, 'firm'),
@@ -6508,9 +6665,10 @@ const VARIETY = {
     ],
   },
   '10-scendi': {
-    mission: { text: 'Scendi in piazza con gli altri', target: 3 },
+    mission: { kind: 'help', text: 'Aiuta il popolo a scendere in piazza', target: 3 },
     items: [
       it('friend', 'Il popolo', 0.26, 'loyal+1'),
+      it('item', 'Bandiera strappata', 0.34, 'firm'),
       it('item', 'Pugno al cielo', 0.40, 'firm'),
       it('item', 'Voce che canta', 0.54, 'boost'),
       it('enemy', 'Le truppe', 0.66, 'loyal-1'),
@@ -6520,19 +6678,18 @@ const VARIETY = {
     ],
   },
   '11-lafinedelmondo': {
-    mission: { text: 'Sopravvivi alla fine del mondo', target: 4 },
+    mission: { kind: 'survive', text: 'Sopravvivi all\u2019acqua che sale e al cielo che cade', target: 4 },
     items: [
       it('friend', 'Chi conosce il segreto', 0.26, 'loyal+1'),
       it('item', 'Fiore che appassisce', 0.40, 'reveal'),
       it('item', 'Cresta dell\u2019acqua', 0.54, 'firm'),
       it('enemy', 'Il lenzuolo nero', 0.66, 'loyal-1'),
       it('item', 'Buco nella nuvola', 0.78, 'boost'),
-      it('item', 'Nubi in festa', 0.90, 'reveal'),
       it('egg', 'Ultimo giorno di sole', 0.12, 'egg'),
     ],
   },
   '12-maranatha': {
-    mission: { text: 'Unisci le mani al coro', target: 3 },
+    mission: { kind: 'help', text: 'Unisci le mani al coro e reggi il mondo', target: 3 },
     items: [
       it('friend', 'Il coro', 0.28, 'loyal+1'),
       it('item', 'Palmo che racchiude', 0.42, 'firm'),
@@ -6544,9 +6701,10 @@ const VARIETY = {
     ],
   },
   '13-outro': {
-    mission: { text: 'Guarda in faccia chi ti ha accompagnato', target: 3 },
+    mission: { kind: 'help', text: 'Accompagna a riva chi ti ha accompagnato', target: 3 },
     items: [
       it('friend', 'Frate che sento', 0.28, 'loyal+1'),
+      it('item', 'Bottiglia al tramonto', 0.34, 'reveal'),
       it('item', 'Latte della mamma', 0.42, 'firm'),
       it('item', 'Dosi di libertà', 0.55, 'boost'),
       it('enemy', 'Il compromesso', 0.68, 'loyal-1'),
@@ -6565,7 +6723,7 @@ function clampInt(v, lo, hi) { const n = Math.round(v); return n < lo ? lo : n >
 // Poi la colonna centrale di quella riga (centerCol): sempre raggiungibile.
 function createVariety(girone, climb) {
   const id = girone.audioId;
-  const def = VARIETY[id] || { mission: { text: '', target: 2 }, items: [] };
+  const def = VARIETY[id] || { mission: { kind: 'collect', text: '', target: 2 }, items: [] };
   const nRows = climb.nRows;
   const items = def.items.map((src, i) => {
     const row = clampInt(1 + (nRows - 3) * src.at, 1, Math.max(1, nRows - 2));
@@ -6574,7 +6732,7 @@ function createVariety(girone, climb) {
   });
   return {
     id,
-    mission: { text: def.mission.text, target: def.mission.target, current: 0, done: false },
+    mission: { kind: def.mission.kind, text: def.mission.text, target: def.mission.target, current: 0, done: false },
     items,
   };
 }
