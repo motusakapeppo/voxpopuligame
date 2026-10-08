@@ -151,6 +151,45 @@ zero errori · bundle OK.
 
 ---
 
+## Ciclo 8 — Rework strutturale per-traccia (varietà profonda + bug confermati)
+**Data:** 2026-10-08 · **Commit:** `a200e9a`…`85d0e9c`
+
+**Contesto:** l'utente ha contestato il ciclo precedente come "timido": le tracce
+sembravano ancora uguali e due bug (braccia, liriche) erano dichiarati risolti ma
+non lo erano. Prove in `docs/cycles/DIAGNOSI-2026-10-08.md`.
+
+**Bug confermati e risolti (con prove):**
+- **Braccia** — il rientro scattava solo da fermo; tenendo premuto SU le mani
+  restavano offset e un braccio restava teso. Ora `convergeHands` è CONTINUA (anche
+  in scalata) e `autoStep` mira alla coppia centrale. Screenshot conferma braccia
+  rilassate. (`src/climb.js`)
+- **Liriche** — il gap-fill INVENTAVA i tempi (03-tuoni: testo a 1.84s ma voce a
+  7.25s; 208 voci di cui ~150 fabbricate). Ora SOLO righe ancorate a Whisper: 55
+  voci vere, zero inventate. (`tools/align-karaoke.mjs`, `src/karaoke.js`)
+
+**Rework strutturale (5 livelli, tutti committati):**
+1. **levelgen.js** — 8 layout di griglia davvero diversi (cols 13–29, passo 9–15,
+   curve funnel/cavern/zigzag/stair, corsie doppie). Tutte e 13 le tracce
+   risolvibili. (`src/levelgen.js`, `src/gironi.js`)
+2. **objective.js** — 6 obiettivi meccanici con vittoria/sconfitta reali
+   (climb/beatClock/survive/collect/escort/holdGrip/descend). Verificato nel gioco:
+   survive→vittoria, beatClock scaduto→sconfitta. (`src/objective.js`)
+3. **gimmicks.js** — meccaniche d'interazione per-traccia (rhythmic/hold/shove/sync)
+   che modulano il momento in cui un verbo è accettato. (`src/gimmicks.js`)
+4. **TINT per-traccia** — velo atmosferico che cambia DAVVERO la lettura cromatica
+   (05 cupa vs 06 accesa: differenza netta in screenshot). Palette rossa rispettata.
+5. **Competitivo + omini** — presa più fragile (regen 0.055), barra della PRESA
+   visibile a sinistra, difficulty per traccia, omini protagonisti (spawn ogni 3
+   file). Verificato in screenshot.
+
+**Verifica:** 413/413 test · `verify.mjs 01/09/--collapse` = VERIFICA OK · zero
+errori runtime · FPS ~60 · determinismo intatto (0 `Math.random` nel gameplay).
+
+**Esito:** KEEP. Il gioco è ora strutturalmente vario, competitivo e con identità
+per traccia, restando breve e nella palette rossa.
+
+---
+
 ## Prossimi cicli (backlog prioritizzato dalla ricerca)
 
 1. **Parete che respira** — la folla dietro è caotica; ridurre densità/scurire per far
