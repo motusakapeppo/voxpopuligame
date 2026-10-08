@@ -410,3 +410,128 @@ test('shouldDrawLyrics: true per playing/mash/unlocked, false per title/cta/coll
     assert.equal(shouldDrawLyrics(p), false, String(p));
   }
 });
+
+// ---------------------------------------------------------------------------
+// T8: VARIETY — oggetti di missione sulla parete + HUD missione in banda.
+// ---------------------------------------------------------------------------
+import { drawVariety, drawMissionHUD } from '../src/art.js';
+
+// climb finto: xOf/yOf lineari, cx = centro
+function fakeClimb() {
+  return { xOf: c => 20 + c * 24, yOf: r => 40 + r * 24, cx: 3 };
+}
+
+function fakeVariety() {
+  return {
+    id: 'v1',
+    mission: { text: 'Raccogli i ricordi', target: 3, current: 1, done: false },
+    items: [
+      { id: 'a', kind: 'item',   name: 'nodo',   effect: '+1', at: 0, row: 2, c: 2, collected: false }, // y=88 in view
+      { id: 'b', kind: 'friend', name: 'amico',  effect: 'aiuto', at: 1, row: 3, c: 4, collected: false }, // y=112 in view
+      { id: 'c', kind: 'enemy',  name: 'rivale', effect: 'danno', at: 2, row: 4, c: 1, collected: false }, // y=136 in view
+      { id: 'd', kind: 'egg',    name: 'uovo',   effect: '?', at: 3, row: 5, c: 5, collected: false }, // y=160 in view
+      { id: 'e', kind: 'item',   name: 'preso',  effect: '+1', at: 4, row: 2, c: 2, collected: true },  // collected -> mai
+      { id: 'f', kind: 'item',   name: 'fuori',  effect: '+1', at: 5, row: -5, c: 2, collected: false }, // y=-80 culled
+      { id: 'g', kind: 'item',   name: 'sotto',  effect: '+1', at: 6, row: 20, c: 2, collected: false }, // y=520 culled
+    ],
+  };
+}
+
+test('drawVariety: disegna gli item in vista, culla i fuori schermo, ignora i collected', () => {
+  const ctx = recCtx();
+  drawVariety(ctx, fakeVariety(), fakeClimb(), 0, 2.5, 320, 180);
+  assert.ok(ctx.calls.length > 0, 'nessun pixel disegnato');
+  for (const c of ctx.calls) {
+    if (c.op === 'fillRect') {
+      assert.ok([c.x, c.y, c.w, c.h].every(Number.isFinite), 'fillRect non finito: ' + JSON.stringify(c));
+      assert.ok(c.y >= -24 && c.y <= 180 + 24, 'fillRect fuori view: ' + JSON.stringify(c));
+    }
+  }
+  // i collected non devono produrre nulla: confronto con la varietà senza di essi
+  const v2 = fakeVariety();
+  v2.items = v2.items.filter(it => !it.collected);
+  const ctx2 = recCtx();
+  drawVariety(ctx2, v2, fakeClimb(), 0, 2.5, 320, 180);
+  assert.deepEqual(ctx.calls, ctx2.calls, 'i collected hanno disegnato qualcosa');
+});
+
+test('drawVariety: deterministico e NaN-safe', () => {
+  const a = recCtx(), b = recCtx();
+  drawVariety(a, fakeVariety(), fakeClimb(), 0, 2.5, 320, 180);
+  drawVariety(b, fakeVariety(), fakeClimb(), 0, 2.5, 320, 180);
+  assert.deepEqual(a.calls, b.calls, 'non deterministico');
+  const n = recCtx();
+  drawVariety(n, fakeVariety(), fakeClimb(), NaN, NaN, NaN, NaN);
+  for (const c of n.calls) {
+    if (c.op === 'fillRect') assert.ok([c.x, c.y, c.w, c.h].every(Number.isFinite), 'NaN: ' + JSON.stringify(c));
+  }
+  // input degeneri: nessun throw
+  drawVariety(recCtx(), null, null, 0, 0, 320, 180);
+  drawVariety(recCtx(), { items: [] }, fakeClimb(), 0, 0, 320, 180);
+  assert.ok(true);
+});
+
+test('drawVariety: i 4 kind usano colori distinti (item/friend/enemy/egg)', () => {
+  const kinds = ['item', 'friend', 'enemy', 'egg'];
+  const colors = kinds.map(kind => {
+    const v = { id: 'x', mission: null, items: [{ id: 'i', kind, name: 'n', effect: 'e', at: 0, row: 2, c: 2, collected: false }] };
+    const ctx = recCtx();
+    drawVariety(ctx, v, fakeClimb(), 0, 2.5, 320, 180);
+    return new Set(ctx.calls.filter(c => c.op === 'fillRect').map(c => c.fill));
+  });
+  for (let i = 0; i < kinds.length; i++) {
+    assert.ok(colors[i].size > 0, kinds[i] + ': nessun pixel');
+    for (let j = i + 1; j < kinds.length; j++) {
+      const shared = [...colors[i]].filter(c => colors[j].has(c));
+      assert.ok(shared.length < colors[i].size || shared.length < colors[j].size,
+        kinds[i] + ' e ' + kinds[j] + ' disegnano identici');
+    }
+  }
+});
+
+test('drawMissionHUD: testo finito, mostra current/target, done usa colore distinto', () => {
+  const S = 3, W = 320, H = 180;
+  const ctx = recCtx();
+  drawMissionHUD(ctx, S, W, H, { text: 'Raccogli i ricordi', current: 1, target: 3, done: false });
+  const texts = ctx.calls.filter(c => c.op === 'fillText');
+  assert.ok(texts.length > 0, 'nessun testo');
+  for (const c of texts) assert.ok(Number.isFinite(c.x) && Number.isFinite(c.y), 'coord non finita');
+  const joined = texts.map(c => c.text).join(' ');
+  assert.ok(joined.includes('1/3'), 'current/target mancante: ' + joined);
+  const B = overlayBands(H);
+  for (const c of texts) assert.ok(c.y / S >= B.mission.y0 - 0.6 && c.y / S <= B.mission.y1 + 0.6,
+    'testo fuori banda mission: y=' + (c.y / S));
+  // done: colore distinto (redHot) e check
+  const done = recCtx();
+  drawMissionHUD(done, S, W, H, { text: 'Raccogli i ricordi', current: 3, target: 3, done: true });
+  const doneTexts = done.calls.filter(c => c.op === 'fillText');
+  assert.ok(doneTexts.some(c => c.fill === C.redHot), 'done non usa redHot');
+  assert.ok(doneTexts.map(c => c.text).join(' ').includes('✓'), 'done senza check');
+  const notDone = texts.filter(c => c.fill === C.redHot);
+  assert.equal(notDone.length, 0, 'stato non-done non deve usare redHot');
+  // NaN-safe
+  const n = recCtx();
+  drawMissionHUD(n, NaN, NaN, NaN, { text: null, current: NaN, target: NaN, done: false });
+  for (const c of n.calls) {
+    if (c.op === 'fillText' || c.op === 'fillRect') {
+      assert.ok(Number.isFinite(c.x) && Number.isFinite(c.y), 'NaN: ' + JSON.stringify(c));
+    }
+  }
+});
+
+test('overlayBands: include la banda mission e resta pairwise disgiunta', () => {
+  for (const H of [180, 240, 120]) {
+    const b = overlayBands(H);
+    assert.ok(b.mission, 'banda mission mancante');
+    assert.ok(Number.isFinite(b.mission.y0) && Number.isFinite(b.mission.y1), 'mission non finita');
+    assert.ok(b.mission.y0 < b.mission.y1, 'mission vuota');
+    const keys = Object.keys(b);
+    for (let i = 0; i < keys.length; i++) {
+      for (let j = i + 1; j < keys.length; j++) {
+        const a = b[keys[i]], c = b[keys[j]];
+        assert.ok(a.y1 <= c.y0 || c.y1 <= a.y0,
+          'bande sovrapposte: ' + keys[i] + ' vs ' + keys[j] + ' @H=' + H);
+      }
+    }
+  }
+});

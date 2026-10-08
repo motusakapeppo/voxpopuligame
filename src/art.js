@@ -638,6 +638,123 @@ export function drawPickup(ctx, pk, climb, cameraY, time) {
 }
 
 // ---------------------------------------------------------------------------
+// VARIETY — oggetti di missione sparsi sulla parete (item/amico/nemico/uovo).
+// Ogni kind ha un linguaggio visivo distinto; i collected non si disegnano e
+// i fuori schermo sono cullati. Tutto pixel: rect/dot/line, coordinate intere.
+// ---------------------------------------------------------------------------
+export function drawVariety(ctx, variety, climb, cameraY, time, W, H) {
+  if (!variety || !Array.isArray(variety.items) || !climb) return;
+  const w = Number.isFinite(W) ? W : 320;
+  const h = Number.isFinite(H) ? H : 180;
+  const cam = Number.isFinite(cameraY) ? cameraY : 0;
+  const t = Number.isFinite(time) ? time : 0;
+  ctx.save();
+  for (const it of variety.items) {
+    if (!it || it.collected) continue;
+    const x = climb.xOf(it.c), y = climb.yOf(it.row) - cam;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (y < -24 || y > h + 24) continue;   // cull verticale
+    const px = Math.round(x), py = Math.round(y);
+    const kind = it.kind;
+    if (kind === 'friend') {
+      // figura piccola, calda, con la mano tesa (punto luminoso)
+      const pulse = 0.5 + 0.5 * Math.sin(t * 3 + (it.at || 0));
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = C.redBright;
+      ctx.fillRect(px - 2, py - 10, 4, 5);          // testa
+      ctx.fillRect(px - 3, py - 5, 6, 7);           // corpo
+      ctx.fillRect(px - 4, py - 3, 1, 4);           // braccio sx
+      ctx.fillRect(px + 3, py - 3, 1, 4);           // braccio dx
+      ctx.fillRect(px - 3, py + 2, 2, 4);           // gamba sx
+      ctx.fillRect(px + 1, py + 2, 2, 4);           // gamba dx
+      // mano tesa: punto caldo che pulsa
+      ctx.globalAlpha = 0.6 + 0.4 * pulse;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px + 4, py - 4, 2, 2);
+      ctx.globalAlpha = 0.25 + 0.25 * pulse;
+      ctx.fillRect(px + 3, py - 5, 4, 4);
+    } else if (kind === 'enemy') {
+      // figura scura, spigolosa, con occhio rosso acceso
+      const jit = Math.sin(t * 9 + (it.at || 0)) > 0.6 ? 1 : 0;
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = C.redDark;
+      ctx.fillRect(px - 2, py - 11, 4, 4);          // testa
+      ctx.fillRect(px - 3, py - 7, 6, 8);           // corpo
+      ctx.fillRect(px - 5, py - 6, 2, 2);           // spalla spigolosa sx
+      ctx.fillRect(px + 3, py - 6, 2, 2);           // spalla spigolosa dx
+      ctx.fillRect(px - 4, py - 4, 1, 3);           // braccio sx
+      ctx.fillRect(px + 3, py - 4, 1, 3);           // braccio dx
+      ctx.fillRect(px - 3, py + 1, 2, 5);           // gamba sx
+      ctx.fillRect(px + 1, py + 1, 2, 5);           // gamba dx
+      // occhio: pixel rosso caldo (fisso, minaccioso)
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px + 1 + jit, py - 10, 1, 1);
+    } else if (kind === 'egg') {
+      // uovo segreto: scintilla tenue che luccica a intermittenza (facile da perdere)
+      const tw = Math.sin(t * 2.3 + (it.at || 0) * 1.7);
+      const k = 0.5 + 0.5 * tw;   // 0..1
+      ctx.globalAlpha = 0.08 + 0.10 * k;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px - 3, py - 3, 6, 6);
+      // nucleo bianco: la scintilla rara (distinta dal nodo item)
+      ctx.globalAlpha = 0.25 + 0.35 * k;
+      ctx.fillStyle = C.white;
+      ctx.fillRect(px, py, 1, 1);
+      if (tw > 0.2) {
+        ctx.globalAlpha = 0.35 + 0.3 * tw;
+        ctx.fillStyle = C.redHot;
+        ctx.fillRect(px - 2, py, 1, 1);
+        ctx.fillRect(px + 2, py, 1, 1);
+        ctx.fillRect(px, py - 2, 1, 1);
+        ctx.fillRect(px, py + 2, 1, 1);
+      }
+    } else {
+      // 'item' (default): nodo luminoso come drawPickup, in redHot
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4 + (it.at || 0));
+      ctx.globalAlpha = 0.10 + 0.14 * pulse;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px - 9, py - 9, 18, 18);
+      ctx.globalAlpha = 0.6 + 0.4 * pulse;
+      const r = 2 + Math.round(pulse);
+      for (let yy = -r; yy <= r; yy++)
+        for (let xx = -r; xx <= r; xx++)
+          if (xx * xx + yy * yy <= r * r + 1) ctx.fillRect(px + xx, py + yy, 1, 1);
+      ctx.globalAlpha = 0.8;
+      ctx.fillRect(px - 6, py, 12, 1);
+      ctx.fillRect(px, py - 6, 1, 12);
+    }
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// MISSION HUD — la missione del variety nella SUA banda (sopra la lirica).
+// Formato: `◈ <text>   current/target`; done → redHot + check ✓.
+// ---------------------------------------------------------------------------
+export function drawMissionHUD(ctx, S, W, H, o) {
+  const s = Number.isFinite(S) && S > 0 ? S : 1;
+  const w = Number.isFinite(W) ? W : 320;
+  const h = Number.isFinite(H) ? H : 180;
+  const opt = o || {};
+  const text = opt.text == null ? '' : String(opt.text);
+  const cur = Number.isFinite(opt.current) ? opt.current : 0;
+  const tgt = Number.isFinite(opt.target) ? opt.target : 0;
+  const done = !!opt.done;
+  const B = overlayBands(h);
+  const y = B.mission.y0 + (B.mission.y1 - B.mission.y0) * 0.72;   // TOP della banda
+  const label = (done ? '✓ ' : '◈ ') + text + '   ' + cur + '/' + tgt;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  uiFont(ctx, uiFitSize(ctx, label, (w - 16) * s * 0.94, s, 8, 5), s);
+  uiTextShadow(ctx, label, 8, y, s, done ? C.redHot : C.red, 1);
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------
 // MESSAGGIO EVENTO — cosa ti è successo (ostacolo/aiuto), in basso.
 // ---------------------------------------------------------------------------
 export function drawThreatMsg(ctx, msg, W, H) {
@@ -1041,13 +1158,14 @@ export function overlayBands(H) {
   const cut = f => Math.round(h * f);
   const mk = (y0, y1) => { const a = Math.max(0, y0); return { y0: a, y1: Math.max(a + 1, y1) }; };
   const inscription = mk(0, cut(0.10));
-  const lyric = mk(inscription.y1 + gap, cut(0.36));
+  const mission = mk(inscription.y1 + gap, cut(0.17));
+  const lyric = mk(mission.y1 + gap, cut(0.36));
   const chapter = mk(lyric.y1 + gap, cut(0.58));
   const mash = mk(chapter.y1 + gap, cut(0.82));
   const threatMsg = mk(mash.y1 + gap, cut(0.88));
   const prompt = mk(threatMsg.y1 + gap, cut(0.93));
   const flow = mk(prompt.y1 + gap, h);
-  return { inscription, lyric, chapter, mash, threatMsg, prompt, flow };
+  return { inscription, mission, lyric, chapter, mash, threatMsg, prompt, flow };
 }
 
 // Fase → la lirica PIXEL va disegnata? (playing/mash/unlocked sì; title/cta/collapse no)
