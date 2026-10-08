@@ -8,9 +8,10 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText, drawLyricsPixel, drawLyricsOverlay, drawNpcScenes, shouldDrawLyrics } from './art.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText, drawLyricsPixel, drawLyricsOverlay, drawNpcScenes, shouldDrawLyrics, drawVariety, drawMissionHUD } from './art.js';
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
+import { createVariety, stepVariety } from './variety.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup, threatEffects } from './threats.js';
 import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone } from './mash.js';
 import { createJuice, impact, addFlow, breakFlow, setBpm, stepJuice, shakeOffsetJ, punchZoom, flowRatio, bpmFor } from './juice.js';
@@ -121,6 +122,7 @@ function loadGirone(index) {
     bodies,
     encounters: makeEncounters(g, climb),
     pickups,
+    variety: createVariety(g, climb),    // missione + oggetti/amici/nemici/egg del brano
     threats: createThreatState(),
     pfx: createFx((index + 1) * 7919),   // particelle cinematografiche (deterministiche)
     events: [], fx: createEffects(), transition: null, active: null, threatMsg: '',
@@ -233,6 +235,7 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
+  if (!SKIP.has('variety')) drawVariety(ctx, lv.variety, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
@@ -288,6 +291,15 @@ function drawOverlay() {
     pos,
     time,
   });
+  // missione del girone (banda dedicata, sotto l'iscrizione)
+  if (level && level.variety && !SKIP.has('variety')) {
+    drawMissionHUD(uctx, SCALE, VIEW_W, VIEW_H, {
+      text: level.variety.mission.text,
+      current: level.variety.mission.current,
+      target: level.variety.mission.target,
+      done: level.variety.mission.done,
+    });
+  }
 }
 
 // Post-processing con JUICE: battito a tempo, flow, flash/shake, vignettatura.
@@ -522,6 +534,27 @@ function loop(now) {
         emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 8, spread: 3 });
         impact(juice, 0.9, 0, -1);
       }
+    }
+  }
+
+  // raccolta varietà del brano (missione/oggetti/amici/nemici/easter egg)
+  if (level.variety) {
+    const vr = stepVariety(level.variety, cl);
+    for (const c of vr.collected) {
+      const mp = climbPos(cl);
+      // amico/nemico toccano la LEALTÀ (che decide la piramide finale)
+      if (c.effect === 'loyal+1') loyalty += 1;
+      else if (c.effect === 'loyal-1') loyalty -= 1;
+      const fx2 = c.kind === 'enemy' ? 'blood' : c.kind === 'egg' ? 'ash' : 'spark';
+      emitFx(level.pfx, fx2, mp.tx, mp.ty + cameraY, { count: c.kind === 'egg' ? 4 : 8, spread: 3 });
+      level.threats.lastMsg = (c.kind === 'friend' ? '◈ ' : c.kind === 'enemy' ? '✖ ' : '') + c.name;
+      level.threats.msgT = 2;
+      impact(juice, c.kind === 'enemy' ? 1.0 : 0.8, 0, c.kind === 'enemy' ? 1 : -1);
+      if (c.kind === 'enemy') breakFlow(juice);
+    }
+    if (vr.missionDone) {
+      level.events.push('warm');
+      impact(juice, 1.4, 0, -1);
     }
   }
 
