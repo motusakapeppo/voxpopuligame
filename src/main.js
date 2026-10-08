@@ -406,14 +406,39 @@ function updatePrompt() {
   else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi' + gm);
 }
 
-function drawWorld(lv, camY) {  if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
+function drawWorld(lv, camY) {
+  // GERARCHIA VISIVA FORTE: se c'è un elemento attivo (incontro/omino), lo sfondo
+  // si RITIRA (alpha ridotto) e restano protagonisti il giocatore e l'azione.
+  // Quando non c'è focus, la scena resta RICCA (tutto a piena intensità).
+  const focus = !!(lv.active || lv.activeOmino);
+  const dim = focus ? 0.55 : 1;   // fattore di attenuazione dello sfondo
+  ctx.save();
+  ctx.globalAlpha = dim;
+  if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
-  // scene NPC per girone (dietro la parete): varieta' visiva per livello
   if (!SKIP.has('npc')) drawNpcScenes(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
-  if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
-  if (!SKIP.has('omini')) for (const om of (lv.omini ? lv.omini.list : [])) drawOmino(ctx, om, lv.climb, camY, time, om === lv.activeOmino);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
+  ctx.restore();
+  // protagonisti (sempre a piena intensità): incontri, omini, giocatore, fx.
+  if (!SKIP.has('enc')) {
+    for (const e of lv.encounters) {
+      const isA = e === lv.active;
+      ctx.save();
+      ctx.globalAlpha = (focus && !isA) ? 0.4 : 1;   // i non-protagonisti si attenuano
+      drawEncounter(ctx, e, lv.climb, camY, time, isA);
+      ctx.restore();
+    }
+  }
+  if (!SKIP.has('omini')) {
+    for (const om of (lv.omini ? lv.omini.list : [])) {
+      const isA = om === lv.activeOmino;
+      ctx.save();
+      ctx.globalAlpha = (focus && !isA) ? 0.45 : 1;
+      drawOmino(ctx, om, lv.climb, camY, time, isA);
+      ctx.restore();
+    }
+  }
   if (!SKIP.has('variety')) drawVariety(ctx, lv.variety, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);

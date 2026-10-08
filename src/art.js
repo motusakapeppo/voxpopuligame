@@ -522,7 +522,7 @@ export function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
 
   const col = isActive ? C.redHot : C.redBright;
   const ph = time * (st === 'idle' ? 1.6 : 2.6);
-  // alone quando è l'incontro attivo (sta per accadere qualcosa)
+  // sola quando è l'incontro attivo (sta per accadere qualcosa)
   if (isActive) {
     ctx.save();
     ctx.globalAlpha = 0.14 + 0.10 * Math.sin(time * 6);
@@ -533,6 +533,16 @@ export function drawEncounter(ctx, e, climb, cameraY, time, isActive) {
     ctx.fillStyle = C.redHot;
     ctx.fillRect(Math.round(x) - 7, Math.round(y) - 2, 14, 1);
     ctx.fillRect(Math.round(x) - 7, Math.round(y) + 8, 14, 1);
+    ctx.restore();
+    // GERARCHIA: marcatore "grida" sopra la testa (freccia/corona pulsante) — è
+    // L'elemento su cui agire ORA. Solo l'attivo lo ha.
+    ctx.save();
+    ctx.globalAlpha = 0.7 + 0.3 * Math.sin(time * 9);
+    ctx.fillStyle = C.white;
+    const ay = Math.round(y - 16 - Math.abs(Math.sin(time * 5)) * 3);
+    ctx.fillRect(Math.round(x) - 1, ay, 2, 4);
+    ctx.fillRect(Math.round(x) - 2, ay + 1, 4, 2);
+    ctx.fillRect(Math.round(x) - 3, ay + 3, 6, 1);
     ctx.restore();
   }
   // figura dettagliata + GESTO specifico del tipo
