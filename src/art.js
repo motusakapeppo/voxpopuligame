@@ -6,6 +6,7 @@ import { C, depthRed } from './palette.js';
 import { drawFigure, drawClimber } from './figure.js';
 import { climbPos } from './climb.js';
 import { LYRICS } from './lyrics.js';
+import { OMINI_ANIMS } from './omini.js';
 
 // ---------------------------------------------------------------------------
 // LIRICHE ANIMATE — i versi del brano scorrono sullo sfondo, stile dark.
@@ -729,7 +730,95 @@ export function drawVariety(ctx, variety, climb, cameraY, time, W, H) {
 }
 
 // ---------------------------------------------------------------------------
-// MISSION HUD — la missione del variety nella SUA banda (sopra la lirica).
+// OMINI — i piccoli della scala. Una figura pixel per OGNI animazione di
+// OMINI_ANIMS: tutte DIVERSE e riconoscibili a colpo d'occhio. Deterministico,
+// NaN-safe, solo fillRect/alpha, coordinate intere. `active` accende l'omino
+// (chevron sopra la testa + tinta calda): è quello con cui puoi interagire.
+// ---------------------------------------------------------------------------
+export function drawOmino(ctx, omino, climb, camY, time, active) {
+  if (!omino || !climb) return;
+  const cam = artNum(camY, 0);
+  const t = artNum(time, 0);
+  const x = climb.xOf(omino.c);
+  const y = climb.yOf(omino.row) - cam;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  if (y < -24 || y > ART_VIEW_H + 24) return;   // cull verticale
+  const px = Math.round(x), py = Math.round(y);
+  const ph = artNum(omino.phase, 0);
+  // guardia bundle: finché omini.js non entra nell'ORDER di build.mjs (task
+  // main.js successivo), OMINI_ANIMS può non esistere nello scope IIFE.
+  const anim = (typeof OMINI_ANIMS !== 'undefined' && OMINI_ANIMS.includes(omino.anim)) ? omino.anim : 'wave';
+  const on = !!active && !omino.resolved;
+  const base = omino.resolved ? 0.45 : 1;
+
+  ctx.save();
+  // ombra a terra: ancora l'omino alla parete
+  ctx.globalAlpha = 0.30 * base;
+  ctx.fillStyle = C.black;
+  ctx.fillRect(px - 4, py, 8, 1);
+
+  if (anim === 'climbUp') {
+    // arrampicata: mani in alto sulla presa, bacino appeso, gambe sulla parete
+    const sway = Math.sin(ph * 2.4);
+    ctx.globalAlpha = base;
+    drawClimber(ctx, px - 4, py - 16, px + 4, py - 15, {
+      h: 14, color: on ? C.redHot : C.redBright, phase: ph, thickness: 1,
+      bx: px + sway, by: py - 4, swing: sway * 0.4,
+    });
+  } else if (anim === 'shove') {
+    // spinta: torso proteso in avanti, braccia distese, scie di forza dietro
+    ctx.globalAlpha = base;
+    drawFigure(ctx, px, py, { h: 14, color: on ? C.redHot : C.red, state: 'push', phase: ph * 3 });
+    ctx.globalAlpha = 0.5 * base;
+    ctx.fillStyle = C.redHot;
+    for (let i = 1; i <= 3; i++) ctx.fillRect(px - 6 - i * 2, py - 9 + i, 2, 1);
+  } else if (anim === 'tumble') {
+    // caduta: figura raccolta che RUOTA (pixel attorno al centro), stordita
+    const a = ph * 3.2;
+    const cx = px, cy = py - 8;
+    ctx.globalAlpha = base;
+    ctx.fillStyle = on ? C.redHot : C.redMid;
+    for (let i = 0; i < 8; i++) {
+      const ang = a + (i / 8) * Math.PI * 2;
+      ctx.fillRect(Math.round(cx + Math.cos(ang) * 6), Math.round(cy + Math.sin(ang) * 6), 2, 2);
+    }
+    ctx.fillRect(cx - 2, cy - 2, 4, 4);   // corpo raccolto
+    ctx.globalAlpha = 0.6 * base;
+    ctx.fillStyle = C.redHot;
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);   // testa
+  } else if (anim === 'carry') {
+    // trasporto: figura con un carico sopra la testa, passo lento
+    ctx.globalAlpha = base;
+    drawFigure(ctx, px, py, { h: 14, color: on ? C.redHot : C.redDark, state: 'walk', phase: ph * 1.6 });
+    ctx.fillStyle = on ? C.redHot : C.red;
+    ctx.fillRect(px - 3, py - 19, 6, 4);  // carico
+    ctx.fillRect(px - 4, py - 15, 1, 3);  // braccio sx su
+    ctx.fillRect(px + 3, py - 15, 1, 3);  // braccio dx su
+  } else {
+    // 'wave' (default): saluto — un braccio in alto che oscilla
+    ctx.globalAlpha = base;
+    drawFigure(ctx, px, py, { h: 14, color: on ? C.redHot : C.redBright, state: 'reach', phase: ph * 2.2 });
+    const wv = Math.round(Math.sin(ph * 6) * 2);
+    ctx.fillStyle = on ? C.redHot : C.red;
+    ctx.fillRect(px + 5 + wv, py - 17, 1, 1);
+    ctx.fillRect(px + 6 + wv, py - 19, 1, 1);
+    ctx.fillRect(px + 7 + wv, py - 21, 1, 1);
+  }
+
+  // active: chevron sopra la testa (l'omino con cui puoi interagire)
+  if (on) {
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 6);
+    ctx.fillStyle = C.redHot;
+    ctx.fillRect(px - 2, py - 24, 5, 1);
+    ctx.fillRect(px - 1, py - 23, 3, 1);
+    ctx.fillRect(px, py - 22, 1, 1);
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// MISSION HUD — la missione del variety nella SUA banda (slot chiaro sopra il
+// prompt, sotto il messaggio evento). Testo CENTRATO: si legge a colpo d'occhio.
 // Formato: `◈ <text>   current/target`; done → redHot + check ✓.
 // ---------------------------------------------------------------------------
 export function drawMissionHUD(ctx, S, W, H, o) {
@@ -742,14 +831,14 @@ export function drawMissionHUD(ctx, S, W, H, o) {
   const tgt = Number.isFinite(opt.target) ? opt.target : 0;
   const done = !!opt.done;
   const B = overlayBands(h);
-  const y = B.mission.y0 + (B.mission.y1 - B.mission.y0) * 0.72;   // TOP della banda
+  const y = B.mission.y0 + (B.mission.y1 - B.mission.y0) * 0.72;   // dentro la banda
   const label = (done ? '✓ ' : '◈ ') + text + '   ' + cur + '/' + tgt;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'center';
   uiFont(ctx, uiFitSize(ctx, label, (w - 16) * s * 0.94, s, 8, 5), s);
-  uiTextShadow(ctx, label, 8, y, s, done ? C.redHot : C.red, 1);
+  uiTextShadow(ctx, label, w / 2, y, s, done ? C.redHot : C.red, 1);
   ctx.restore();
   ctx.textAlign = 'left';
 }
@@ -1150,20 +1239,22 @@ export function drawLyricBackdrop(ctx, lines, pos, time, W, H, S) {
 }
 
 // Bande verticali DISGIUNTE dell'overlay UI (px logici, top→bottom). PURA e
-// NaN-safe: garantisce che iscrizione, lirica, chapter, mash, threatMsg, prompt
-// e flow non si sovrappongano MAI (bug: barra mash sopra i testi, lirica persa).
+// NaN-safe: garantisce che iscrizione, lirica, chapter, mash, threatMsg, mission,
+// prompt e flow non si sovrappongano MAI (bug: barra mash sopra i testi, lirica persa).
+// La MISSIONE vive nello slot chiaro SOPRA il prompt (non più incollata sotto
+// l'iscrizione, dove si confondeva con il titolo del brano).
 export function overlayBands(H) {
   const h = Number.isFinite(H) && H > 0 ? H : 180;
   const gap = Math.max(1, Math.round(h * 0.011));   // ~2px @180
   const cut = f => Math.round(h * f);
   const mk = (y0, y1) => { const a = Math.max(0, y0); return { y0: a, y1: Math.max(a + 1, y1) }; };
   const inscription = mk(0, cut(0.10));
-  const mission = mk(inscription.y1 + gap, cut(0.17));
-  const lyric = mk(mission.y1 + gap, cut(0.36));
+  const lyric = mk(inscription.y1 + gap, cut(0.36));
   const chapter = mk(lyric.y1 + gap, cut(0.58));
   const mash = mk(chapter.y1 + gap, cut(0.82));
-  const threatMsg = mk(mash.y1 + gap, cut(0.88));
-  const prompt = mk(threatMsg.y1 + gap, cut(0.93));
+  const threatMsg = mk(mash.y1 + gap, cut(0.86));
+  const mission = mk(threatMsg.y1 + gap, cut(0.90));
+  const prompt = mk(mission.y1 + gap, cut(0.95));
   const flow = mk(prompt.y1 + gap, h);
   return { inscription, mission, lyric, chapter, mash, threatMsg, prompt, flow };
 }
@@ -1360,7 +1451,9 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H) {
 
 // Indice della riga attiva per una posizione in secondi: ultima voce con
 // start <= pos; 0 se pos precede la prima; -1 se vuoto. NaN → 0 (sicuro).
-export function lyricIndexAt(lines, pos) {
+// `minIdx` opzionale: floor monotono (isteresi) — l'indice non torna mai
+// indietro sotto il valore imposto dal chiamante. NaN/omesso → storico.
+export function lyricIndexAt(lines, pos, minIdx) {
   if (!lines || !lines.length) return -1;
   const p = (typeof pos === 'number' && !Number.isNaN(pos)) ? pos : 0;
   let idx = 0;
@@ -1368,7 +1461,8 @@ export function lyricIndexAt(lines, pos) {
     const start = Number.isFinite(lines[i][0]) ? lines[i][0] : 0;
     if (p >= start) idx = i;
   }
-  return idx;
+  const floor = Number.isFinite(minIdx) ? Math.max(0, Math.floor(minIdx)) : 0;
+  return Math.max(floor, idx);
 }
 
 export function drawLyricsOverlay(uctx, S, lines, pos, W, H, time) {

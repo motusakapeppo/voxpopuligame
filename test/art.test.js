@@ -535,3 +535,147 @@ test('overlayBands: include la banda mission e resta pairwise disgiunta', () => 
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// T5: ISTERESI DELLA LIRICA — lyricIndexAt(lines, pos, minIdx): l'indice non
+// torna MAI indietro quando il chiamante impone un floor (sweep sui bordi).
+// ---------------------------------------------------------------------------
+import { lyricIndexAt } from '../src/art.js';
+
+test('lyricIndexAt: con minIdx l\'indice non decresce mai (sweep avanti/indietro sui bordi)', () => {
+  const lines = [[0, 'a'], [5, 'b'], [10, 'c'], [15, 'd']];
+  let min = 0;
+  for (let k = 0; k < 3; k++) {
+    for (let pos = -2; pos <= 20; pos += 0.25) {
+      const idx = lyricIndexAt(lines, pos, min);
+      assert.ok(idx >= min, 'indice tornato indietro: ' + idx + ' < ' + min + ' @pos=' + pos);
+      min = idx;
+    }
+    for (let pos = 20; pos >= -2; pos -= 0.25) {
+      const idx = lyricIndexAt(lines, pos, min);
+      assert.ok(idx >= min, 'indice tornato indietro in discesa: ' + idx + ' < ' + min + ' @pos=' + pos);
+      min = idx;
+    }
+  }
+  assert.equal(min, lines.length - 1, 'la sweep non ha raggiunto l\'ultima riga');
+});
+
+test('lyricIndexAt: minIdx impone il floor; NaN/omesso → comportamento storico', () => {
+  const lines = [[0, 'a'], [5, 'b'], [10, 'c']];
+  assert.equal(lyricIndexAt(lines, 0, 2), 2, 'minIdx non applicato');
+  assert.equal(lyricIndexAt(lines, 6, 0), 1, 'minIdx 0 non deve cambiare il calcolo');
+  assert.equal(lyricIndexAt(lines, 6, NaN), 1, 'minIdx NaN deve essere ignorato');
+  assert.equal(lyricIndexAt(lines, 6, undefined), 1, 'minIdx omesso = storico');
+  assert.equal(lyricIndexAt(lines, 0, -5), 0, 'minIdx negativo → 0');
+  assert.equal(lyricIndexAt([], 3, 2), -1, 'vuoto resta -1');
+  assert.equal(lyricIndexAt(lines, NaN, 1), 1, 'pos NaN → 0, poi floor 1');
+});
+
+// ---------------------------------------------------------------------------
+// T5: MISSIONE — la banda mission sta SOPRA il prompt (slot chiaro), non più
+// incollata sotto l'iscrizione; tutte le bande restano disgiunte.
+// ---------------------------------------------------------------------------
+test('overlayBands: la mission sta tra threatMsg e prompt (slot chiaro)', () => {
+  for (const H of [180, 240, 120]) {
+    const b = overlayBands(H);
+    assert.ok(b.mission.y0 >= b.threatMsg.y1, 'mission non è sotto threatMsg @H=' + H);
+    assert.ok(b.mission.y1 <= b.prompt.y0, 'mission non è sopra prompt @H=' + H);
+    assert.ok(b.mission.y0 > b.inscription.y1, 'mission ancora incollata all\'iscrizione @H=' + H);
+    assert.ok(b.mission.y1 - b.mission.y0 >= 4, 'mission troppo sottile @H=' + H);
+  }
+});
+
+test('drawMissionHUD: testo centrato nella banda mission (leggibile)', () => {
+  const S = 3, W = 320, H = 180;
+  const ctx = recCtx();
+  drawMissionHUD(ctx, S, W, H, { text: 'Raccogli i ricordi', current: 1, target: 3, done: false });
+  const texts = ctx.calls.filter(c => c.op === 'fillText');
+  assert.ok(texts.length > 0, 'nessun testo');
+  for (const c of texts) {
+    assert.ok(Math.abs(c.x - (W / 2) * S) <= S, 'testo non centrato: x=' + c.x);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// T5: OMINI — figure pixel sulla parete. Ogni animazione di OMINI_ANIMS deve
+// disegnare DIVERSAMENTE; coordinate intere, palette-safe, deterministiche.
+// ---------------------------------------------------------------------------
+import { drawOmino } from '../src/art.js';
+import { OMINI_ANIMS } from '../src/omini.js';
+
+function fakeOmino(anim, over) {
+  return { id: 'om0', row: 2, c: 2, anim, phase: 0.7, resolved: false, verb: null, reactT: 0, ...(over || {}) };
+}
+
+test('drawOmino: ogni animazione di OMINI_ANIMS disegna, finita e palette-safe', () => {
+  for (const anim of OMINI_ANIMS) {
+    const ctx = recCtx();
+    drawOmino(ctx, fakeOmino(anim), fakeClimb(), 0, 2.5, false);
+    assert.ok(ctx.calls.length > 0, anim + ': nessun pixel');
+    assertFiniteCalls(ctx, 'drawOmino/' + anim);
+  }
+});
+
+test('drawOmino: coordinate INTERE (pixel art) e vicino alla sua fila/colonna', () => {
+  const cl = fakeClimb();                 // xOf: 20+c*24, yOf: 40+r*24
+  const x0 = cl.xOf(2), y0 = cl.yOf(2);   // 68, 88
+  for (const anim of OMINI_ANIMS) {
+    const ctx = recCtx();
+    drawOmino(ctx, fakeOmino(anim), cl, 0, 2.5, false);
+    for (const c of ctx.calls) {
+      if (c.op !== 'fillRect') continue;
+      assert.ok(Number.isInteger(c.x) && Number.isInteger(c.y) && Number.isInteger(c.w) && Number.isInteger(c.h),
+        anim + ': coordinate non intere ' + JSON.stringify(c));
+      assert.ok(c.x >= x0 - 20 && c.x <= x0 + 20, anim + ': x lontano dalla colonna: ' + c.x);
+      assert.ok(c.y >= y0 - 30 && c.y <= y0 + 12, anim + ': y lontano dalla fila: ' + c.y);
+    }
+  }
+});
+
+test('drawOmino: le 5 animazioni sono tutte DIVERSE tra loro', () => {
+  const draws = OMINI_ANIMS.map(anim => {
+    const ctx = recCtx();
+    drawOmino(ctx, fakeOmino(anim), fakeClimb(), 0, 2.5, false);
+    return ctx.calls;
+  });
+  for (let i = 0; i < draws.length; i++) {
+    for (let j = i + 1; j < draws.length; j++) {
+      assert.notDeepEqual(draws[i], draws[j],
+        OMINI_ANIMS[i] + ' e ' + OMINI_ANIMS[j] + ' disegnano identici');
+    }
+  }
+});
+
+test('drawOmino: deterministico e NaN-safe (camY/time/omino degeneri)', () => {
+  const a = recCtx(), b = recCtx();
+  drawOmino(a, fakeOmino('tumble'), fakeClimb(), 120, 3.3, true);
+  drawOmino(b, fakeOmino('tumble'), fakeClimb(), 120, 3.3, true);
+  assert.deepEqual(a.calls, b.calls, 'non deterministico');
+  const n = recCtx();
+  drawOmino(n, fakeOmino('wave'), fakeClimb(), NaN, NaN, false);
+  for (const c of n.calls) {
+    if (c.op === 'fillRect') assert.ok([c.x, c.y, c.w, c.h].every(Number.isFinite), 'NaN: ' + JSON.stringify(c));
+  }
+  // input degeneri: nessun throw
+  drawOmino(recCtx(), null, fakeClimb(), 0, 0, false);
+  drawOmino(recCtx(), fakeOmino('boh'), fakeClimb(), 0, 0, false);
+  drawOmino(recCtx(), fakeOmino('wave'), null, 0, 0, false);
+  assert.ok(true);
+});
+
+test('drawOmino: culla i fuori schermo (sopra/sotto la view)', () => {
+  const cl = fakeClimb();
+  const sopra = recCtx();
+  drawOmino(sopra, fakeOmino('wave', { row: -5 }), cl, 0, 1, false);   // y=-80
+  assert.equal(sopra.calls.length, 0, 'omino sopra la view disegnato');
+  const sotto = recCtx();
+  drawOmino(sotto, fakeOmino('wave', { row: 20 }), cl, 0, 1, false);    // y=520
+  assert.equal(sotto.calls.length, 0, 'omino sotto la view disegnato');
+});
+
+test('drawOmino: active evidenzia l\'omino (disegno diverso)', () => {
+  const off = recCtx(), on = recCtx();
+  drawOmino(off, fakeOmino('wave'), fakeClimb(), 0, 2.5, false);
+  drawOmino(on, fakeOmino('wave'), fakeClimb(), 0, 2.5, true);
+  assert.notDeepEqual(on.calls, off.calls, 'active non cambia nulla');
+});
