@@ -15,6 +15,10 @@ export function advance(state, event) {
         s.phase = 'unlocked';
         s.unlocked.add(GIRONI[state.gironeIndex].audioId);
       }
+      if (event === 'defeat') {
+        s.gironeIndex = Math.max(0, state.gironeIndex - 1);
+        s.phase = 'playing';
+      }
       break;
     case 'unlocked':
       if (event === 'audioDone') {
