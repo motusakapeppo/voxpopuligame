@@ -5012,23 +5012,29 @@ function drawFigure(ctx, x, y, opts = {}) {
 // ============================================================================
 
 const DEFAULT_CFG = {
-  hitWind: 0.10,
-  hitQuake: 0.22,
-  hitDebris: 0.18,
-  hitIvy: 0.12,
-  hitMash: 0.45,
-  regen: 0.10,
+  hitWind: 0.12,
+  hitQuake: 0.26,
+  hitDebris: 0.22,
+  hitIvy: 0.14,
+  hitMash: 0.5,
+  regen: 0.055,   // rigenerazione PIÙ LENTA = più tensione (competitivo)
 };
 
 // createGrip(g) — g.grip opzionale sovrascrive i default (merge parziale).
+// Moltiplica l'erosione per `g.difficulty` (default 1): tracce più avanzate
+// possono essere più dure (più rapido a svuotare la presa).
 function createGrip(g) {
   const cfg = { ...DEFAULT_CFG, ...((g && g.grip) || {}) };
+  const diff = Number.isFinite(g && g.difficulty) ? g.difficulty : 1;
+  // scala SOLO i colpi (non la rigenerazione): più difficile = presa più fragile.
+  cfg.scale = diff > 0 ? diff : 1;
   return { v: 1, cfg };
 }
 
-// gripHit — un colpo erode la presa; clamp a 0 (mai negativa).
+// gripHit — un colpo erode la presa (scalata per difficulty); clamp a 0.
 function gripHit(grip, amt) {
-  grip.v = Math.max(0, grip.v - amt);
+  const s = grip.cfg && Number.isFinite(grip.cfg.scale) ? grip.cfg.scale : 1;
+  grip.v = Math.max(0, grip.v - amt * s);
   return grip.v;
 }
 
@@ -5098,8 +5104,8 @@ function createOmini(g, _climb) {
     list: [],
     t: 0,
     rng: ominiSeed(g),
-    nextRow: 4,
-    spawnEvery: 5,
+    nextRow: 2,
+    spawnEvery: 3,   // più frequenti: gli omini sono protagonisti della scalata
     spawned: 0,
   };
 }
@@ -8106,6 +8112,14 @@ function loop(now) {
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
     ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
+    // BARRA DELLA PRESA (a sinistra): scende = presa che si erode. Rossa accesa
+    // quando la presa è bassa (pericolo), rossa scura quando è salda. Rende la
+    // posta in gioco VISIBILE e competitiva.
+    const gr = level.grip ? level.grip.v : 1;
+    ctx.fillStyle = C.black; ctx.fillRect(0, 0, 4, VIEW_H);
+    ctx.fillStyle = gr < 0.34 ? C.redHot : C.redDark;
+    ctx.fillRect(0, Math.round(VIEW_H * (1 - gr)), 4, Math.round(VIEW_H * gr));
+    if (gr < 0.34 && Math.sin(time * 14) > 0) { ctx.fillStyle = C.white; ctx.fillRect(0, 0, 4, 1); }
   }, { post: playingPost(dt, 0) });
   drawOverlay();
 }
