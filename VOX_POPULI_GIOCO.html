@@ -351,7 +351,7 @@ const GIRONI = [
 
   { id:'03', track:'COME I TUONI', title:'COME I TUONI', audioId:'03-tuoni', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'quake', every:5, shakeT:0.8, shakeAmp:6}], climb:{layout:'narrow',reach:0.12,hold:0.20,hang:11,weakEvery:6},
-    npcScenes:['separatedMothers','trembling'], objective:{kind:'beatClock',limit:48}, gimmick:'rhythmic', inscription:{ text:'COME I TUONI' } },
+    npcScenes:['separatedMothers','trembling'], objective:{kind:'beatClock',limit:14}, gimmick:'rhythmic', inscription:{ text:'COME I TUONI' } },
 
   { id:'04', track:'BAGHDAD', title:'BAGHDAD', audioId:'04-baghdad', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'fallingBlades', every:3, speed:3}], climb:{layout:'cavern', reach:0.10,hold:0.13,hang:12,weakEvery:5},
@@ -359,7 +359,7 @@ const GIRONI = [
 
   { id:'05', track:'HO SONNO', title:'HO SONNO', audioId:'05-hosonno', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'sleep', dimTo:0.35, wakeTouchEvery:1.2}], climb:{layout:'funnel',reach:0.16,hold:0.24,hang:10,weakEvery:9},
-    npcScenes:['workLoop','timecard','sirene'], objective:{kind:'survive',limit:30}, gimmick:'hold', inscription:{ text:'HO SONNO' } },
+    npcScenes:['workLoop','timecard','sirene'], objective:{kind:'survive',limit:16}, gimmick:'hold', inscription:{ text:'HO SONNO' } },
 
   { id:'06', track:'PRIMO POSTO', title:'PRIMO POSTO', audioId:'06-primoposto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rivals', count:3, pushForce:2}], climb:{layout:'double',reach:0.09,hold:0.12,hang:13,weakEvery:8},
@@ -367,7 +367,7 @@ const GIRONI = [
 
   { id:'07', track:'TIC-TAC', title:'TIC-TAC', audioId:'07-tictac', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'timer', total:35, collapseSpeed:0.6}], climb:{layout:'stair',reach:0.08,hold:0.11,hang:11,weakEvery:7},
-    npcScenes:['clocks','wornBodies','crackedMirror'], objective:{kind:'beatClock',limit:42}, gimmick:'rhythmic', inscription:{ text:'TIC-TAC' } },
+    npcScenes:['clocks','wornBodies','crackedMirror'], objective:{kind:'beatClock',limit:12}, gimmick:'rhythmic', inscription:{ text:'TIC-TAC' } },
 
   { id:'08', track:'TUTTO FINTO', title:'TUTTO FINTO', audioId:'08-tuttofinto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720).map((b, i) => i % 3 === 1 ? { ...b, kind:'fake' } : b)],
@@ -384,7 +384,7 @@ const GIRONI = [
 
   { id:'11', track:'LA FINE DEL MONDO', title:'LA FINE DEL MONDO', audioId:'11-lafinedelmondo', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'risingWater', riseSpeed:0.8}, {kind:'fallingBlades', every:2.5, speed:3}], climb:{layout:'cavern', reach:0.13,hold:0.17,hang:10,weakEvery:6},
-    npcScenes:['screamingWorld','wiltingFlowers','blackShroud'], objective:{kind:'survive',limit:35}, inscription:{ text:'LA FINE DEL MONDO' } },
+    npcScenes:['screamingWorld','wiltingFlowers','blackShroud'], objective:{kind:'survive',limit:18}, inscription:{ text:'LA FINE DEL MONDO' } },
 
   { id:'12', track:'MARANATHA', title:'MARANATHA', audioId:'12-maranatha', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true}], climb:{layout:'double',reach:0.12,hold:0.15,hang:11,weakEvery:12},
@@ -4299,9 +4299,11 @@ function stepObjective(obj, ctx, dt) {
       break;
 
     case 'survive':
-      // vinci restando vivo (presa>0) per `limit` secondi.
+      // vinci se raggiungi la cima (via di fuga) O se resisti `limit` secondi;
+      // perdi se la presa cede. Rushing o resistere: due strategie valide.
       obj.progress = Math.max(0, Math.min(1, obj.elapsed / Math.max(0.001, obj.limit)));
       if (grip <= 0) { obj.failed = true; obj.reason = 'presa persa'; }
+      else if (c.reachedTop) { obj.done = true; obj.reason = 'fuggito in cima'; }
       else if (obj.elapsed >= obj.limit) { obj.done = true; obj.reason = 'sopravvissuto'; }
       break;
 
@@ -4318,9 +4320,14 @@ function stepObjective(obj, ctx, dt) {
       break;
 
     case 'holdGrip':
-      // vinci in cima senza MAI far scendere la presa a zero.
-      if (grip <= 0) { obj.failed = true; obj.reason = 'presa persa'; }
-      else if (c.reachedTop) { obj.done = true; obj.reason = 'presa tenuta'; }
+      // "nessun errore": arriva in cima senza MAI far scendere la presa sotto
+      // `grace` (default 0.3). Un passo falso -> sconfitta immediata.
+      {
+        const grace = obj.grace > 0 ? obj.grace : 0.3;
+        if (grip <= 0) { obj.failed = true; obj.reason = 'presa persa'; }
+        else if (grip < grace) { obj.failed = true; obj.reason = 'presa troppo debole'; }
+        else if (c.reachedTop) { obj.done = true; obj.reason = 'presa tenuta'; }
+      }
       obj.progress = Number.isFinite(c.progress) ? Math.max(0, Math.min(1, c.progress)) : obj.progress;
       break;
 
@@ -4387,17 +4394,25 @@ function createGimmick(g) {
   };
 }
 
-// Avanza il gimmick. Ritorna un oggetto osservabile per il main:
-//   { ready, shove, holdProgress, phase }
-function stepGimmick(gm, dt) {
+// Avanza il gimmick. `held` = true se il tasto-verbo è TENUTO premuto ADESSO.
+// Ritorna { ready, shove, holdProgress, phase }.
+function stepGimmick(gm, dt, held) {
   const d = Number.isFinite(dt) ? dt : 0;
   gm.t += d;
   const period = gm.period > 0 ? gm.period : 0.5;
   gm.phase = (gm.t % period) / period;
 
-  if (gm.kind === 'rhythmic' || gm.kind === 'sync') {
-    // finestra aperta NELL'ISTANTE del battito (inizio battuta ± window/2)
-    gm.ready = gm.phase <= gm.window / period || gm.phase >= 1 - gm.window / period;
+  if (gm.kind === 'hold') {
+    // "tieni premuto": accumula TEMPO mentre il tasto è giù; rilascio = reset.
+    const h = !!held && gm.held > 0 ? true : !!held;
+    if (h) gm.held = Math.min(gm.needed, gm.held + d);
+    else gm.held = 0;
+    gm.ready = gm.held >= gm.needed;
+  } else if (gm.kind === 'rhythmic' || gm.kind === 'sync') {
+    // finestra FINESTRA STRETTA attorno al battito (non 60% del tempo).
+    const w = gm.window > 0 ? gm.window : 0.16;
+    const half = (w / period) * 0.5;
+    gm.ready = gm.phase <= half || gm.phase >= 1 - half;
   } else {
     gm.ready = true;
   }
@@ -4410,14 +4425,11 @@ function stepGimmick(gm, dt) {
   return { ready: gm.ready, shove, holdProgress: gm.needed ? Math.min(1, gm.held / gm.needed) : 0, phase: gm.phase };
 }
 
-// Il main chiama questo quando il verbo è accettato/rifiutato dal gimmick.
-// Ritorna true se il gesto è valido ORA (il main applica l'effetto), false se no.
-function gimmickAccepts(gm, pressed) {
-  if (gm.kind === 'rhythmic' || gm.kind === 'sync') return !!gm.ready;
-  if (gm.kind === 'hold') {
-    if (pressed) { gm.held = Math.min(gm.needed, gm.held + 0.016); return gm.held >= gm.needed; }
-    gm.held = 0; return false;
-  }
+// Il main chiama questo al momento del verbo. Ritorna true se il gesto è valido
+// ORA. Per hold/rhythmic/sync dipende dallo stato calcolato in stepGimmick; per
+// gli altri tipi è sempre valido.
+function gimmickAccepts(gm) {
+  if (gm.kind === 'hold' || gm.kind === 'rhythmic' || gm.kind === 'sync') return !!gm.ready;
   return true;
 }
 
@@ -7399,6 +7411,7 @@ let action = 'idle';
 let actionT = 0;
 let mash = createMash();
 let juice = createJuice();
+let verbHeld = false;   // tasto-verbo (Z/X) tenuto premuto: per i gimmick 'hold'
 // stepper fisso 1/120 per il crollo ragdoll (stabilità + determinismo indipendente dal refresh)
 const collapseStepper = createStepper({ step: 1 / 120, maxFrame: 0.05, maxSteps: 6 });
 
@@ -7525,7 +7538,7 @@ function doVerb(verb) {
   // GIMMICK: per il tieni-premuto accumula pressione; per ritmico/sync accetta
   // il gesto solo nella finestra del battito. Se non accettato, niente effetto.
   if (level.gimmick && level.gimmick.kind !== 'none') {
-    const ok = gimmickAccepts(level.gimmick, true);
+    const ok = gimmickAccepts(level.gimmick);
     if (!ok) {                       // gesto fuori tempo / pressione insufficiente
       action = verb; actionT = 0.2;
       return;
@@ -7590,15 +7603,23 @@ function gripCheck(cl) {
 function mashPress() {
   if (mash.active) { mashHit(mash); action = 'spingi'; actionT = 0.2; }
 }
-if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('tendi'); });
-if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('spingi'); });
+if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); verbHeld = true; mash.active ? mashPress() : doVerb('tendi'); });
+if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); verbHeld = true; mash.active ? mashPress() : doVerb('spingi'); });
+if (btnTendi) btnTendi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; });
+if (btnSpingi) btnSpingi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; });
+if (btnTendi) btnTendi.addEventListener('pointercancel', () => { verbHeld = false; });
+if (btnSpingi) btnSpingi.addEventListener('pointercancel', () => { verbHeld = false; });
 if (btnCta) btnCta.addEventListener('pointerdown', ev => { ev.preventDefault(); goToCta(); });
 window.addEventListener('keydown', ev => {
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX') verbHeld = true;   // per gimmick 'hold'
   if (ev.code === 'KeyZ' || ev.code === 'KeyX' || ev.code === 'Space' || ev.code === 'ArrowUp') {
     if (mash.active) { mashPress(); }
     else if (ev.code === 'KeyZ') doVerb('tendi');
     else if (ev.code === 'KeyX') doVerb('spingi');
   }
+});
+window.addEventListener('keyup', ev => {
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX') verbHeld = false;
 });
 
 const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').split(',').filter(Boolean));
@@ -8046,7 +8067,7 @@ function loop(now) {
   // GIMMICK per-traccia: ritmico/tieni-premuto/spinta/sincronizza. Modula il
   // momento in cui un verbo è accettato + eventi di spinta periodica.
   if (level.gimmick) {
-    const gr = stepGimmick(level.gimmick, sdt);
+    const gr = stepGimmick(level.gimmick, sdt, verbHeld);
     level.gimmickReady = gr.ready;
     if (gr.shove) {                       // 'shove': una spinta ti butta giù di 1
       const mp = climbPos(cl);
