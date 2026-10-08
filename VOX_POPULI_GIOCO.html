@@ -351,23 +351,23 @@ const GIRONI = [
 
   { id:'03', track:'COME I TUONI', title:'COME I TUONI', audioId:'03-tuoni', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'quake', every:5, shakeT:0.8, shakeAmp:6}], climb:{layout:'narrow',reach:0.12,hold:0.20,hang:11,weakEvery:6},
-    npcScenes:['separatedMothers','trembling'], objective:{kind:'beatClock',limit:48}, inscription:{ text:'COME I TUONI' } },
+    npcScenes:['separatedMothers','trembling'], objective:{kind:'beatClock',limit:48}, gimmick:'rhythmic', inscription:{ text:'COME I TUONI' } },
 
   { id:'04', track:'BAGHDAD', title:'BAGHDAD', audioId:'04-baghdad', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'fallingBlades', every:3, speed:3}], climb:{layout:'cavern', reach:0.10,hold:0.13,hang:12,weakEvery:5},
-    npcScenes:['repressedProtest','stillBody'], objective:{kind:'collect',target:3}, inscription:{ text:'BAGHDAD' } },
+    npcScenes:['repressedProtest','stillBody'], objective:{kind:'collect',target:3}, gimmick:{kind:'shove',every:2.2}, inscription:{ text:'BAGHDAD' } },
 
   { id:'05', track:'HO SONNO', title:'HO SONNO', audioId:'05-hosonno', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'sleep', dimTo:0.35, wakeTouchEvery:1.2}], climb:{layout:'funnel',reach:0.16,hold:0.24,hang:10,weakEvery:9},
-    npcScenes:['workLoop','timecard','sirene'], objective:{kind:'survive',limit:30}, inscription:{ text:'HO SONNO' } },
+    npcScenes:['workLoop','timecard','sirene'], objective:{kind:'survive',limit:30}, gimmick:'hold', inscription:{ text:'HO SONNO' } },
 
   { id:'06', track:'PRIMO POSTO', title:'PRIMO POSTO', audioId:'06-primoposto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rivals', count:3, pushForce:2}], climb:{layout:'double',reach:0.09,hold:0.12,hang:13,weakEvery:8},
-    npcScenes:['snakes','climbers'], objective:{kind:'escort',target:3}, inscription:{ text:'PRIMO POSTO' } },
+    npcScenes:['snakes','climbers'], objective:{kind:'escort',target:3}, gimmick:'shove', inscription:{ text:'PRIMO POSTO' } },
 
   { id:'07', track:'TIC-TAC', title:'TIC-TAC', audioId:'07-tictac', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'timer', total:35, collapseSpeed:0.6}], climb:{layout:'stair',reach:0.08,hold:0.11,hang:11,weakEvery:7},
-    npcScenes:['clocks','wornBodies','crackedMirror'], objective:{kind:'beatClock',limit:42}, inscription:{ text:'TIC-TAC' } },
+    npcScenes:['clocks','wornBodies','crackedMirror'], objective:{kind:'beatClock',limit:42}, gimmick:'rhythmic', inscription:{ text:'TIC-TAC' } },
 
   { id:'08', track:'TUTTO FINTO', title:'TUTTO FINTO', audioId:'08-tuttofinto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720).map((b, i) => i % 3 === 1 ? { ...b, kind:'fake' } : b)],
@@ -388,7 +388,7 @@ const GIRONI = [
 
   { id:'12', track:'MARANATHA', title:'MARANATHA', audioId:'12-maranatha', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true}], climb:{layout:'double',reach:0.12,hold:0.15,hang:11,weakEvery:12},
-    npcScenes:['popoliInCammino','chorus'], objective:{kind:'holdGrip'}, inscription:{ text:'MARANATHA' } },
+    npcScenes:['popoliInCammino','chorus'], objective:{kind:'holdGrip'}, gimmick:'sync', inscription:{ text:'MARANATHA' } },
 
   { id:'13', track:'OUTRO', title:'OUTRO', audioId:'13-outro', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true, final:true}], climb:{layout:'funnel',reach:0.13,hold:0.16,hang:11,weakEvery:14},
@@ -4346,6 +4346,93 @@ function objectiveHud(obj) {
 }
 
 
+// --- gimmicks.js ---
+// ============================================================================
+// GIMMICKS — la MECCANICA D'INTERAZIONE di una traccia. Oltre agli incontri
+// (Z/X), ogni brano può avere una "regola" temporale che cambia COME giochi:
+//   rhythmic  — devi agire a tempo col battito (finestra di tolleranza)
+//   hold      — devi TENERE premuto per completare l'azione (non un tap)
+//   shove      — una spinta periodica ti obbliga a reagire (timing)
+//   sync      — la figura del coro si apre solo sul beat (sincronizza)
+// PURO e DETERMINISTICO: nessun DOM, nessun RNG. Il main legge lo stato per
+// modulare input/prompt/HUD.
+// ============================================================================
+const GIMMICK_KINDS = ['none', 'rhythmic', 'hold', 'shove', 'sync'];
+
+// Preset per girone (g.gimmick = 'rhythmic' | {kind, ...} | undefined).
+const GIMMICKS = {
+  none:     { kind: 'none' },
+  rhythmic: { kind: 'rhythmic', period: 0.5, window: 0.16 },   // 120 BPM, ±160ms
+  hold:     { kind: 'hold', needed: 0.6 },                      // tieni premuto 0.6s
+  shove:    { kind: 'shove', every: 2.4, push: 1 },            // spinta ogni 2.4s
+  sync:     { kind: 'sync', period: 0.5, window: 0.2 },
+};
+function createGimmick(g) {
+  const cfg = g && g.gimmick;
+  const preset = (typeof cfg === 'string') ? (GIMMICKS[cfg] || GIMMICKS.none) : (cfg || GIMMICKS.none);
+  const base = GIMMICKS[preset.kind] || GIMMICKS.none;
+  return {
+    kind: base.kind,
+    period: Number.isFinite(preset.period) ? preset.period : base.period,
+    window: Number.isFinite(preset.window) ? preset.window : base.window,
+    needed: Number.isFinite(preset.needed) ? preset.needed : base.needed,
+    every: Number.isFinite(preset.every) ? preset.every : base.every,
+    push: Number.isFinite(preset.push) ? preset.push : base.push,
+    t: 0,            // tempo interno
+    phase: 0,        // 0..1 nella battuta
+    held: 0,         // secondi di pressione accumulati (hold)
+    ready: false,    // finestra aperta? (rhythmic/sync)
+    fired: false,    // evento shove scattato questo ciclo
+    lastShove: -999,
+  };
+}
+
+// Avanza il gimmick. Ritorna un oggetto osservabile per il main:
+//   { ready, shove, holdProgress, phase }
+function stepGimmick(gm, dt) {
+  const d = Number.isFinite(dt) ? dt : 0;
+  gm.t += d;
+  const period = gm.period > 0 ? gm.period : 0.5;
+  gm.phase = (gm.t % period) / period;
+
+  if (gm.kind === 'rhythmic' || gm.kind === 'sync') {
+    // finestra aperta NELL'ISTANTE del battito (inizio battuta ± window/2)
+    gm.ready = gm.phase <= gm.window / period || gm.phase >= 1 - gm.window / period;
+  } else {
+    gm.ready = true;
+  }
+
+  let shove = false;
+  if (gm.kind === 'shove') {
+    if (gm.t - gm.lastShove >= gm.every) { gm.lastShove = gm.t; shove = true; }
+  }
+  gm.shove = shove;
+  return { ready: gm.ready, shove, holdProgress: gm.needed ? Math.min(1, gm.held / gm.needed) : 0, phase: gm.phase };
+}
+
+// Il main chiama questo quando il verbo è accettato/rifiutato dal gimmick.
+// Ritorna true se il gesto è valido ORA (il main applica l'effetto), false se no.
+function gimmickAccepts(gm, pressed) {
+  if (gm.kind === 'rhythmic' || gm.kind === 'sync') return !!gm.ready;
+  if (gm.kind === 'hold') {
+    if (pressed) { gm.held = Math.min(gm.needed, gm.held + 0.016); return gm.held >= gm.needed; }
+    gm.held = 0; return false;
+  }
+  return true;
+}
+
+// Testo per l'HUD/prompt.
+function gimmickPrompt(gm) {
+  switch (gm.kind) {
+    case 'rhythmic': return 'A TEMPO';
+    case 'hold':     return 'TIENI PREMUTO';
+    case 'shove':    return 'REGGE LA SPINTA';
+    case 'sync':     return 'SINCRONIZZA';
+    default:         return '';
+  }
+}
+
+
 // --- figure.js ---
 // ============================================================================
 // FIGURE — sistema di animazione scheletrico. Una figura umana è costruita da
@@ -7212,7 +7299,7 @@ function stepVariety(variety, climb) {
 
 
 
-
+
 
 const canvas = document.getElementById('game');
 let ctx = canvas.getContext('2d');   // riassegnato al contesto offscreen del renderer
@@ -7340,6 +7427,7 @@ function loadGirone(index) {
     grip: createGrip(g),                 // la PRESA: si erode coi pericoli, rigenera col tempo
     omini: createOmini(g, climb),        // i piccoli della scala (deterministici dal girone)
     objective: createObjective(g),       // obiettivo meccanico della traccia (climb/beatClock/…)
+    gimmick: createGimmick(g),           // meccanica d'interazione per-traccia (rhythmic/hold/…)
     collected: 0, helped: 0,             // contatori per gli obiettivi collect/escort
     activeOmino: null,
     lastLyricIdx: -1,                    // isteresi della lirica (non torna mai indietro)
@@ -7408,6 +7496,15 @@ function setPrompt(txt) {
 }
 function doVerb(verb) {
   if (state.phase !== 'playing' || !level) return;
+  // GIMMICK: per il tieni-premuto accumula pressione; per ritmico/sync accetta
+  // il gesto solo nella finestra del battito. Se non accettato, niente effetto.
+  if (level.gimmick && level.gimmick.kind !== 'none') {
+    const ok = gimmickAccepts(level.gimmick, true);
+    if (!ok) {                       // gesto fuori tempo / pressione insufficiente
+      action = verb; actionT = 0.2;
+      return;
+    }
+  }
   // OMINI: nessun incontro attivo ma un omino a portata -> il verbo parla con lui.
   // Stessi tasti (Z/X, pulsanti touch): nessun binding nuovo.
   if (!level.active && level.activeOmino) {
@@ -7486,9 +7583,10 @@ function updatePrompt() {
   if (!a) { setPrompt(''); return; }
   if (a.resolved) { setPrompt(''); return; }   // incontro risolto: niente prompt
   const d = KINDS[a.kind];
-  if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶');
-  else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]');
-  else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi');
+  const gm = level.gimmick && level.gimmick.kind !== 'none' ? '  [' + gimmickPrompt(level.gimmick) + ']' : '';
+  if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶' + gm);
+  else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]' + gm);
+  else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi' + gm);
 }
 
 function drawWorld(lv, camY) {
@@ -7907,6 +8005,21 @@ function loop(now) {
 
   level.active = encounterAt(cl, level.encounters);
   level.activeOmino = level.active ? null : ominoAt(level.omini, cl);
+
+  // GIMMICK per-traccia: ritmico/tieni-premuto/spinta/sincronizza. Modula il
+  // momento in cui un verbo è accettato + eventi di spinta periodica.
+  if (level.gimmick) {
+    const gr = stepGimmick(level.gimmick, sdt);
+    level.gimmickReady = gr.ready;
+    if (gr.shove) {                       // 'shove': una spinta ti butta giù di 1
+      const mp = climbPos(cl);
+      moveHands(cl, -1); gripHit(level.grip, 0.12);
+      emitFx(level.pfx, 'dust', mp.tx, mp.ty + cameraY, { count: 6 });
+      impact(juice, 0.9, 0, 1);
+    }
+  } else {
+    level.gimmickReady = true;
+  }
   updatePrompt();
 
   // OBIETTIVO della traccia: decide la VITTORIA (non più solo "raggiungi la cima").
