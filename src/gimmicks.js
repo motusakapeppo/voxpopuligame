@@ -40,17 +40,25 @@ export function createGimmick(g) {
   };
 }
 
-// Avanza il gimmick. Ritorna un oggetto osservabile per il main:
-//   { ready, shove, holdProgress, phase }
-export function stepGimmick(gm, dt) {
+// Avanza il gimmick. `held` = true se il tasto-verbo è TENUTO premuto ADESSO.
+// Ritorna { ready, shove, holdProgress, phase }.
+export function stepGimmick(gm, dt, held) {
   const d = Number.isFinite(dt) ? dt : 0;
   gm.t += d;
   const period = gm.period > 0 ? gm.period : 0.5;
   gm.phase = (gm.t % period) / period;
 
-  if (gm.kind === 'rhythmic' || gm.kind === 'sync') {
-    // finestra aperta NELL'ISTANTE del battito (inizio battuta ± window/2)
-    gm.ready = gm.phase <= gm.window / period || gm.phase >= 1 - gm.window / period;
+  if (gm.kind === 'hold') {
+    // "tieni premuto": accumula TEMPO mentre il tasto è giù; rilascio = reset.
+    const h = !!held && gm.held > 0 ? true : !!held;
+    if (h) gm.held = Math.min(gm.needed, gm.held + d);
+    else gm.held = 0;
+    gm.ready = gm.held >= gm.needed;
+  } else if (gm.kind === 'rhythmic' || gm.kind === 'sync') {
+    // finestra FINESTRA STRETTA attorno al battito (non 60% del tempo).
+    const w = gm.window > 0 ? gm.window : 0.16;
+    const half = (w / period) * 0.5;
+    gm.ready = gm.phase <= half || gm.phase >= 1 - half;
   } else {
     gm.ready = true;
   }
@@ -63,14 +71,11 @@ export function stepGimmick(gm, dt) {
   return { ready: gm.ready, shove, holdProgress: gm.needed ? Math.min(1, gm.held / gm.needed) : 0, phase: gm.phase };
 }
 
-// Il main chiama questo quando il verbo è accettato/rifiutato dal gimmick.
-// Ritorna true se il gesto è valido ORA (il main applica l'effetto), false se no.
-export function gimmickAccepts(gm, pressed) {
-  if (gm.kind === 'rhythmic' || gm.kind === 'sync') return !!gm.ready;
-  if (gm.kind === 'hold') {
-    if (pressed) { gm.held = Math.min(gm.needed, gm.held + 0.016); return gm.held >= gm.needed; }
-    gm.held = 0; return false;
-  }
+// Il main chiama questo al momento del verbo. Ritorna true se il gesto è valido
+// ORA. Per hold/rhythmic/sync dipende dallo stato calcolato in stepGimmick; per
+// gli altri tipi è sempre valido.
+export function gimmickAccepts(gm) {
+  if (gm.kind === 'hold' || gm.kind === 'rhythmic' || gm.kind === 'sync') return !!gm.ready;
   return true;
 }
 

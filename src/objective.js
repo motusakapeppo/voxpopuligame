@@ -53,9 +53,11 @@ export function stepObjective(obj, ctx, dt) {
       break;
 
     case 'survive':
-      // vinci restando vivo (presa>0) per `limit` secondi.
+      // vinci se raggiungi la cima (via di fuga) O se resisti `limit` secondi;
+      // perdi se la presa cede. Rushing o resistere: due strategie valide.
       obj.progress = Math.max(0, Math.min(1, obj.elapsed / Math.max(0.001, obj.limit)));
       if (grip <= 0) { obj.failed = true; obj.reason = 'presa persa'; }
+      else if (c.reachedTop) { obj.done = true; obj.reason = 'fuggito in cima'; }
       else if (obj.elapsed >= obj.limit) { obj.done = true; obj.reason = 'sopravvissuto'; }
       break;
 
@@ -72,9 +74,14 @@ export function stepObjective(obj, ctx, dt) {
       break;
 
     case 'holdGrip':
-      // vinci in cima senza MAI far scendere la presa a zero.
-      if (grip <= 0) { obj.failed = true; obj.reason = 'presa persa'; }
-      else if (c.reachedTop) { obj.done = true; obj.reason = 'presa tenuta'; }
+      // "nessun errore": arriva in cima senza MAI far scendere la presa sotto
+      // `grace` (default 0.3). Un passo falso -> sconfitta immediata.
+      {
+        const grace = obj.grace > 0 ? obj.grace : 0.3;
+        if (grip <= 0) { obj.failed = true; obj.reason = 'presa persa'; }
+        else if (grip < grace) { obj.failed = true; obj.reason = 'presa troppo debole'; }
+        else if (c.reachedTop) { obj.done = true; obj.reason = 'presa tenuta'; }
+      }
       obj.progress = Number.isFinite(c.progress) ? Math.max(0, Math.min(1, c.progress)) : obj.progress;
       break;
 

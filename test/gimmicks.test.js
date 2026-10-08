@@ -18,20 +18,30 @@ test('createGimmick: kind sconosciuto -> none', () => {
   assert.equal(createGimmick({ gimmick: 'xyz' }).kind, 'none');
 });
 
-test('rhythmic: la finestra si apre vicino al battito e si chiude a metà', () => {
+test('rhythmic: la finestra si apre solo VICINO al battito (stretta)', () => {
   const gm = createGimmick({ gimmick: 'rhythmic' });
-  stepGimmick(gm, 0);          // phase 0 -> aperta
+  stepGimmick(gm, 0, false);          // phase 0 -> aperta
   assert.equal(gm.ready, true);
-  stepGimmick(gm, 0.25);       // phase 0.5 -> chiusa
+  stepGimmick(gm, 0.25, false);       // phase 0.5 -> chiusa
   assert.equal(gm.ready, false);
+  // su un giro completo la finestra NON copre la maggior parte del tempo
+  let open = 0;
+  const g2 = createGimmick({ gimmick: 'rhythmic' });
+  for (let i = 0; i < 3000; i++) { stepGimmick(g2, 0.001, false); if (g2.ready) open++; }
+  assert.ok(open / 3000 < 0.4, 'finestra troppo larga: ' + (open / 3000));
 });
 
-test('hold: accetta solo dopo aver tenuto premuto abbastanza', () => {
+test('hold: accumula TEMPO di pressione (tieni premuto), non pressioni', () => {
   const gm = createGimmick({ gimmick: { kind: 'hold', needed: 0.5 } });
-  assert.equal(gimmickAccepts(gm, true), false);
-  for (let i = 0; i < 40; i++) gimmickAccepts(gm, true);   // ~0.64s
-  assert.equal(gimmickAccepts(gm, true), true);
-  assert.equal(gimmickAccepts(gm, false), false);          // rilascio = reset
+  // 10 pressioni singole (nessun tempo tenuto) NON bastano
+  for (let i = 0; i < 10; i++) { stepGimmick(gm, 1 / 60, false); }
+  assert.equal(gimmickAccepts(gm), false, 'acceso con sole pressioni');
+  // tenendo premuto ~0.55s si accende
+  for (let i = 0; i < 36; i++) stepGimmick(gm, 1 / 60, true);
+  assert.equal(gimmickAccepts(gm), true, 'non acceso dopo 0.6s di pressione');
+  // rilascio -> reset
+  stepGimmick(gm, 1 / 60, false);
+  assert.equal(gimmickAccepts(gm), false, 'non resettato al rilascio');
 });
 
 test('shove: scatta ogni `every` secondi', () => {

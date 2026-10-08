@@ -56,7 +56,7 @@ export const GIRONI = [
 
   { id:'03', track:'COME I TUONI', title:'COME I TUONI', audioId:'03-tuoni', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'quake', every:5, shakeT:0.8, shakeAmp:6}], climb:{layout:'narrow',reach:0.12,hold:0.20,hang:11,weakEvery:6},
-    npcScenes:['separatedMothers','trembling'], objective:{kind:'beatClock',limit:48}, gimmick:'rhythmic', inscription:{ text:'COME I TUONI' } },
+    npcScenes:['separatedMothers','trembling'], objective:{kind:'beatClock',limit:14}, gimmick:'rhythmic', inscription:{ text:'COME I TUONI' } },
 
   { id:'04', track:'BAGHDAD', title:'BAGHDAD', audioId:'04-baghdad', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'fallingBlades', every:3, speed:3}], climb:{layout:'cavern', reach:0.10,hold:0.13,hang:12,weakEvery:5},
@@ -64,7 +64,7 @@ export const GIRONI = [
 
   { id:'05', track:'HO SONNO', title:'HO SONNO', audioId:'05-hosonno', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'sleep', dimTo:0.35, wakeTouchEvery:1.2}], climb:{layout:'funnel',reach:0.16,hold:0.24,hang:10,weakEvery:9},
-    npcScenes:['workLoop','timecard','sirene'], objective:{kind:'survive',limit:30}, gimmick:'hold', inscription:{ text:'HO SONNO' } },
+    npcScenes:['workLoop','timecard','sirene'], objective:{kind:'survive',limit:16}, gimmick:'hold', inscription:{ text:'HO SONNO' } },
 
   { id:'06', track:'PRIMO POSTO', title:'PRIMO POSTO', audioId:'06-primoposto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'rivals', count:3, pushForce:2}], climb:{layout:'double',reach:0.09,hold:0.12,hang:13,weakEvery:8},
@@ -72,7 +72,7 @@ export const GIRONI = [
 
   { id:'07', track:'TIC-TAC', title:'TIC-TAC', audioId:'07-tictac', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'timer', total:35, collapseSpeed:0.6}], climb:{layout:'stair',reach:0.08,hold:0.11,hang:11,weakEvery:7},
-    npcScenes:['clocks','wornBodies','crackedMirror'], objective:{kind:'beatClock',limit:42}, gimmick:'rhythmic', inscription:{ text:'TIC-TAC' } },
+    npcScenes:['clocks','wornBodies','crackedMirror'], objective:{kind:'beatClock',limit:12}, gimmick:'rhythmic', inscription:{ text:'TIC-TAC' } },
 
   { id:'08', track:'TUTTO FINTO', title:'TUTTO FINTO', audioId:'08-tuttofinto', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720).map((b, i) => i % 3 === 1 ? { ...b, kind:'fake' } : b)],
@@ -89,7 +89,7 @@ export const GIRONI = [
 
   { id:'11', track:'LA FINE DEL MONDO', title:'LA FINE DEL MONDO', audioId:'11-lafinedelmondo', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720)], modifiers:[{kind:'risingWater', riseSpeed:0.8}, {kind:'fallingBlades', every:2.5, speed:3}], climb:{layout:'cavern', reach:0.13,hold:0.17,hang:10,weakEvery:6},
-    npcScenes:['screamingWorld','wiltingFlowers','blackShroud'], objective:{kind:'survive',limit:35}, inscription:{ text:'LA FINE DEL MONDO' } },
+    npcScenes:['screamingWorld','wiltingFlowers','blackShroud'], objective:{kind:'survive',limit:18}, inscription:{ text:'LA FINE DEL MONDO' } },
 
   { id:'12', track:'MARANATHA', title:'MARANATHA', audioId:'12-maranatha', direction:'up', height:720,
     bodies: [...wall(TOP_Y, 720, { stable:6 })], modifiers:[{kind:'handhold', hands:true}], climb:{layout:'double',reach:0.12,hold:0.15,hang:11,weakEvery:12},

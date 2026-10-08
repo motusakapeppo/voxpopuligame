@@ -118,6 +118,7 @@ let action = 'idle';
 let actionT = 0;
 let mash = createMash();
 let juice = createJuice();
+let verbHeld = false;   // tasto-verbo (Z/X) tenuto premuto: per i gimmick 'hold'
 // stepper fisso 1/120 per il crollo ragdoll (stabilità + determinismo indipendente dal refresh)
 const collapseStepper = createStepper({ step: 1 / 120, maxFrame: 0.05, maxSteps: 6 });
 
@@ -244,7 +245,7 @@ function doVerb(verb) {
   // GIMMICK: per il tieni-premuto accumula pressione; per ritmico/sync accetta
   // il gesto solo nella finestra del battito. Se non accettato, niente effetto.
   if (level.gimmick && level.gimmick.kind !== 'none') {
-    const ok = gimmickAccepts(level.gimmick, true);
+    const ok = gimmickAccepts(level.gimmick);
     if (!ok) {                       // gesto fuori tempo / pressione insufficiente
       action = verb; actionT = 0.2;
       return;
@@ -309,15 +310,23 @@ function gripCheck(cl) {
 function mashPress() {
   if (mash.active) { mashHit(mash); action = 'spingi'; actionT = 0.2; }
 }
-if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('tendi'); });
-if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); mash.active ? mashPress() : doVerb('spingi'); });
+if (btnTendi) btnTendi.addEventListener('pointerdown', ev => { ev.preventDefault(); verbHeld = true; mash.active ? mashPress() : doVerb('tendi'); });
+if (btnSpingi) btnSpingi.addEventListener('pointerdown', ev => { ev.preventDefault(); verbHeld = true; mash.active ? mashPress() : doVerb('spingi'); });
+if (btnTendi) btnTendi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; });
+if (btnSpingi) btnSpingi.addEventListener('pointerup', ev => { ev.preventDefault(); verbHeld = false; });
+if (btnTendi) btnTendi.addEventListener('pointercancel', () => { verbHeld = false; });
+if (btnSpingi) btnSpingi.addEventListener('pointercancel', () => { verbHeld = false; });
 if (btnCta) btnCta.addEventListener('pointerdown', ev => { ev.preventDefault(); goToCta(); });
 window.addEventListener('keydown', ev => {
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX') verbHeld = true;   // per gimmick 'hold'
   if (ev.code === 'KeyZ' || ev.code === 'KeyX' || ev.code === 'Space' || ev.code === 'ArrowUp') {
     if (mash.active) { mashPress(); }
     else if (ev.code === 'KeyZ') doVerb('tendi');
     else if (ev.code === 'KeyX') doVerb('spingi');
   }
+});
+window.addEventListener('keyup', ev => {
+  if (ev.code === 'KeyZ' || ev.code === 'KeyX') verbHeld = false;
 });
 
 const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').split(',').filter(Boolean));
@@ -765,7 +774,7 @@ function loop(now) {
   // GIMMICK per-traccia: ritmico/tieni-premuto/spinta/sincronizza. Modula il
   // momento in cui un verbo è accettato + eventi di spinta periodica.
   if (level.gimmick) {
-    const gr = stepGimmick(level.gimmick, sdt);
+    const gr = stepGimmick(level.gimmick, sdt, verbHeld);
     level.gimmickReady = gr.ready;
     if (gr.shove) {                       // 'shove': una spinta ti butta giù di 1
       const mp = climbPos(cl);
