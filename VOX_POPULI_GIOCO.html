@@ -4676,6 +4676,205 @@ function drawFigure(ctx, x, y, opts = {}) {
 }
 
 
+// --- grip.js ---
+// ============================================================================
+// GRIP — la PRESA. Modulo puro e deterministico: nessun DOM, nessuna
+// sorgente di entropia. La presa `v` va da 1 (salda) a 0 (persa). I pericoli la
+// erodono (gripHit), il tempo la rigenera (stepGrip). Quando tocca 0 si
+// decide l'esito: 'fall' se si è saliti oltre la riga di partenza, altrimenti
+// 'defeat' (sconfitta pura).
+// ============================================================================
+
+const DEFAULT_CFG = {
+  hitWind: 0.10,
+  hitQuake: 0.22,
+  hitDebris: 0.18,
+  hitIvy: 0.12,
+  hitMash: 0.45,
+  regen: 0.10,
+};
+
+// createGrip(g) — g.grip opzionale sovrascrive i default (merge parziale).
+function createGrip(g) {
+  const cfg = { ...DEFAULT_CFG, ...((g && g.grip) || {}) };
+  return { v: 1, cfg };
+}
+
+// gripHit — un colpo erode la presa; clamp a 0 (mai negativa).
+function gripHit(grip, amt) {
+  grip.v = Math.max(0, grip.v - amt);
+  return grip.v;
+}
+
+// stepGrip — rigenerazione nel tempo; clamp a 1.
+function stepGrip(grip, dt) {
+  grip.v = Math.min(1, grip.v + dt * grip.cfg.regen);
+  return grip.v;
+}
+
+// gripRatio — v normalizzato in [0,1].
+function gripRatio(grip) {
+  return Math.max(0, Math.min(1, grip.v));
+}
+
+// gripOutcome — null finché la presa tiene; a v==0 decide fall vs defeat.
+function gripOutcome(grip, curRow, startRow) {
+  if (grip.v > 0) return null;
+  if (curRow > startRow) return 'fall';
+  return 'defeat';
+}
+
+
+// --- omini.js ---
+// ============================================================================
+// OMINI — i piccoli che popolano la scala. Modulo PURO e DETERMINISTICO:
+// nessun DOM, nessuna sorgente casuale. Lo spawn è guidato dalla fila del giocatore
+// (come gli incontri: |dr| <= 1) e ruota le animazioni in modo deterministico
+// dal seme del girone. Gli helper LCG hanno nomi UNICI (ominiSeed/ominiLcg) per
+// non collidere con lcgNext di threats.js nel bundle.
+// ============================================================================
+
+
+// Le animazioni possibili di un omino. Almeno 4, tutte uniche.
+const OMINI_ANIMS = ['wave', 'climbUp', 'shove', 'tumble', 'carry'];
+
+// Vettori dei due verbi (coerenti col resto del gioco: tendi = connettersi,
+// spingi = prevaricare). dy negativo = sale, positivo = scende.
+const OMINI_VERBS = {
+  tendi:  { dy: -24, loyal: +1, event: 'helped' },
+  spingi: { dy: +48, loyal: -1, event: 'shoved' },
+};
+
+const OMINI_MAX = 12;      // cap della lista viva
+const OMINI_REACT = 1.2;   // secondi di reazione prima che un risolto scada
+
+// Seme deterministico dal g.id (FNV-1a a 32 bit). Nome unico: ominiSeed.
+function ominiSeed(g) {
+  const s = String(g?.id || '');
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+// LCG (Numerical Recipes) a 32 bit: ritorna il NUOVO stato intero. Nome unico:
+// ominiLcg. Lo stato intero è usato direttamente come indice di rotazione.
+function ominiLcg(state) {
+  return (Math.imul(1664525, state >>> 0) + 1013904223) >>> 0;
+}
+
+// Crea lo stato degli omini per un girone. `climb` serve solo per la geometria
+// (nRows/centerCol) al momento dello spawn.
+function createOmini(g, _climb) {
+  return {
+    list: [],
+    t: 0,
+    rng: ominiSeed(g),
+    nextRow: 4,
+    spawnEvery: 5,
+    spawned: 0,
+  };
+}
+
+// Avanza gli omini. Quando la fila del giocatore raggiunge `nextRow`, spawna un
+// omino sulla colonna centrale di quella fila, con animazione ruotata in modo
+// deterministico; poi avanza nextRow di spawnEvery. Aggiorna fasi/reazioni,
+// applica il cap e rimuove gli omini risolti da tempo.
+function stepOmini(o, climb, dt) {
+  const d = Number.isFinite(dt) ? dt : 0.016;
+  o.t += d;
+
+  const row = Math.max(climb.lh.r, climb.rh.r);
+  const lastRow = climb.nRows - 2;
+  while (row >= o.nextRow && o.nextRow <= lastRow) {
+    const r = o.nextRow;
+    const c = centerCol(climb, r);
+    const anim = OMINI_ANIMS[(o.rng + o.spawned) % OMINI_ANIMS.length];
+    o.rng = ominiLcg(o.rng);          // avanza l'LCG una volta per spawn
+    o.list.push({
+      id: `om${o.spawned}`,
+      row: r,
+      c,
+      anim,
+      phase: 0,
+      resolved: false,
+      verb: null,
+      reactT: 0,
+    });
+    o.spawned++;
+    o.nextRow += o.spawnEvery;
+  }
+
+  // fase di animazione + timer di reazione dei risolti
+  for (const om of o.list) {
+    om.phase += d;
+    if (om.resolved) om.reactT += d;
+  }
+
+  // rimuovi gli scaduti (risolti da oltre OMINI_REACT), poi applica il cap
+  for (let i = o.list.length - 1; i >= 0; i--) {
+    const om = o.list[i];
+    if (om.resolved && om.reactT > OMINI_REACT) o.list.splice(i, 1);
+  }
+  while (o.list.length > OMINI_MAX) o.list.shift();
+}
+
+// L'omino attivo: il più vicino non risolto entro |dr| <= 1 dalla fila corrente
+// del giocatore (stessa regola degli incontri, climb.js encounterAt).
+function ominoAt(o, climb) {
+  const r = Math.max(climb.lh.r, climb.rh.r);
+  let best = null;
+  let bestD = Infinity;
+  for (const om of o.list) {
+    if (om.resolved) continue;
+    const dd = Math.abs(om.row - r);
+    if (dd <= 1 && dd < bestD) { bestD = dd; best = om; }
+  }
+  return best;
+}
+
+// Applica un verbo a un omino. Ritorna il vettore { dy, loyal, event } e segna
+// l'omino risolto. Verbo sconosciuto -> errore (come resolveEncounter).
+function resolveOmino(_o, omino, verb) {
+  const eff = OMINI_VERBS[verb];
+  if (!eff) throw new Error(`unknown verb: ${verb}`);
+  omino.resolved = true;
+  omino.verb = verb;
+  return { ...eff };
+}
+
+
+// --- hazard.js ---
+// ============================================================================
+// HAZARD — classificazione PURA dei messaggi dei pericoli in "quanto erode la
+// presa". Deterministico: nessun DOM, nessuna sorgente di entropia. Estratto da main.js
+// per essere testabile: la stessa regex che sceglie l'effetto visivo decide
+// anche il peso del colpo, ma i pesi vengono dalla cfg della presa (grip.js).
+// ============================================================================
+
+const HAZARD_SMALL = 0.08;   // messaggio non classificato: erosione minima
+
+// hazardSeverity(msg, cfg) -> numero finito >= 0.
+//   /vento|pioggia|scivol/ -> cfg.hitWind   (default 0.10)
+//   /tuono/                -> cfg.hitQuake  (default 0.22)
+//   /tempo|detrito|cranio/ -> cfg.hitDebris (default 0.18)
+//   /edera/                -> cfg.hitIvy    (default 0.12)
+//   altrimenti             -> 0.08
+// cfg assente o valori non finiti -> default. msg null/undefined -> 0.08.
+function hazardSeverity(msg, cfg) {
+  const m = String(msg == null ? '' : msg).toLowerCase();
+  const c = cfg || {};
+  const pick = (v, d) => (Number.isFinite(v) ? v : d);
+  if (/vento|pioggia|scivol/.test(m)) return pick(c.hitWind, 0.10);
+  if (/tuono/.test(m)) return pick(c.hitQuake, 0.22);
+  if (/tempo|detrito|cranio/.test(m)) return pick(c.hitDebris, 0.18);
+  if (/edera/.test(m)) return pick(c.hitIvy, 0.12);
+  return HAZARD_SMALL;
+}
+
+
 // --- art.js ---
 // ============================================================================
 // ART — VOX POPULI. Figure rosse animate su nero, come la copertina.
@@ -5991,12 +6190,14 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
 // Lirica PIXEL — PROTAGONISTA: corpo bianco + alone nero a 8 direzioni (4
 // ortogonali + 4 diagonali) + ombra morbida offset. Il contrasto ABBRACCIA IL
 // TESTO (niente banda full-width, niente righe rosse): la lirica resta nella
-// scena, amalgamata, ma sempre leggibile. La riga precedente è un fantasma rosso.function drawLyricsPixel(ctx, lines, pos, time, W, H) {
+// scena, amalgamata, ma sempre leggibile. La riga precedente è un fantasma rosso.function drawLyricsPixel(ctx, lines, pos, time, W, H, minIdx) {
   if (!lines || !lines.length) return;
   const w = Number.isFinite(W) ? W : 320;
   const h = Number.isFinite(H) ? H : 180;
   const t = Number.isFinite(time) ? time : 0;
-  const idx = lyricIndexAt(lines, pos);
+  // minIdx (opzionale): isteresi — l'indice mostrato non regredisce mai, così
+  // la riga non "flippa" all'indietro su testi con start ravvicinati.
+  const idx = lyricIndexAt(lines, pos, minIdx);
   if (idx < 0) return;
   const cur = lines[idx];
   const text = cur[2] != null ? cur[2] : cur[1];
@@ -6772,7 +6973,7 @@ function stepVariety(variety, climb) {
 
 
 
-
+
 
 const canvas = document.getElementById('game');
 let ctx = canvas.getContext('2d');   // riassegnato al contesto offscreen del renderer
@@ -6786,6 +6987,26 @@ let SCALE = 3;
 // (tools/align-karaoke.mjs), quindi il default e' 0: alzare a -0.08 se si vuole
 // un piccolo anticipo percettivo.
 const LYRIC_LEAD = 0.0;
+
+// GRADE — mood cromatico PER TRACCIA (delta deterministici sul post-processing).
+// Vive qui (non in themes.js, REF lock): ogni brano ha una "temperatura" diversa
+// restando nella palette rosso/nero. Valori piccoli: si sommano alla base di
+// playingPost e vengono clampati in [0,1]. Chiave = audioId.
+const GRADE = {
+  '01-intro':          { vignette: -0.05 },                          // apertura: più luce
+  '02-vento':          { chroma: +0.06, grain: +0.02 },              // vento: instabile
+  '03-tuoni':          { bloom: +0.06, scan: +0.03 },                // tuoni: lampi
+  '04-baghdad':        { vignette: +0.08, grain: +0.04 },            // polvere: cupo
+  '05-hosonno':        { vignette: +0.10, chroma: +0.05 },           // sonno: ovattato
+  '06-primoposto':     { bloom: +0.05, vignette: -0.06 },            // riflettori
+  '07-tictac':         { scan: +0.06, grain: +0.03 },                // meccanico
+  '08-tuttofinto':     { chroma: +0.08, scan: +0.04 },               // finto: sfasato
+  '09-edera':          { vignette: +0.06, grain: +0.03 },            // edera: organico
+  '10-scendi':         { vignette: +0.07, bloom: -0.04 },            // discesa: buio
+  '11-lafinedelmondo': { bloom: +0.08, chroma: +0.06 },              // apocalisse
+  '12-maranatha':      { bloom: +0.10, vignette: -0.05 },            // rivelazione
+  '13-outro':          { vignette: +0.05, grain: +0.02 },            // dissolvenza
+};
 
 function resize() {
   const s = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
@@ -6877,6 +7098,12 @@ function loadGirone(index) {
     pickups,
     variety: createVariety(g, climb),    // missione + oggetti/amici/nemici/egg del brano
     threats: createThreatState(),
+    grip: createGrip(g),                 // la PRESA: si erode coi pericoli, rigenera col tempo
+    omini: createOmini(g, climb),        // i piccoli della scala (deterministici dal girone)
+    activeOmino: null,
+    lastLyricIdx: -1,                    // isteresi della lirica (non torna mai indietro)
+    lastLyricPos: 0,                     // posizione audio del frame precedente (rileva il loop)
+    grade: g.grade || GRADE[g.audioId] || {},   // delta cromatici per traccia (assente = {})
     pfx: createFx((index + 1) * 7919),   // particelle cinematografiche (deterministiche)
     events: [], fx: createEffects(), transition: null, active: null, threatMsg: '',
     chapter: 1.4,                        // chapter card del brano
@@ -6939,7 +7166,18 @@ function setPrompt(txt) {
   else promptEl.classList.remove('show');
 }
 function doVerb(verb) {
-  if (state.phase !== 'playing' || !level || !level.active) return;
+  if (state.phase !== 'playing' || !level) return;
+  // OMINI: nessun incontro attivo ma un omino a portata -> il verbo parla con lui.
+  // Stessi tasti (Z/X, pulsanti touch): nessun binding nuovo.
+  if (!level.active && level.activeOmino) {
+    const eff = resolveOmino(level.omini, level.activeOmino, verb);
+    if (eff.dy) moveHands(level.climb, Math.round(-eff.dy / 24));
+    loyalty += eff.loyal;
+    action = verb;
+    actionT = 0.5;
+    return;
+  }
+  if (!level.active) return;
   const kind = level.active.kind;
   if (isAutoKind(kind)) return;   // helper/grabber non si scelgono con Z/X
   const eff = resolveEncounter(level.active, verb);
@@ -6951,6 +7189,35 @@ function doVerb(verb) {
   loyalty += eff.loyal;
   action = verb === 'tendi' ? 'tendi' : 'spingi';
   actionT = verb === 'tendi' ? 0.72 : 0.62;
+}
+
+// GRIP: esito della presa. Va chiamato PRIMA di stepGrip (la rigenerazione
+// riporterebbe v sopra 0 e l'esito non scatterebbe mai). Ritorna true se il
+// girone è stato ricaricato (defeat): il chiamante deve uscire dal frame.
+//   'fall'   -> scivoli fino alla riga di partenza + mercy 0.5 (non si perde
+//               due volte di fila) + impatto.
+//   'defeat' -> sconfitta pura: si torna al girone precedente (clampato a 0).
+function gripCheck(cl) {
+  if (!level || !level.grip) return false;
+  const startRow = (level.girone.direction === 'down') ? cl.nRows - 1 : 0;
+  const curRow = Math.max(cl.lh.r, cl.rh.r);
+  const outcome = gripOutcome(level.grip, curRow, startRow);
+  if (outcome === 'fall') {
+    moveHands(cl, -Math.max(0, curRow - startRow));
+    level.grip.v = 0.5;                       // mercy
+    const mp = climbPos(cl);
+    emitFx(level.pfx, 'ash', mp.tx, mp.ty + cameraY, { count: 10, spread: 3 });
+    emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 4 });
+    impact(juice, 1.3, 0, 1); breakFlow(juice);
+    level.events.push('quake');
+    return false;
+  }
+  if (outcome === 'defeat') {
+    state = advance(state, 'defeat');
+    level = loadGirone(state.gironeIndex);
+    return true;
+  }
+  return false;
 }
 
 // Martella durante il minigioco di lotta.
@@ -6988,6 +7255,7 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('npc')) drawNpcScenes(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
+  if (!SKIP.has('omini')) for (const om of (lv.omini ? lv.omini.list : [])) drawOmino(ctx, om, lv.climb, camY, time, om === lv.activeOmino);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
   if (!SKIP.has('variety')) drawVariety(ctx, lv.variety, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
@@ -7021,7 +7289,18 @@ function drawWorld(lv, camY) {
 function drawSceneLyrics(phase) {
   if (!shouldDrawLyrics(phase) || !level || SKIP.has('lyrics')) return;
   const kl = KARAOKE[level.girone.audioId];
-  if (kl) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
+  if (kl) {
+    const pos = audio.position() + LYRIC_LEAD;
+    // ISTERESI: l'indice non torna mai indietro (minIdx = ultimo mostrato).
+    // La traccia va in LOOP: se la posizione torna indietro (riavvio), il floor
+    // si azzera, altrimenti la lirica resterebbe congelata sull'ultima riga.
+    if (pos + 0.5 < (level.lastLyricPos || 0)) level.lastLyricIdx = -1;
+    level.lastLyricPos = pos;
+    const idx = lyricIndexAt(kl, pos, level.lastLyricIdx);
+    level.lastLyricIdx = idx;
+    // Il render rispetta il floor (isteresi): la riga non torna mai indietro.
+    drawLyricsPixel(ctx, kl, pos, time, VIEW_W, VIEW_H, level.lastLyricIdx);
+  }
 }
 
 // Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
@@ -7034,7 +7313,7 @@ function drawOverlay() {
   // sovrapposto — evitava il doppio testo. Il resto dell'HUD resta a piena risoluzione.
   drawUIOverlay(uctx, SCALE, VIEW_W, VIEW_H, {
     inscription: level ? level.girone.inscription.text : '',
-    threatMsg: level ? level.threatMsg : '',
+    threatMsg: '',   // callout rosso soppresso: level.threatMsg resta per la logica
     chapterT: level ? level.chapter : 0,
     chapterTitle: level ? level.girone.title : '',
     prompt: promptEl ? promptEl.textContent : '',
@@ -7082,6 +7361,15 @@ function playingPost(dt, glitch) {
     post.chroma = Math.min(0.8, post.chroma + st9.dim * 0.3);       // dormiente: sbava
     if (st9.stun > 0.01) post.glitch = Math.max(post.glitch, 0.5);  // terremoto: strappa
   }
+  // GRADE per traccia: delta cromatici deterministici (GRADE table / g.grade).
+  // Clamp in [0,1]: il mood resta nella palette rosso/nero, mai fuori scala.
+  const gd = (level && level.grade) || {};
+  const cl01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+  post.bloom = cl01(post.bloom + (gd.bloom || 0));
+  post.chroma = cl01(post.chroma + (gd.chroma || 0));
+  post.scan = cl01(post.scan + (gd.scan || 0));
+  post.vignette = cl01(post.vignette + (gd.vignette || 0));
+  post.grain = cl01(post.grain + (gd.grain || 0));
   return post;
 }
 function juflash() { return Math.max(0, juice.flash); }
@@ -7175,6 +7463,11 @@ function loop(now) {
   // --- playing: arrampicata ---
   level.events.length = 0;
   if (level.chapter > 0) level.chapter -= dt;
+  // GRIP: esito della presa PRIMA della rigenerazione (v==0 da un colpo del frame
+  // precedente o forzato dall'esterno). Se il girone viene ricaricato si esce.
+  if (gripCheck(cl)) return;
+  stepGrip(level.grip, sdt);          // la presa si rigenera col tempo
+  stepOmini(level.omini, cl, sdt);    // i piccoli della scala (spawn per fila)
   const NONE = { left: false, right: false, up: false, down: false };
   // Il mash blocca tutto: stai lottando. Il ramo resta attivo anche dopo la
   // vittoria/sconfitta (won/lost) finché non viene risolto e resettato.
@@ -7191,6 +7484,8 @@ function loop(now) {
     } else if (mash.lost) {
       // perso: scendi di 4
       moveHands(cl, -4);
+      // GRIP: la lotta persa erode la presa (cfg.hitMash, guard se cfg assente).
+      gripHit(level.grip, level.grip && level.grip.cfg ? level.grip.cfg.hitMash : 0.45);
       emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 8 });
       impact(juice, 1.2, 0, 1); breakFlow(juice);
       if (level.active) { level.active.resolved = true; level.active.verb = 'tendi'; }
@@ -7217,6 +7512,9 @@ function loop(now) {
 
   // L'incontro attivo FERMA il corpo: finché non scegli (o l'auto si risolve).
   level.active = encounterAt(cl, level.encounters);
+  // OMINI: se nessun incontro è attivo, il più vicino entro |dr|<=1 diventa
+  // l'interlocutore dei verbi Z/X (stessa regola di encounterAt).
+  level.activeOmino = level.active ? null : ominoAt(level.omini, cl);
   // helper: ti tira su da solo. grabber: parte la lotta a martello.
   if (level.active && !level.active.triggered) {
     const kind = level.active.kind;
@@ -7271,6 +7569,8 @@ function loop(now) {
     else if (/tuono|tempo/.test(m)) { level.events.push('quake'); emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 6 }); }
     else if (/detrito|cranio|edera|sonno/.test(m)) { level.events.push('blade'); emitFx(level.pfx, 'blood', mp.tx, mp.ty + cameraY, { count: 5 }); }
     else { level.events.push('fake'); emitFx(level.pfx, 'ash', mp.tx, mp.ty + cameraY, { count: 4 }); }
+    // GRIP: lo stesso messaggio erode la presa (peso dalla cfg, hazard.js puro).
+    gripHit(level.grip, hazardSeverity(msg, level.grip && level.grip.cfg));
     impact(juice, 0.8, 0, 1);
     breakFlow(juice);
   }
@@ -7342,6 +7642,8 @@ function loop(now) {
   // cedimento di un corpo debole: cade da solo e ti trascina giù
   if (cl.collapseEvent) {
     cl.collapseEvent = null;
+    // GRIP: il cedimento del corpo debole erode la presa (0.16 fisso).
+    gripHit(level.grip, 0.16);
     emitFx(level.pfx, 'ash', pos.tx, pos.ty + cameraY, { count: 10, spread: 3 });
     emitFx(level.pfx, 'blood', pos.tx, pos.ty + cameraY, { count: 4 });
     impact(juice, 1.1, 0, 1); breakFlow(juice);
@@ -7349,6 +7651,7 @@ function loop(now) {
   }
 
   level.active = encounterAt(cl, level.encounters);
+  level.activeOmino = level.active ? null : ominoAt(level.omini, cl);
   updatePrompt();
 
   if (cl.reached && state.phase === 'playing') {
@@ -7403,7 +7706,16 @@ if (_colParam) {
 
 // Debug per screenshot: porta il gioco in una fase e la MANTIENE (hold), così
 // la si può fotografare senza che avanzi da sola. ?phase=mash|unlocked.
+// force('defeat'): sconfitta immediata (grip a 0 -> il loop avanza a 'defeat').
 function forcePhase(phase) {
+  if (phase === 'defeat') {
+    if (!level || state.phase !== 'playing') {
+      state = advance(createState(), 'start');
+      level = loadGirone(state.gironeIndex);
+    }
+    if (level.grip) level.grip.v = 0;   // il prossimo frame chiama gripCheck -> defeat
+    return true;
+  }
   if (phase !== 'mash' && phase !== 'unlocked') return false;
   if (!level || state.phase === 'title' || state.phase === 'cta' || state.phase === 'collapse') {
     state = advance(createState(), 'start');
@@ -7421,7 +7733,21 @@ function forcePhase(phase) {
   return true;
 }
 if (_phaseParam) forcePhase(_phaseParam);
-window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb, force: forcePhase };
+window.__vp = {
+  get state() { return state; },
+  get level() { return level; },
+  get time() { return time; },
+  get collapse() { return collapse; },
+  get mash() { return mash; },
+  get juice() { return juice; },
+  get audio() { return audio; },
+  get loyalty() { return loyalty; },
+  get grip() { return level && level.grip; },
+  get omini() { return level && level.omini; },
+  get activeOmino() { return level && level.activeOmino; },
+  get lastLyricIdx() { return level && level.lastLyricIdx; },
+  doVerb, force: forcePhase,
+};
 
 loop();
 
