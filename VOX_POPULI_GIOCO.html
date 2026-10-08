@@ -808,7 +808,7 @@ function bpmFor(audioId) {
 // --- karaoke.js ---
 // Karaoke: [inizio, frase]. Le clip sono estratti da meta canzone: l inizio
 // e ancorato all onset della PAROLA cantata (tools/align-karaoke.mjs).
-const KARAOKE = {"01-intro":[[0.56,"E scopro ogni giorno che passa un pezzetto di me che si stacca dal cranio ah"],[4.22,"Scriverò versi finché non mi prosciugheranno del tutto anche l'anima"],[8.37,"La notte è scura ed espia dal peccato"],[12.52,"Ma è più sicura per chi c'è già stato,"],[13.69,"Danzo sul ghiaccio come Salomè"],[14.85,"Finché d'un tratto si sarà spezzato"],[16.02,"Mi sa tanto che boh sono morto"],[17.18,"Ho aperto mo' gli occhi e non vedo un cazzo"],[18.35,"Dalla tapparella entra un raggio rosso"],[19.51,"Le coperte per terra è tutto sudato"]],"02-vento":[[0.46,"Cristo qua"],[1.06,"Non sa nemmeno che esisto, ma"],[3.44,"Scrivo col sangue sopra quest'epistola"],[5.83,"Eh la gente che in coro canta Maranatha"],[8.22,"Lo sguardo nel vuoto, quasi fossero in trance"],[11.44,"A che serve, non lo so, e chi forse lo sa"],[12.6,"Lo tiene per sé, che ridà forza a maman"],[13.76,"Ma se anche il figlio di sto're"],[14.93,"Non sa che un giorno lui sarà sua maestà"],[16.09,"E se non sai che di-re, di-llo a me"],[17.25,"Ci lotto da quando avevo anch'io la tua età"],[18.41,"Il popolo sta male"],[19.58,"Il popolo c'ha fame"]],"03-tuoni":[[8.58,"Eh Oh Eh Oh"],[9.92,"Ho ancora le tue chiavi di casa"],[11.25,"Dimmi cos'è rimasto tra i mattoni e la ghiaia"],[12.59,"Eh Oh Eh Oh"],[15.26,"Raccontami come sta la mamma"],[16.59,"Quando ci sono i tuoni vorrei che foste qua"],[18.23,"Che se mi fermo perdo tempo e non voglio sprecarla"],[19.87,"Raccontami come stanno i figli"],[20.84,"Che per salvarli li abbiamo spediti dal mare"],[21.82,"Neanche fossero merce, l'ultimo degli appigli"]],"04-baghdad":[[1.43,"Abbassa, abbassa che al cell sennò"],[2.87,"di là s'incazzano e ti dico"],[4.3,"Mi trovo di sera da solo"],[5.68,"che parlo seduto di fronte al PC"],[7.06,"Arriva un messaggio e lo ignoro"],[8.44,"Io sono così."],[9.82,"Sono tutti qua"],[12.13,"Ti vedo lassù"],[14.44,"Guarda quanta gente"],[15.45,"Non si diverte"]],"05-hosonno":[[4.27,"Non mi va"],[5.19,"La mattina presto"]],"06-primoposto":[[1.33,"Voglio stare con te in tutti i sogni che farò questa notte"],[7.47,"Il cuore batte, sento solo le botte, le botte, le botte, sì,"],[11.85,"E però voglio stare con te con le coperte che sembrano più corte"],[12.95,"Perché ti muovi come fossi alle giostre, alle giostre, alle giostre"],[14.04,"Ho fatto il primo posto ad una gara"],[15.14,"E vinceva chi faceva più cazzate nella vita, quindi ho vinto io"],[16.24,"Non c'è neanche un premio per chi ce la fa"],[17.34,"Una volta tanto che vincevo qualcosa"],[18.43,"E farò ricorso alla giustizia, ma se solo le importasse qualcosa"],[19.53,"Questo mondo infame mi fa schifo tutto"]],"07-tictac":[[1.65,"E allora bau"],[3.3,"Mi sono rotto il cazzo di star calmo"],[5.56,"Del fato"],[7.52,"Che bravo"],[9.32,"Anche solo una volta detto piano"]],"08-tuttofinto":[[1.56,"Tento di esprimere da queste seconde linee"],[3.09,"Ma senza l'aiuto di terzi"],[4.62,"Il vero manca, il pensiero va"],[6.22,"Sembra il Nabucco di Verdi"],[7.79,"Prende più forma la bagarre"],[9.37,"Mischiamo Dubrovsk e Bataclan"],[10.94,"Nel mentre una ronda con i balaclava"],[12.7,"Spara sulla folla senza kalash"],[14.46,"Ma sarà come aver dato forza all'orchestra"],[15.5,"Si innamora oppure viene oppressa"],[16.53,"Resterà tra Stoccolma e Stendhal"],[17.57,"Lavorate per un pugno di dollari ma non siete Morricone"],[18.61,"La differenza sta negli attimi"],[19.64,"Contale e valuta la posizione"]],"09-edera":[[0.56,"Per te è normale ma"],[3.42,"Esplodi se accumuli per troppo tempo (ecco)"],[6.29,"Metterò me in scena, ma col tempo mi perderò"],[9.15,"Perché c'ho due voci che mi seguono e mentono"],[12.01,"Ed ho scene paratattiche nel senno che perdo"],[13.07,"Io voglio stare male sembra tipico, qua"],[15.13,"Così scrivo pezzi più fighi (fighi)"],[17.19,"Finalmente forse sono libero, ma"],[19.01,"Ti lego così non ti uccidi"],[19.96,"E so che berrò il mare con l'aroma di sangue"],[20.91,"Perché prenderò le onde a pugni con la falange"],[21.86,"Tornerò da te con quattro/cinque punti per guancia"]],"10-scendi":[[0.68,"Accade da decenni, li guardano e li deridono"],[2.08,"Come la domenica allo stadio fanno il tifo"],[3.2,"è troppo facile dire cose difficili"],[4.32,"Si diceva già ma tempo fa verso i politici"],[5.44,"Adesso sembra tutto un po' al contrario e siam felici"],[6.56,"Se parlano ai comizi, sono solo capre e cimici"],[7.68,"Scendi Scendi Scendi"],[12.17,"E adesso scendi pure tu, no?"],[13.29,"Manifesti pure tu, no?"]],"11-lafinedelmondo":[[0.36,"Da attraversare il mondo"],[2.78,"Chissà se pioverà"],[5.2,"Persino l'ultimo giorno"],[7.55,"Ora che il mare si alza inghiottirà pure il cielo"],[9.9,"È la fine del mondo"],[12.26,"E sì è la fine del mondo"],[14.62,"Sarà la fine di sto mondo ma ce ne son tre"],[17.36,"La profezia ha parlato chiaro ma che ne sei te"],[18.46,"Solo coloro che conoscono il segreto per durare"],[19.56,"Nell'eternità vivranno altrove insieme a me"],[20.66,"E chi ha vissuto in mezzo ai vizi forse morirà"],[21.76,"Chi ha dato poco peso ai simili soccomberà"]],"12-maranatha":[[0,"Mica lo sai che il sogno"],[0.8,"Di tutti questi popoli è dormire con un sogno"],[2.31,"Dormire per davvero"],[3.82,"Sopra un cuscino vero"],[4.8,"Invece sono gocce d'olio in questo mare nero"],[6.6,"Un giorno ho colto, credo il senso di"],[8.68,"Svegliarsi tutti i giorni, intendo… penso, si"],[10,"Cambiando tutto il mondo, ho detto \"certo\" e qui"],[11.88,"Se si parlasse meno a vuoto, forse è tutto lì"],[14.09,"Vedranno popoli in cammino verso l'alto dei cieli"],[16.3,"Diranno \"scemo tu perché poi non ci credevi\""],[18.16,"Mentre il mondo brucerà nell'attesa che risorga"],[19.3,"Sentirò Maranatha uscirvi dalla bocca"],[20.43,"Io sfuggirò al destino perché son convinto che"],[21.56,"Il tuo destino lo decidi te (ah)"]],"13-outro":[[0,"Lei non voleva farti arrabbiare, chiami tutte puttane come se piaccia"],[3.74,"Vedo uomini piccoli tipo, chi porta ancora il razzismo nel tifo"],[7.44,"Chi nel suo ufficio tiene un busto di Benito, capito?"],[11.16,"Eh sì sì sì sì voglio scendere in piazza"],[12.8,"Ma senza striscioni e bandiera italiana"],[14.62,"Voglio un cerchio attorno a me fatto di donne"],[16.5,"Voglio che mi chiamino solo puttana"],[18.38,"E dimmi com'è"],[19.24,"Che si cambia il mondo quando neanche Dio ce l'ha fatta"]]};
+const KARAOKE = {"01-intro":[[0.28,"Sul letto sfatto che ho in camera"],[0.56,"E scopro ogni giorno che passa un pezzetto di me che si stacca dal cranio ah"],[1.78,"La notte è scura ed espia dal peccato"],[3,"Danzo sul ghiaccio come Salomè"],[4.22,"Scriverò versi finché non mi prosciugheranno del tutto anche l'anima"],[5.88,"Finché d'un tratto si sarà spezzato"],[7.54,"Mi sa tanto che boh sono morto"],[9.2,"Ho aperto mo' gli occhi e non vedo un cazzo"],[10.86,"Dalla tapparella entra un raggio rosso"],[12.52,"Ma è più sicura per chi c'è già stato,"],[14.02,"Le coperte per terra è tutto sudato"],[15.51,"Ma mettendo i piedi per terra mi accorgo che il muro ora è tutto imbrattato,"],[17.01,"Sembra mappa di un luogo che in vita mia giuro non ci son mai stato,"],[18.5,"E un po' sto male"]],"02-vento":[[0.23,"Copre dei graffiti che non ho mai visto, ah"],[0.46,"Cristo qua"],[0.76,"L'essere umano è Mefisto"],[1.06,"Non sa nemmeno che esisto, ma"],[1.85,"Eh la gente che in coro canta Maranatha"],[2.65,"Lo tiene per sé, che ridà forza a maman"],[3.44,"Scrivo col sangue sopra quest'epistola"],[4.63,"Ma se anche il figlio di sto're"],[5.83,"Non sa che un giorno lui sarà sua maestà"],[7.03,"E se non sai che di-re, di-llo a me"],[8.22,"Lo sguardo nel vuoto, quasi fossero in trance"],[9.29,"Ci lotto da quando avevo anch'io la tua età"],[10.37,"Il popolo sta male"],[11.44,"A che serve, non lo so, e chi forse lo sa"],[13.15,"Il popolo c'ha fame"],[14.86,"Il popolo ti aspetta giù al palazzo con le lame"],[16.58,"Il popolo sta male"],[18.29,"Non riesce a respirare"]],"03-tuoni":[[1.84,"Non tornerai più a casa perché sta arrivando la guerra"],[3.69,"Oh Eh Oh"],[5.53,"Eh Oh Eh Oh"],[7.37,"Ho ancora le tue chiavi di casa"],[9.22,"Dimmi cos'è rimasto tra i mattoni e la ghiaia"],[11.06,"Eh Oh Eh Oh"],[12.91,"Persino l'altra notte"],[14.75,"Raccontami come sta la mamma"],[16.59,"Quando ci sono i tuoni vorrei che foste qua"],[17.68,"E adesso dimmi come fare"],[18.78,"Dimmi, dimmi come fare"],[19.87,"Raccontami come stanno i figli"],[20.94,"A fare del tuo cielo la mia tela se"]],"04-baghdad":[[1.43,"Abbassa, abbassa che al cell sennò"],[2.87,"di là s'incazzano e ti dico"],[4.3,"Mi trovo di sera da solo"],[5.68,"che parlo seduto di fronte al PC"],[7.06,"Arriva un messaggio e lo ignoro"],[8.44,"Io sono così."],[9.82,"Sono tutti qua"],[10.97,"Ti vedo lassù"],[12.13,"Non si diverte"],[13.29,"Non ne può più"],[14.44,"Guarda quanta gente"],[15.83,"E noi faremo PAPPAPPA"],[17.22,"Sopra la folla e tu"],[18.61,"Sai, chi ti segue mente"]],"05-hosonno":[[1.42,"Dicon tutti"],[2.85,"Però son sicuro che oggi"],[4.27,"Non mi va"],[6.02,"La mattina presto"],[7.77,"Caffè caldo un po' allungato con il latte fresco"],[9.51,"Non so come si prospetta la giornata ma"],[11.26,"Sono certo che litigherò con il commesso"],[13.01,"Fare la spesa per un fuorisede non è il top"],[14.76,"Figuriamoci se poi lavori pure a nero"],[16.5,"Ma chiudi un occhio perché è tutto un po' cultura pop"],[18.25,"Poi in tele dicono noi giovani sogniamo meno"]],"06-primoposto":[[0.67,"Questa giornata chissà quando finirà"],[1.33,"Voglio stare con te in tutti i sogni che farò questa notte"],[2.87,"Perché ti muovi come fossi alle giostre, alle giostre, alle giostre"],[4.4,"Ho fatto il primo posto ad una gara"],[5.93,"E vinceva chi faceva più cazzate nella vita, quindi ho vinto io"],[7.47,"Il cuore batte, sento solo le botte, le botte, le botte, sì,"],[8.93,"Non c'è neanche un premio per chi ce la fa"],[10.39,"Una volta tanto che vincevo qualcosa"],[11.85,"E però voglio stare con te con le coperte che sembrano più corte"],[13.48,"E farò ricorso alla giustizia, ma se solo le importasse qualcosa"],[15.11,"Questo mondo infame mi fa schifo tutto"],[16.74,"Vedo ogni giorno cento scammer ma diffido il giusto"],[18.37,"Non sono bravo più a parlare, perciò dimmi tu"]],"07-tictac":[[1.1,"Uno specchio rotto nel bagno (DICA!)"],[2.2,"E allora bau"],[3.3,"Mi sono rotto il cazzo di star calmo"],[4.05,"Voglio solo sentire che son bravo"],[4.81,"E dimmi come può"],[5.56,"Del fato"],[6.54,"Un ragazzo"],[7.52,"Che bravo"],[8.42,"Un uomo piccolo, immaturo, non sa"],[9.32,"Anche solo una volta detto piano"],[11.1,"Un bel nulla e dimmi se non so"],[12.88,"Proprio un cazzo"],[14.66,"Mi sento un chicco di personalità"],[16.44,"Si ma io te l'ho detto"],[18.22,"Che ci penso"]],"08-tuttofinto":[[0.78,"Dei piani restano giusto dei pezzi"],[1.56,"Tento di esprimere da queste seconde linee"],[2.58,"Ma senza l'aiuto di terzi"],[3.6,"Prende più forma la bagarre"],[4.62,"Il vero manca, il pensiero va"],[5.42,"Mischiamo Dubrovsk e Bataclan"],[6.22,"Sembra il Nabucco di Verdi"],[7.4,"Spara sulla folla senza kalash"],[8.58,"Si innamora oppure viene oppressa"],[9.76,"Resterà tra Stoccolma e Stendhal"],[10.94,"Nel mentre una ronda con i balaclava"],[12.11,"Lavorate per un pugno di dollari ma non siete Morricone"],[13.29,"La differenza sta negli attimi"],[14.46,"Ma sarà come aver dato forza all'orchestra"],[15.85,"Contale e valuta la posizione"],[17.23,"Non sei un corridore, per te non ci arrivo"],[18.62,"Non c'è un nemico, non c'è vincitore, né vinto fra"]],"09-edera":[[0.28,"L'hai mangiata per anni e ora sei sovrappeso, pensa"],[0.56,"Per te è normale ma"],[2.2,"Esplodi se accumuli per troppo tempo (ecco)"],[3.83,"Metterò me in scena, ma col tempo mi perderò"],[5.47,"Perché c'ho due voci che mi seguono e mentono"],[7.1,"Così scrivo pezzi più fighi (fighi)"],[8.74,"E so che berrò il mare con l'aroma di sangue"],[10.37,"Perché prenderò le onde a pugni con la falange"],[12.01,"Ed ho scene paratattiche nel senno che perdo"],[12.54,"Tornerò da te con quattro/cinque punti per guancia"],[13.07,"Io voglio stare male sembra tipico, qua"],[14.44,"La fatica che non mostri è sempre quella più grande"],[15.82,"E non mi uccido, ci riprovo anche se il mondo fa il cieco"],[17.19,"Finalmente forse sono libero, ma"],[18.1,"Anni che mi ricordano gli inizi di Cechov"],[19.01,"Ti lego così non ti uccidi"],[20.01,"Oggi che mi rimprovero persino se sclero"],[21,"Vorrei dire di più, ma poi sentire di meno"]],"10-scendi":[[0.34,"Mentre dei coetanei non sanno che un genocidio"],[0.68,"Accade da decenni, li guardano e li deridono"],[1.38,"è troppo facile dire cose difficili"],[2.08,"Come la domenica allo stadio fanno il tifo"],[3.87,"Si diceva già ma tempo fa verso i politici"],[5.66,"Adesso sembra tutto un po' al contrario e siam felici"],[7.46,"Se parlano ai comizi, sono solo capre e cimici"],[9.25,"Scendi Scendi Scendi"],[11.04,"Da lassù salvarsi il culo"],[12.84,"Troppo facile e sicuro"],[14.63,"Siamo stanchi di lottare"],[16.42,"E adesso scendi pure tu, no?"],[18.21,"Manifesti pure tu, no?"]],"11-lafinedelmondo":[[0.18,"Finché quel buco è sembrato una voragine tale"],[0.36,"Da attraversare il mondo"],[1.57,"Chissà se pioverà"],[2.78,"Ora che il mare si alza inghiottirà pure il cielo"],[3.99,"E sì è la fine del mondo"],[5.2,"Persino l'ultimo giorno"],[6.38,"Solo coloro che conoscono il segreto per durare"],[7.55,"Nell'eternità vivranno altrove insieme a me"],[8.73,"E chi ha vissuto in mezzo ai vizi forse morirà"],[9.9,"È la fine del mondo"],[11.08,"Chi ha dato poco peso ai simili soccomberà"],[12.26,"Potete urlare anche più forte con il sangue delle aorte"],[13.44,"Che lacera le tonsille e dopo le aprirà"],[14.62,"Sarà la fine di sto mondo ma ce ne son tre"],[15.53,"E ora vi farà male se pioveranno lame"],[16.45,"Coltelli più affilati delle vostre lingue"],[17.36,"La profezia ha parlato chiaro ma che ne sei te"],[18.52,"Vi toglieranno il pane, per darlo a chi c'ha fame"],[19.68,"Così non ci saranno più persone ricche"],[20.84,"Inutile che il panico vi prenda col rammarico"]],"12-maranatha":[[0,"Mica lo sai che il sogno"],[0.4,"Dormire per davvero"],[0.8,"Di tutti questi popoli è dormire con un sogno"],[1.81,"Vedranno popoli in cammino verso l'alto dei cieli"],[2.81,"Sentirò Maranatha uscirvi dalla bocca"],[3.82,"Sopra un cuscino vero"],[4.31,"Io sfuggirò al destino perché son convinto che"],[4.8,"Invece sono gocce d'olio in questo mare nero"],[5.7,"Il tuo destino lo decidi te (ah)"],[6.6,"Un giorno ho colto, credo il senso di"],[7.64,"Mi imbucherò al mattino"],[8.68,"Svegliarsi tutti i giorni, intendo… penso, si"],[9.34,"In mezzo ad altre lettere"],[10,"Cambiando tutto il mondo, ho detto \"certo\" e qui"],[10.94,"Soltanto per venire lì da te"],[11.88,"Se si parlasse meno a vuoto, forse è tutto lì"],[12.99,"C'è un uomo che tra fame e sete non so se vivrà"],[14.09,"Tanto da sentirsi dir papà"],[15.2,"Un popolo qualsiasi invece si ritroverà"],[16.3,"Diranno \"scemo tu perché poi non ci credevi\""],[17.23,"Domenica e dirà Maranatha"],[18.16,"Mentre il mondo brucerà nell'attesa che risorga"],[19.44,"Voglio che"],[20.72,"Un salto faccia della polvere"]],"13-outro":[[0,"Lei non voleva farti arrabbiare, chiami tutte puttane come se piaccia"],[1.25,"Voglio che mi chiamino solo puttana"],[2.49,"Che si cambia il mondo quando neanche Dio ce l'ha fatta"],[3.74,"Vedo uomini piccoli tipo, chi porta ancora il razzismo nel tifo"],[4.97,"E sento ogni giorno che va tutto peggio, chissà a Gaza"],[6.21,"Come cazzo fanno a lottare in un mondo spregevole"],[7.44,"Chi nel suo ufficio tiene un busto di Benito, capito?"],[8.68,"Come fanno a guardare avanti"],[9.92,"Io mi sento colpevole"],[11.16,"Eh sì sì sì sì voglio scendere in piazza"],[11.98,"E col cazzo che qui ho finito"],[12.8,"Ma senza striscioni e bandiera italiana"],[13.71,"Da me in uni c'è chi ama parlare a vuoto"],[14.62,"Voglio un cerchio attorno a me fatto di donne"],[15.87,"Di politica becera e dire tipo"],[17.13,"L'università no per chi studia poco"],[18.38,"E dimmi com'è"],[19.19,"Però i dati son chiari, scrolla col dito"]]};
 
 
 // --- modifiers.js ---
@@ -3467,6 +3467,7 @@ function createAudio({ storage, loadClip }) {
       this.stop();
       audioEl = new Audio(clip);
       audioEl.volume = 0.9;
+      audioEl.loop = true;                    // la traccia del girone riparte da capo
       current = id;
       await audioEl.play().catch(() => {});   // autoplay può fallire: non lanciare
     },
@@ -4112,7 +4113,16 @@ function pose(state, phase) {
       return { lean: 0.3, bob: 0, aL: [1.4, -0.5], aR: [1.4, -0.5], lL: [-0.25, 0.15], lR: [0.3, 0.15] };
     }
     case 'reach': {
-      return { lean: -0.05, bob: -0.5, aL: [-2.7, -0.2], aR: [0.4, 0.5], lL: [-0.15, 0.1], lR: [0.2, 0.1] };
+      // braccia protese in alto con oscillazione alternata: una mano sale
+      // mentre l'altra si distende appena. Mai congelate, mai distese di lato.
+      return {
+        lean: -0.05 + 0.02 * s,
+        bob: -0.5 + 0.2 * s,
+        aL: [-2.45 + 0.3 * s, -0.3 + 0.08 * s],
+        aR: [-2.15 + 0.3 * s2, -0.4 + 0.08 * s2],
+        lL: [-0.15 + 0.04 * s, 0.1],
+        lR: [0.2 + 0.04 * s2, 0.1],
+      };
     }
     case 'tendi': {
       return { lean: -0.1, bob: -0.5, aL: [-2.6, -0.3], aR: [-2.2, -0.3], lL: [-0.2, 0.15], lR: [0.25, 0.15] };
@@ -5575,11 +5585,36 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
   ctx.textAlign = 'left';
 }
 
+// Bande verticali DISGIUNTE dell'overlay UI (px logici, top→bottom). PURA e
+// NaN-safe: garantisce che iscrizione, lirica, chapter, mash, threatMsg, prompt
+// e flow non si sovrappongano MAI (bug: barra mash sopra i testi, lirica persa).function overlayBands(H) {
+  const h = Number.isFinite(H) && H > 0 ? H : 180;
+  const gap = Math.max(1, Math.round(h * 0.011));   // ~2px @180
+  const cut = f => Math.round(h * f);
+  const mk = (y0, y1) => { const a = Math.max(0, y0); return { y0: a, y1: Math.max(a + 1, y1) }; };
+  const inscription = mk(0, cut(0.10));
+  const lyric = mk(inscription.y1 + gap, cut(0.36));
+  const chapter = mk(lyric.y1 + gap, cut(0.58));
+  const mash = mk(chapter.y1 + gap, cut(0.82));
+  const threatMsg = mk(mash.y1 + gap, cut(0.88));
+  const prompt = mk(threatMsg.y1 + gap, cut(0.93));
+  const flow = mk(prompt.y1 + gap, h);
+  return { inscription, lyric, chapter, mash, threatMsg, prompt, flow };
+}
+
+// Fase → la lirica PIXEL va disegnata? (playing/mash/unlocked sì; title/cta/collapse no)function shouldDrawLyrics(phase) {
+  return phase === 'playing' || phase === 'mash' || phase === 'unlocked';
+}
+
 // Disegna TUTTO il testo/HUD a risoluzione piena.function drawUIOverlay(ctx, S, W, H, o) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
+
+  // bande disgiunte: ogni elemento vive DENTRO la sua banda (mai collisioni)
+  const B = overlayBands(H);
+  const at = (b, f) => b.y0 + (b.y1 - b.y0) * f;
 
   // lirica di sfondo (atmosfera) — PIXEL ART, non nitida
   if (o.lyricLines) { /* disegnata nella scena, non qui */ }
@@ -5588,16 +5623,16 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
   const insc = o.inscription || '';
   const inscSize = uiFitSize(ctx, insc, (W - 14) * S * 0.94, S, 8, 5);
   uiFont(ctx, inscSize, S);
-  uiTextShadow(ctx, insc, 12, 13, S, C.redHot, 1);
+  uiTextShadow(ctx, insc, 12, at(B.inscription, 0.72), S, C.redHot, 1);
   const inscW = Math.min((W - 14) * S * 0.94, lyricTextWidth(ctx, insc, inscSize * S));
-  uiRect(ctx, 12, 15, inscW / S, 0.6, S, C.red, 0.9);
+  uiRect(ctx, 12, at(B.inscription, 0.85), inscW / S, 0.6, S, C.red, 0.9);
 
   // messaggio evento (basso centro) — shrink-to-fit
   if (o.threatMsg) {
     const msg = o.threatMsg.toUpperCase();
     uiFont(ctx, uiFitSize(ctx, msg, W * S * 0.94, S, 8, 5), S);
     ctx.textAlign = 'center';
-    uiTextShadow(ctx, msg, W / 2, H - 30, S, C.redHot, 1);
+    uiTextShadow(ctx, msg, W / 2, at(B.threatMsg, 0.75), S, C.redHot, 1);
     ctx.textAlign = 'left';
   }
 
@@ -5606,12 +5641,14 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
     const k = 1 - Math.min(1, o.chapterT / 1.4);
     const ease = 1 - Math.pow(1 - Math.min(1, k * 2.2), 3);
     const slide = (1 - ease) * 40;
-    uiRect(ctx, 0, H * 0.40, W, 30, S, C.black, 0.72 * Math.min(1, k * 3));
-    uiRect(ctx, 0, H * 0.40, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
-    uiRect(ctx, 0, H * 0.40 + 29, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
+    const chH = Math.min(30, (B.chapter.y1 - B.chapter.y0) - 2);
+    const chY = B.chapter.y0 + 1;
+    uiRect(ctx, 0, chY, W, chH, S, C.black, 0.72 * Math.min(1, k * 3));
+    uiRect(ctx, 0, chY, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
+    uiRect(ctx, 0, chY + chH - 1, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
     uiFont(ctx, uiFitSize(ctx, o.chapterTitle, W * S * 0.94, S, 17, 8), S);
     ctx.textAlign = 'center';
-    uiTextShadow(ctx, o.chapterTitle, W / 2 - slide, H * 0.40 + 21, S, C.redHot, Math.min(1, k * 2.5));
+    uiTextShadow(ctx, o.chapterTitle, W / 2 - slide, chY + chH * 0.7, S, C.redHot, Math.min(1, k * 2.5));
     ctx.textAlign = 'left';
   }
 
@@ -5619,20 +5656,20 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
   if (o.prompt) {
     uiFont(ctx, uiFitSize(ctx, o.prompt, W * S * 0.94, S, 8, 5), S);
     ctx.textAlign = 'center';
-    uiTextShadow(ctx, o.prompt, W / 2, H - 20, S, C.white, o.promptK || 1);
+    uiTextShadow(ctx, o.prompt, W / 2, at(B.prompt, 0.75), S, C.white, o.promptK || 1);
     ctx.textAlign = 'left';
   }
 
   // flow meter (barra in basso)
   if (o.flow > 0.01) {
-    const bw = 80, bh = 3, bx = W / 2 - bw / 2, by = H - 16;
+    const bw = 80, bh = 3, bx = W / 2 - bw / 2, by = B.flow.y1 - 4;
     uiRect(ctx, bx - 1, by - 1, bw + 2, bh + 2, S, C.black, 0.5);
     uiRect(ctx, bx, by, bw * o.flow, bh, S, o.flow > 0.66 ? C.redHot : C.red, 0.55 + 0.45 * (o.beat || 0));
   }
 
   // mash (barra della lotta)
   if (o.mash && (o.mash.active || o.mash.won || o.mash.lost)) {
-    const bw = 120, bh = 8, bx = W / 2 - bw / 2, by = H - 40;
+    const bw = 120, bh = 8, bx = W / 2 - bw / 2, by = B.mash.y1 - 10;
     uiRect(ctx, bx - 2, by - 2, bw + 4, bh + 4, S, C.black, 0.85);
     uiRect(ctx, bx, by, bw, bh, S, C.redDeep, 1);
     const r = Math.max(0, Math.min(1, o.mash.progress));
@@ -6442,6 +6479,16 @@ function drawWorld(lv, camY) {
   }
 }
 
+// Lirica PIXEL nella scena offscreen: UNICA fonte per playing/mash/unlocked.
+// Stessa sorgente del karaoke (KARAOKE[audioId] + posizione audio + LYRIC_LEAD).
+// Mai su title/cta/collapse (shouldDrawLyrics). Resta dentro la scena, così
+// attraversa il post-processing come il resto della pixel art.
+function drawSceneLyrics(phase) {
+  if (!shouldDrawLyrics(phase) || !level || SKIP.has('lyrics')) return;
+  const kl = KARAOKE[level.girone.audioId];
+  if (kl) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
+}
+
 // Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
 const uctx = canvas.getContext('2d');
 function drawOverlay() {
@@ -6564,13 +6611,14 @@ function loop(now) {
       audio.markUnlocked(g.audioId);   // completato: riascoltabile in tracklist
       audio.stop();
     }
-    stepTransition(level.transition, dt);
+    if (level.holdUnlocked) level.transition.t = 0.6;   // debug: transizione ferma a metà
+    else stepTransition(level.transition, dt);
     stepFx(level.pfx, dt, cameraY, { H: VIEW_H });
     // burst di glitch + flash rosso all'inizio della transizione, poi si spegne
     const k = Math.min(1, level.transition.t / 1.2);
     const burst = (1 - k) * (1 - k);
     const tpost = Object.assign(applyPost('unlocked'), { glitch: 1.1 * burst, flash: 0.7 * burst, chroma: 0.9 * burst });
-    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });
+    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); drawSceneLyrics('unlocked'); }, { post: tpost });
     drawOverlay();   // liriche nitide anche durante la transizione di sblocco
     if (level.transition.done) {
       state = advance(state, 'audioDone');
@@ -6586,7 +6634,7 @@ function loop(now) {
   const NONE = { left: false, right: false, up: false, down: false };
   // Il mash blocca tutto: stai lottando.
   if (mash.active) {
-    stepMash(mash, sdt);
+    if (!mash.hold) stepMash(mash, sdt);   // debug ?phase=mash: barra ferma
     const mp = climbPos(cl);
     if (mash.won) {
       // hai vinto: butti giù l'avversario e sali di 3
@@ -6613,6 +6661,7 @@ function loop(now) {
       ctx.save(); ctx.translate(msh.x, msh.y);
       drawWorld(level, cameraY);
       ctx.restore();
+      drawSceneLyrics('mash');
     }, { post: playingPost(dt, 0) });
     drawOverlay();
     return;
@@ -6762,8 +6811,7 @@ function loop(now) {
     // lirica PIXEL protagonista: FUORI dalla transform della camera, in cima alla
     // scena (leggibile in ogni tema, mai spinta fuori da shake/zoom). Resta pixel
     // perché è disegnata nella scena-offscreen che attraversa il post-processing.
-    const kl = KARAOKE[level.girone.audioId];
-    if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
+    drawSceneLyrics('playing');
     if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
@@ -6772,9 +6820,11 @@ function loop(now) {
   drawOverlay();
 }
 
-// --- debug: ?g=NN ---
-const _gParam = new URLSearchParams(location.search).get('g');
-const _colParam = new URLSearchParams(location.search).get('collapse');
+// --- debug: ?g=NN, ?collapse=N, ?phase=mash|unlocked ---
+const _params = new URLSearchParams(location.search);
+const _gParam = _params.get('g');
+const _colParam = _params.get('collapse');
+const _phaseParam = _params.get('phase');
 if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = 12;
   level = loadGirone(12);
@@ -6784,7 +6834,28 @@ if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = idx;
   level = loadGirone(idx);
 }
-window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb };
+
+// Debug per screenshot: porta il gioco in una fase e la MANTIENE (hold), così
+// la si può fotografare senza che avanzi da sola. ?phase=mash|unlocked.
+function forcePhase(phase) {
+  if (phase !== 'mash' && phase !== 'unlocked') return false;
+  if (!level || state.phase === 'title' || state.phase === 'cta' || state.phase === 'collapse') {
+    state = advance(createState(), 'start');
+    level = loadGirone(state.gironeIndex);
+  }
+  if (phase === 'mash') {
+    state = { ...state, phase: 'playing' };
+    mash = startMash(createMash(), { kind: 'grabber', row: 3 });
+    mash.progress = 0.5; mash.hold = true;   // barra ferma: screenshot affidabile
+  } else {
+    state = { ...state, phase: 'playing' };
+    state = advance(state, 'reachedTop');
+    level.holdUnlocked = true;               // transizione ferma: screenshot affidabile
+  }
+  return true;
+}
+if (_phaseParam) forcePhase(_phaseParam);
+window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb, force: forcePhase };
 
 loop();
 
