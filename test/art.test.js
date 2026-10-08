@@ -32,7 +32,7 @@ function recCtx() {
     get globalAlpha() { return alpha; },
     set globalAlpha(v) { alpha = v; },
     fillRect(x, y, w, h) { calls.push({ op: 'fillRect', x, y, w, h, fill, alpha }); },
-    fillText(x, y) { calls.push({ op: 'fillText', x, y, fill, alpha }); },
+    fillText(text, x, y) { calls.push({ op: 'fillText', text, x, y, fill, alpha, font: ctx.font }); },
     save() { calls.push({ op: 'save' }); },
     restore() { calls.push({ op: 'restore' }); },
     beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, arc() {}, fill() {},
@@ -289,7 +289,7 @@ test('rampTone: ramp-safe (rosso dominante) e monotona in luminosita', () => {
 });
 
 // ---------------------------------------------------------------------------
-// VC: npcScenes � varieta' visiva per girone (scene authored ma mai disegnate).
+// VC: npcScenes � varieta' visiva per girone (scene authored ma mai disegnate).
 // ---------------------------------------------------------------------------
 import { drawNpcScenes } from '../src/art.js';
 
@@ -332,4 +332,81 @@ test('drawNpcScenes: scene vuote/sconosciute -> nessun errore', () => {
   drawNpcScenes(ctx, { id: '01' }, null, 0, 1, 320, 180);
   drawNpcScenes(ctx, null, null, 0, 1, 320, 180);
   assert.ok(true);
+});
+
+// ---------------------------------------------------------------------------
+// LAYOUT: bande dell'overlay UI — mai sovrapposte (bug: barra mash / testi).
+// overlayBands(H) è PURA: ritorna {y0,y1} disgiunti per ogni elemento.
+// ---------------------------------------------------------------------------
+import { overlayBands, drawUIOverlay, shouldDrawLyrics } from '../src/art.js';
+
+const BAND_KEYS = ['inscription', 'lyric', 'chapter', 'mash', 'threatMsg', 'prompt', 'flow'];
+
+test('overlayBands: bande finite, ordinate e pairwise disgiunte', () => {
+  for (const H of [180, 240, 120]) {
+    const b = overlayBands(H);
+    for (const k of BAND_KEYS) {
+      assert.ok(b[k], 'banda mancante: ' + k);
+      assert.ok(Number.isFinite(b[k].y0) && Number.isFinite(b[k].y1), k + ': non finita');
+      assert.ok(b[k].y0 < b[k].y1, k + ': vuota');
+    }
+    for (let i = 0; i < BAND_KEYS.length; i++) {
+      for (let j = i + 1; j < BAND_KEYS.length; j++) {
+        const a = b[BAND_KEYS[i]], c = b[BAND_KEYS[j]];
+        assert.ok(a.y1 <= c.y0 || c.y1 <= a.y0,
+          'bande sovrapposte: ' + BAND_KEYS[i] + ' vs ' + BAND_KEYS[j] + ' @H=' + H);
+      }
+    }
+  }
+  // H non finito → fallback sicuro (180)
+  assert.deepEqual(overlayBands(NaN), overlayBands(180));
+});
+
+test('drawUIOverlay: tutti gli elementi attivi → coordinate finite e dentro le bande', () => {
+  const S = 3, W = 320, H = 180;
+  const ctx = recCtx();
+  const o = {
+    inscription: '01 — INTRO',
+    threatMsg: 'vento forte',
+    chapterT: 1.0,
+    chapterTitle: 'CAPITOLO PRIMO',
+    prompt: '◀ tendi ▶',
+    promptK: 1,
+    flow: 0.5,
+    beat: 0.5,
+    mash: { active: true, progress: 0.5, hits: 3, won: false, lost: false },
+  };
+  drawUIOverlay(ctx, S, W, H, o);
+  const B = overlayBands(H);
+  const bands = BAND_KEYS.map(k => B[k]);
+  const inSomeBand = y => bands.some(b => y >= b.y0 - 0.6 && y <= b.y1 + 0.6);
+  for (const c of ctx.calls) {
+    if (c.op === 'fillRect') {
+      assert.ok([c.x, c.y, c.w, c.h].every(Number.isFinite), 'fillRect non finito: ' + JSON.stringify(c));
+      assert.ok(inSomeBand(c.y / S) && inSomeBand((c.y + c.h) / S), 'fillRect fuori bande: ' + JSON.stringify(c));
+    } else if (c.op === 'fillText') {
+      assert.ok(Number.isFinite(c.x) && Number.isFinite(c.y), 'fillText non finito: ' + JSON.stringify(c));
+      assert.ok(inSomeBand(c.y / S), 'fillText fuori bande: ' + JSON.stringify(c));
+    }
+  }
+  // ogni elemento noto sta nella SUA banda (niente collisioni tra elementi)
+  const texts = ctx.calls.filter(c => c.op === 'fillText');
+  const inBand = (y, b) => y >= b.y0 - 0.6 && y <= b.y1 + 0.6;
+  const check = (txt, band) => {
+    const hits = texts.filter(c => c.text === txt);
+    assert.ok(hits.length >= 1, 'testo non disegnato: ' + txt);
+    for (const c of hits) assert.ok(inBand(c.y / S, band), txt + ' fuori banda: y=' + (c.y / S));
+  };
+  check(o.inscription, B.inscription);
+  check(o.chapterTitle, B.chapter);
+  check(o.threatMsg.toUpperCase(), B.threatMsg);
+  check(o.prompt, B.prompt);
+  check('TI AFFERRA — MARTELLA!', B.mash);
+});
+
+test('shouldDrawLyrics: true per playing/mash/unlocked, false per title/cta/collapse', () => {
+  for (const p of ['playing', 'mash', 'unlocked']) assert.equal(shouldDrawLyrics(p), true, p);
+  for (const p of ['title', 'cta', 'collapse', '', null, undefined, 'boh']) {
+    assert.equal(shouldDrawLyrics(p), false, String(p));
+  }
 });

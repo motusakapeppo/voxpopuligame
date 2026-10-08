@@ -8,7 +8,7 @@ import { createEffects, spawnFromEvents, stepEffects, shakeOffset } from './effe
 import { createAudio } from './audio.js';
 import { createCollapse, stepCollapse, drawCollapse, collapseFinished } from './collapse.js';
 import { drawCta, ctaButtonRect, CTA_URL } from './cta.js';
-import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText, drawLyricsPixel, drawLyricsOverlay, drawNpcScenes } from './art.js';
+import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLyrics, drawPickup, drawThreatMsg, drawMash, drawKaraoke, drawChapterCard, drawFlow, drawSkyline, drawUIOverlay, drawTitleText, drawLyricsPixel, drawLyricsOverlay, drawNpcScenes, shouldDrawLyrics } from './art.js';
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup, threatEffects } from './threats.js';
@@ -257,6 +257,16 @@ function drawWorld(lv, camY) {
   }
 }
 
+// Lirica PIXEL nella scena offscreen: UNICA fonte per playing/mash/unlocked.
+// Stessa sorgente del karaoke (KARAOKE[audioId] + posizione audio + LYRIC_LEAD).
+// Mai su title/cta/collapse (shouldDrawLyrics). Resta dentro la scena, così
+// attraversa il post-processing come il resto della pixel art.
+function drawSceneLyrics(phase) {
+  if (!shouldDrawLyrics(phase) || !level || SKIP.has('lyrics')) return;
+  const kl = KARAOKE[level.girone.audioId];
+  if (kl) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
+}
+
 // Overlay UI a RISOLUZIONE PIENA (testo nitido) — sopra la scena pixel art.
 const uctx = canvas.getContext('2d');
 function drawOverlay() {
@@ -379,13 +389,14 @@ function loop(now) {
       audio.markUnlocked(g.audioId);   // completato: riascoltabile in tracklist
       audio.stop();
     }
-    stepTransition(level.transition, dt);
+    if (level.holdUnlocked) level.transition.t = 0.6;   // debug: transizione ferma a metà
+    else stepTransition(level.transition, dt);
     stepFx(level.pfx, dt, cameraY, { H: VIEW_H });
     // burst di glitch + flash rosso all'inizio della transizione, poi si spegne
     const k = Math.min(1, level.transition.t / 1.2);
     const burst = (1 - k) * (1 - k);
     const tpost = Object.assign(applyPost('unlocked'), { glitch: 1.1 * burst, flash: 0.7 * burst, chroma: 0.9 * burst });
-    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); }, { post: tpost });
+    renderer.render(() => { drawWorld(level, cameraY); drawTransition(ctx, level.transition, VIEW_W, VIEW_H); drawSceneLyrics('unlocked'); }, { post: tpost });
     drawOverlay();   // liriche nitide anche durante la transizione di sblocco
     if (level.transition.done) {
       state = advance(state, 'audioDone');
@@ -401,7 +412,7 @@ function loop(now) {
   const NONE = { left: false, right: false, up: false, down: false };
   // Il mash blocca tutto: stai lottando.
   if (mash.active) {
-    stepMash(mash, sdt);
+    if (!mash.hold) stepMash(mash, sdt);   // debug ?phase=mash: barra ferma
     const mp = climbPos(cl);
     if (mash.won) {
       // hai vinto: butti giù l'avversario e sali di 3
@@ -428,6 +439,7 @@ function loop(now) {
       ctx.save(); ctx.translate(msh.x, msh.y);
       drawWorld(level, cameraY);
       ctx.restore();
+      drawSceneLyrics('mash');
     }, { post: playingPost(dt, 0) });
     drawOverlay();
     return;
@@ -577,8 +589,7 @@ function loop(now) {
     // lirica PIXEL protagonista: FUORI dalla transform della camera, in cima alla
     // scena (leggibile in ogni tema, mai spinta fuori da shake/zoom). Resta pixel
     // perché è disegnata nella scena-offscreen che attraversa il post-processing.
-    const kl = KARAOKE[level.girone.audioId];
-    if (kl && !SKIP.has('lyrics')) drawLyricsPixel(ctx, kl, audio.position() + LYRIC_LEAD, time, VIEW_W, VIEW_H);
+    drawSceneLyrics('playing');
     if (level.fx.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${level.fx.dim})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
@@ -587,9 +598,11 @@ function loop(now) {
   drawOverlay();
 }
 
-// --- debug: ?g=NN ---
-const _gParam = new URLSearchParams(location.search).get('g');
-const _colParam = new URLSearchParams(location.search).get('collapse');
+// --- debug: ?g=NN, ?collapse=N, ?phase=mash|unlocked ---
+const _params = new URLSearchParams(location.search);
+const _gParam = _params.get('g');
+const _colParam = _params.get('collapse');
+const _phaseParam = _params.get('phase');
 if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = 12;
   level = loadGirone(12);
@@ -599,7 +612,28 @@ if (_colParam) {
   state = advance(createState(), 'start'); state.gironeIndex = idx;
   level = loadGirone(idx);
 }
-window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb };
+
+// Debug per screenshot: porta il gioco in una fase e la MANTIENE (hold), così
+// la si può fotografare senza che avanzi da sola. ?phase=mash|unlocked.
+function forcePhase(phase) {
+  if (phase !== 'mash' && phase !== 'unlocked') return false;
+  if (!level || state.phase === 'title' || state.phase === 'cta' || state.phase === 'collapse') {
+    state = advance(createState(), 'start');
+    level = loadGirone(state.gironeIndex);
+  }
+  if (phase === 'mash') {
+    state = { ...state, phase: 'playing' };
+    mash = startMash(createMash(), { kind: 'grabber', row: 3 });
+    mash.progress = 0.5; mash.hold = true;   // barra ferma: screenshot affidabile
+  } else {
+    state = { ...state, phase: 'playing' };
+    state = advance(state, 'reachedTop');
+    level.holdUnlocked = true;               // transizione ferma: screenshot affidabile
+  }
+  return true;
+}
+if (_phaseParam) forcePhase(_phaseParam);
+window.__vp = { get state() { return state; }, get level() { return level; }, get time() { return time; }, get collapse() { return collapse; }, get mash() { return mash; }, get juice() { return juice; }, get audio() { return audio; }, doVerb, force: forcePhase };
 
 loop();
 

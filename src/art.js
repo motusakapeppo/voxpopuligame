@@ -1032,12 +1032,39 @@ export function drawLyricBackdrop(ctx, lines, pos, time, W, H, S) {
   ctx.textAlign = 'left';
 }
 
+// Bande verticali DISGIUNTE dell'overlay UI (px logici, top→bottom). PURA e
+// NaN-safe: garantisce che iscrizione, lirica, chapter, mash, threatMsg, prompt
+// e flow non si sovrappongano MAI (bug: barra mash sopra i testi, lirica persa).
+export function overlayBands(H) {
+  const h = Number.isFinite(H) && H > 0 ? H : 180;
+  const gap = Math.max(1, Math.round(h * 0.011));   // ~2px @180
+  const cut = f => Math.round(h * f);
+  const mk = (y0, y1) => { const a = Math.max(0, y0); return { y0: a, y1: Math.max(a + 1, y1) }; };
+  const inscription = mk(0, cut(0.10));
+  const lyric = mk(inscription.y1 + gap, cut(0.36));
+  const chapter = mk(lyric.y1 + gap, cut(0.58));
+  const mash = mk(chapter.y1 + gap, cut(0.82));
+  const threatMsg = mk(mash.y1 + gap, cut(0.88));
+  const prompt = mk(threatMsg.y1 + gap, cut(0.93));
+  const flow = mk(prompt.y1 + gap, h);
+  return { inscription, lyric, chapter, mash, threatMsg, prompt, flow };
+}
+
+// Fase → la lirica PIXEL va disegnata? (playing/mash/unlocked sì; title/cta/collapse no)
+export function shouldDrawLyrics(phase) {
+  return phase === 'playing' || phase === 'mash' || phase === 'unlocked';
+}
+
 // Disegna TUTTO il testo/HUD a risoluzione piena.
 export function drawUIOverlay(ctx, S, W, H, o) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
+
+  // bande disgiunte: ogni elemento vive DENTRO la sua banda (mai collisioni)
+  const B = overlayBands(H);
+  const at = (b, f) => b.y0 + (b.y1 - b.y0) * f;
 
   // lirica di sfondo (atmosfera) — PIXEL ART, non nitida
   if (o.lyricLines) { /* disegnata nella scena, non qui */ }
@@ -1046,16 +1073,16 @@ export function drawUIOverlay(ctx, S, W, H, o) {
   const insc = o.inscription || '';
   const inscSize = uiFitSize(ctx, insc, (W - 14) * S * 0.94, S, 8, 5);
   uiFont(ctx, inscSize, S);
-  uiTextShadow(ctx, insc, 12, 13, S, C.redHot, 1);
+  uiTextShadow(ctx, insc, 12, at(B.inscription, 0.72), S, C.redHot, 1);
   const inscW = Math.min((W - 14) * S * 0.94, lyricTextWidth(ctx, insc, inscSize * S));
-  uiRect(ctx, 12, 15, inscW / S, 0.6, S, C.red, 0.9);
+  uiRect(ctx, 12, at(B.inscription, 0.85), inscW / S, 0.6, S, C.red, 0.9);
 
   // messaggio evento (basso centro) — shrink-to-fit
   if (o.threatMsg) {
     const msg = o.threatMsg.toUpperCase();
     uiFont(ctx, uiFitSize(ctx, msg, W * S * 0.94, S, 8, 5), S);
     ctx.textAlign = 'center';
-    uiTextShadow(ctx, msg, W / 2, H - 30, S, C.redHot, 1);
+    uiTextShadow(ctx, msg, W / 2, at(B.threatMsg, 0.75), S, C.redHot, 1);
     ctx.textAlign = 'left';
   }
 
@@ -1064,12 +1091,14 @@ export function drawUIOverlay(ctx, S, W, H, o) {
     const k = 1 - Math.min(1, o.chapterT / 1.4);
     const ease = 1 - Math.pow(1 - Math.min(1, k * 2.2), 3);
     const slide = (1 - ease) * 40;
-    uiRect(ctx, 0, H * 0.40, W, 30, S, C.black, 0.72 * Math.min(1, k * 3));
-    uiRect(ctx, 0, H * 0.40, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
-    uiRect(ctx, 0, H * 0.40 + 29, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
+    const chH = Math.min(30, (B.chapter.y1 - B.chapter.y0) - 2);
+    const chY = B.chapter.y0 + 1;
+    uiRect(ctx, 0, chY, W, chH, S, C.black, 0.72 * Math.min(1, k * 3));
+    uiRect(ctx, 0, chY, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
+    uiRect(ctx, 0, chY + chH - 1, W, 1, S, C.red, 0.6 * Math.min(1, k * 3));
     uiFont(ctx, uiFitSize(ctx, o.chapterTitle, W * S * 0.94, S, 17, 8), S);
     ctx.textAlign = 'center';
-    uiTextShadow(ctx, o.chapterTitle, W / 2 - slide, H * 0.40 + 21, S, C.redHot, Math.min(1, k * 2.5));
+    uiTextShadow(ctx, o.chapterTitle, W / 2 - slide, chY + chH * 0.7, S, C.redHot, Math.min(1, k * 2.5));
     ctx.textAlign = 'left';
   }
 
@@ -1077,20 +1106,20 @@ export function drawUIOverlay(ctx, S, W, H, o) {
   if (o.prompt) {
     uiFont(ctx, uiFitSize(ctx, o.prompt, W * S * 0.94, S, 8, 5), S);
     ctx.textAlign = 'center';
-    uiTextShadow(ctx, o.prompt, W / 2, H - 20, S, C.white, o.promptK || 1);
+    uiTextShadow(ctx, o.prompt, W / 2, at(B.prompt, 0.75), S, C.white, o.promptK || 1);
     ctx.textAlign = 'left';
   }
 
   // flow meter (barra in basso)
   if (o.flow > 0.01) {
-    const bw = 80, bh = 3, bx = W / 2 - bw / 2, by = H - 16;
+    const bw = 80, bh = 3, bx = W / 2 - bw / 2, by = B.flow.y1 - 4;
     uiRect(ctx, bx - 1, by - 1, bw + 2, bh + 2, S, C.black, 0.5);
     uiRect(ctx, bx, by, bw * o.flow, bh, S, o.flow > 0.66 ? C.redHot : C.red, 0.55 + 0.45 * (o.beat || 0));
   }
 
   // mash (barra della lotta)
   if (o.mash && (o.mash.active || o.mash.won || o.mash.lost)) {
-    const bw = 120, bh = 8, bx = W / 2 - bw / 2, by = H - 40;
+    const bw = 120, bh = 8, bx = W / 2 - bw / 2, by = B.mash.y1 - 10;
     uiRect(ctx, bx - 2, by - 2, bw + 4, bh + 4, S, C.black, 0.85);
     uiRect(ctx, bx, by, bw, bh, S, C.redDeep, 1);
     const r = Math.max(0, Math.min(1, o.mash.progress));
