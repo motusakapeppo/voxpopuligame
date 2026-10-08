@@ -5198,6 +5198,121 @@ function drawEncounterFlourish(ctx, kind, x, y, time, isActive) {
 }
 
 // ---------------------------------------------------------------------------
+// VARIETY — oggetti di missione sparsi sulla parete (item/amico/nemico/uovo).
+// Ogni kind ha un linguaggio visivo distinto; i collected non si disegnano e
+// i fuori schermo sono cullati. Tutto pixel: rect/dot/line, coordinate intere.
+// ---------------------------------------------------------------------------function drawVariety(ctx, variety, climb, cameraY, time, W, H) {
+  if (!variety || !Array.isArray(variety.items) || !climb) return;
+  const w = Number.isFinite(W) ? W : 320;
+  const h = Number.isFinite(H) ? H : 180;
+  const cam = Number.isFinite(cameraY) ? cameraY : 0;
+  const t = Number.isFinite(time) ? time : 0;
+  ctx.save();
+  for (const it of variety.items) {
+    if (!it || it.collected) continue;
+    const x = climb.xOf(it.c), y = climb.yOf(it.row) - cam;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (y < -24 || y > h + 24) continue;   // cull verticale
+    const px = Math.round(x), py = Math.round(y);
+    const kind = it.kind;
+    if (kind === 'friend') {
+      // figura piccola, calda, con la mano tesa (punto luminoso)
+      const pulse = 0.5 + 0.5 * Math.sin(t * 3 + (it.at || 0));
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = C.redBright;
+      ctx.fillRect(px - 2, py - 10, 4, 5);          // testa
+      ctx.fillRect(px - 3, py - 5, 6, 7);           // corpo
+      ctx.fillRect(px - 4, py - 3, 1, 4);           // braccio sx
+      ctx.fillRect(px + 3, py - 3, 1, 4);           // braccio dx
+      ctx.fillRect(px - 3, py + 2, 2, 4);           // gamba sx
+      ctx.fillRect(px + 1, py + 2, 2, 4);           // gamba dx
+      // mano tesa: punto caldo che pulsa
+      ctx.globalAlpha = 0.6 + 0.4 * pulse;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px + 4, py - 4, 2, 2);
+      ctx.globalAlpha = 0.25 + 0.25 * pulse;
+      ctx.fillRect(px + 3, py - 5, 4, 4);
+    } else if (kind === 'enemy') {
+      // figura scura, spigolosa, con occhio rosso acceso
+      const jit = Math.sin(t * 9 + (it.at || 0)) > 0.6 ? 1 : 0;
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = C.redDark;
+      ctx.fillRect(px - 2, py - 11, 4, 4);          // testa
+      ctx.fillRect(px - 3, py - 7, 6, 8);           // corpo
+      ctx.fillRect(px - 5, py - 6, 2, 2);           // spalla spigolosa sx
+      ctx.fillRect(px + 3, py - 6, 2, 2);           // spalla spigolosa dx
+      ctx.fillRect(px - 4, py - 4, 1, 3);           // braccio sx
+      ctx.fillRect(px + 3, py - 4, 1, 3);           // braccio dx
+      ctx.fillRect(px - 3, py + 1, 2, 5);           // gamba sx
+      ctx.fillRect(px + 1, py + 1, 2, 5);           // gamba dx
+      // occhio: pixel rosso caldo (fisso, minaccioso)
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px + 1 + jit, py - 10, 1, 1);
+    } else if (kind === 'egg') {
+      // uovo segreto: scintilla tenue che luccica a intermittenza (facile da perdere)
+      const tw = Math.sin(t * 2.3 + (it.at || 0) * 1.7);
+      const k = 0.5 + 0.5 * tw;   // 0..1
+      ctx.globalAlpha = 0.08 + 0.10 * k;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px - 3, py - 3, 6, 6);
+      // nucleo bianco: la scintilla rara (distinta dal nodo item)
+      ctx.globalAlpha = 0.25 + 0.35 * k;
+      ctx.fillStyle = C.white;
+      ctx.fillRect(px, py, 1, 1);
+      if (tw > 0.2) {
+        ctx.globalAlpha = 0.35 + 0.3 * tw;
+        ctx.fillStyle = C.redHot;
+        ctx.fillRect(px - 2, py, 1, 1);
+        ctx.fillRect(px + 2, py, 1, 1);
+        ctx.fillRect(px, py - 2, 1, 1);
+        ctx.fillRect(px, py + 2, 1, 1);
+      }
+    } else {
+      // 'item' (default): nodo luminoso come drawPickup, in redHot
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4 + (it.at || 0));
+      ctx.globalAlpha = 0.10 + 0.14 * pulse;
+      ctx.fillStyle = C.redHot;
+      ctx.fillRect(px - 9, py - 9, 18, 18);
+      ctx.globalAlpha = 0.6 + 0.4 * pulse;
+      const r = 2 + Math.round(pulse);
+      for (let yy = -r; yy <= r; yy++)
+        for (let xx = -r; xx <= r; xx++)
+          if (xx * xx + yy * yy <= r * r + 1) ctx.fillRect(px + xx, py + yy, 1, 1);
+      ctx.globalAlpha = 0.8;
+      ctx.fillRect(px - 6, py, 12, 1);
+      ctx.fillRect(px, py - 6, 1, 12);
+    }
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// MISSION HUD — la missione del variety nella SUA banda (sopra la lirica).
+// Formato: `◈ <text>   current/target`; done → redHot + check ✓.
+// ---------------------------------------------------------------------------function drawMissionHUD(ctx, S, W, H, o) {
+  const s = Number.isFinite(S) && S > 0 ? S : 1;
+  const w = Number.isFinite(W) ? W : 320;
+  const h = Number.isFinite(H) ? H : 180;
+  const opt = o || {};
+  const text = opt.text == null ? '' : String(opt.text);
+  const cur = Number.isFinite(opt.current) ? opt.current : 0;
+  const tgt = Number.isFinite(opt.target) ? opt.target : 0;
+  const done = !!opt.done;
+  const B = overlayBands(h);
+  const y = B.mission.y0 + (B.mission.y1 - B.mission.y0) * 0.72;   // TOP della banda
+  const label = (done ? '✓ ' : '◈ ') + text + '   ' + cur + '/' + tgt;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  uiFont(ctx, uiFitSize(ctx, label, (w - 16) * s * 0.94, s, 8, 5), s);
+  uiTextShadow(ctx, label, 8, y, s, done ? C.redHot : C.red, 1);
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------------------
 // MESSAGGIO EVENTO — cosa ti è successo (ostacolo/aiuto), in basso.
 // ---------------------------------------------------------------------------function drawThreatMsg(ctx, msg, W, H) {
   if (!msg) return;
@@ -5593,13 +5708,14 @@ function uiFitSize(ctx, txt, maxW, S, maxSize, minSize) {
   const cut = f => Math.round(h * f);
   const mk = (y0, y1) => { const a = Math.max(0, y0); return { y0: a, y1: Math.max(a + 1, y1) }; };
   const inscription = mk(0, cut(0.10));
-  const lyric = mk(inscription.y1 + gap, cut(0.36));
+  const mission = mk(inscription.y1 + gap, cut(0.17));
+  const lyric = mk(mission.y1 + gap, cut(0.36));
   const chapter = mk(lyric.y1 + gap, cut(0.58));
   const mash = mk(chapter.y1 + gap, cut(0.82));
   const threatMsg = mk(mash.y1 + gap, cut(0.88));
   const prompt = mk(threatMsg.y1 + gap, cut(0.93));
   const flow = mk(prompt.y1 + gap, h);
-  return { inscription, lyric, chapter, mash, threatMsg, prompt, flow };
+  return { inscription, mission, lyric, chapter, mash, threatMsg, prompt, flow };
 }
 
 // Fase → la lirica PIXEL va disegnata? (playing/mash/unlocked sì; title/cta/collapse no)function shouldDrawLyrics(phase) {
@@ -6229,6 +6345,203 @@ function advance(state, event) {
 }
 
 
+// --- variety.js ---
+// ============================================================================
+// VARIETY — il "racconto" di ogni girone: una MISSIONE, oggetti da raccogliere,
+// AMICI e NEMICI con nome, e un EASTER EGG nascosto. Tutto deterministico e
+// posizionato sulla colonna centrale (raggiungibile salendo). Nessun Math.random.
+//
+// Ogni voce è ancorata al tema del brano: la varietà non è decorativa, dice di
+// che canzone si tratta. I nomi sono UNICI su tutti i gironi.
+// ============================================================================
+
+
+// kind: 'item' | 'friend' | 'enemy' | 'egg'
+// effect: 'loyal+1' (amico) | 'loyal-1' (nemico) | 'boost'|'firm'|'reveal' (item) | 'egg'
+const it = (kind, name, at, effect) => ({ kind, name, at, effect });
+const VARIETY = {
+  '01-intro': {
+    mission: { text: 'Trova un motivo per restare sveglio', target: 3 },
+    items: [
+      it('friend', 'Vicino di letto', 0.34, 'loyal+1'),
+      it('item', 'Letto sfatto', 0.52, 'boost'),
+      it('enemy', 'La notte scura', 0.70, 'loyal-1'),
+      it('item', 'Pezzetto di me', 0.86, 'firm'),
+      it('egg', 'Via Lattea sul soffitto', 0.16, 'egg'),
+    ],
+  },
+  '02-vento': {
+    mission: { text: 'Tieni la rotta contro il vento', target: 3 },
+    items: [
+      it('friend', 'Compagno di viaggio', 0.30, 'loyal+1'),
+      it('item', 'Bussola storta', 0.50, 'firm'),
+      it('enemy', 'Raffica del sud', 0.68, 'loyal-1'),
+      it('item', 'Brivido improvviso', 0.84, 'reveal'),
+      it('egg', 'Microfono rotto', 0.14, 'egg'),
+    ],
+  },
+  '03-tuoni': {
+    mission: { text: 'Riparati dal sole dei suoi occhi', target: 3 },
+    items: [
+      it('friend', 'La mamma', 0.28, 'loyal+1'),
+      it('item', 'Collana di pianeti', 0.48, 'reveal'),
+      it('enemy', 'Il tuono', 0.66, 'loyal-1'),
+      it('item', 'Chiavi di casa', 0.86, 'firm'),
+      it('egg', 'Fiamma rossa', 0.13, 'egg'),
+    ],
+  },
+  '04-baghdad': {
+    mission: { text: 'Uccidi i mostri che vivono in te', target: 4 },
+    items: [
+      it('friend', 'Il vicino che tace', 0.26, 'loyal+1'),
+      it('item', 'Foglio nella stanza', 0.44, 'reveal'),
+      it('enemy', 'Effetto domino', 0.62, 'loyal-1'),
+      it('item', 'Scudo di cranio', 0.78, 'firm'),
+      it('item', 'Piedi nudi sul gelo', 0.90, 'boost'),
+      it('egg', 'Voci dentro ai muri', 0.12, 'egg'),
+    ],
+  },
+  '05-hosonno': {
+    mission: { text: 'Resisti al sonno fino all\u2019alba', target: 4 },
+    items: [
+      it('friend', 'Morfeo', 0.30, 'loyal+1'),
+      it('item', 'Caffè caldo', 0.46, 'boost'),
+      it('enemy', 'La Sirena', 0.64, 'loyal-1'),
+      it('item', 'Latte fresco', 0.80, 'firm'),
+      it('egg', 'Cielo dentro il mare', 0.14, 'egg'),
+    ],
+  },
+  '06-primoposto': {
+    mission: { text: 'Scala senza diventare come loro', target: 3 },
+    items: [
+      it('friend', 'Il rivale onesto', 0.30, 'loyal+1'),
+      it('item', 'Sorriso e lacrima', 0.50, 'firm'),
+      it('enemy', 'Chi ti scavalca', 0.68, 'loyal-1'),
+      it('item', 'Biglietto per il mare', 0.86, 'reveal'),
+      it('egg', 'Un altro te', 0.15, 'egg'),
+    ],
+  },
+  '07-tictac': {
+    mission: { text: 'Arriva prima che il tempo scada', target: 4 },
+    items: [
+      it('friend', 'Il vecchio dell\u2019orologio', 0.28, 'loyal+1'),
+      it('item', 'Chicco di personalità', 0.45, 'boost'),
+      it('enemy', 'La lancetta', 0.62, 'loyal-1'),
+      it('item', 'Affitto pagato', 0.78, 'firm'),
+      it('item', 'Ora che non ho', 0.90, 'reveal'),
+      it('egg', 'Specchio rotto (DICA!)', 0.12, 'egg'),
+    ],
+  },
+  '08-tuttofinto': {
+    mission: { text: 'Riconosci ciò che è vero', target: 3 },
+    items: [
+      it('friend', 'Il violinista', 0.30, 'loyal+1'),
+      it('item', 'Sipario rosso', 0.48, 'reveal'),
+      it('enemy', 'La maschera', 0.66, 'loyal-1'),
+      it('item', 'Applauso finto', 0.84, 'firm'),
+      it('egg', 'Passamontagna', 0.13, 'egg'),
+    ],
+  },
+  '09-edera': {
+    mission: { text: 'Scendi e liberati dall\u2019edera', target: 4 },
+    items: [
+      it('friend', 'Anima di sotto', 0.30, 'loyal+1'),
+      it('item', 'Ramo reciso', 0.48, 'firm'),
+      it('enemy', 'Il tuo doppio', 0.66, 'loyal-1'),
+      it('item', 'Eccomi', 0.82, 'reveal'),
+      it('item', 'Voce che non tace', 0.92, 'boost'),
+      it('egg', 'Reset dell\u2019algoritmo', 0.14, 'egg'),
+    ],
+  },
+  '10-scendi': {
+    mission: { text: 'Scendi in piazza con gli altri', target: 3 },
+    items: [
+      it('friend', 'Il popolo', 0.28, 'loyal+1'),
+      it('item', 'Pugno al cielo', 0.46, 'firm'),
+      it('enemy', 'Le truppe', 0.64, 'loyal-1'),
+      it('item', 'Voce che canta', 0.82, 'boost'),
+      it('egg', 'Dita puntate al cielo', 0.12, 'egg'),
+    ],
+  },
+  '11-lafinedelmondo': {
+    mission: { text: 'Sopravvivi alla fine del mondo', target: 4 },
+    items: [
+      it('friend', 'Chi conosce il segreto', 0.28, 'loyal+1'),
+      it('item', 'Fiore che appassisce', 0.45, 'reveal'),
+      it('enemy', 'Il lenzuolo nero', 0.62, 'loyal-1'),
+      it('item', 'Cresta dell\u2019acqua', 0.78, 'firm'),
+      it('item', 'Buco nella nuvola', 0.90, 'boost'),
+      it('egg', 'Ultimo giorno di sole', 0.12, 'egg'),
+    ],
+  },
+  '12-maranatha': {
+    mission: { text: 'Unisci le mani al coro', target: 3 },
+    items: [
+      it('friend', 'Il coro', 0.30, 'loyal+1'),
+      it('item', 'Palmo che racchiude', 0.50, 'firm'),
+      it('enemy', 'L\u2019atomo solitario', 0.68, 'loyal-1'),
+      it('item', 'Salto nel mondo', 0.86, 'reveal'),
+      it('egg', 'Sogno di essere me', 0.14, 'egg'),
+    ],
+  },
+  '13-outro': {
+    mission: { text: 'Guarda in faccia chi ti ha accompagnato', target: 3 },
+    items: [
+      it('friend', 'Frate che sento', 0.30, 'loyal+1'),
+      it('item', 'Latte della mamma', 0.50, 'firm'),
+      it('enemy', 'Il compromesso', 0.68, 'loyal-1'),
+      it('item', 'Verità sussurrata', 0.86, 'reveal'),
+      it('egg', 'La vetta è di tutti', 0.15, 'egg'),
+    ],
+  },
+};
+const VARIETY_IDS = Object.keys(VARIETY);
+
+// clamp intero
+function clampInt(v, lo, hi) { const n = Math.round(v); return n < lo ? lo : n > hi ? hi : n; }
+
+// La fila di un item: frazione `at` dell\u2019altezza utile -> riga [1, nRows-2].
+// Poi la colonna centrale di quella riga (centerCol): sempre raggiungibile.
+function createVariety(girone, climb) {
+  const id = girone.audioId;
+  const def = VARIETY[id] || { mission: { text: '', target: 2 }, items: [] };
+  const nRows = climb.nRows;
+  const items = def.items.map((src, i) => {
+    const row = clampInt(1 + (nRows - 3) * src.at, 1, Math.max(1, nRows - 2));
+    const c = centerCol(climb, row);
+    return { id: `${id}-${i}`, kind: src.kind, name: src.name, effect: src.effect, at: src.at, row, c, collected: false };
+  });
+  return {
+    id,
+    mission: { text: def.mission.text, target: def.mission.target, current: 0, done: false },
+    items,
+  };
+}
+
+// Raccoglie gli item sulla fila corrente (stessa regola degli incontri: |dr| <= 1).
+// Ritorna { collected:[{kind,name,effect}], missionDone } — missionDone true solo
+// nel passo in cui la missione si completa.
+function stepVariety(variety, climb) {
+  const curRow = Math.max(climb.lh.r, climb.rh.r);
+  const collected = [];
+  let missionDone = false;
+  for (const item of variety.items) {
+    if (item.collected) continue;
+    if (Math.abs(item.row - curRow) > 1) continue;
+    item.collected = true;
+    collected.push({ kind: item.kind, name: item.name, effect: item.effect });
+    if (!variety.mission.done) {
+      variety.mission.current = Math.min(variety.mission.target, variety.mission.current + 1);
+      if (variety.mission.current >= variety.mission.target) {
+        variety.mission.done = true;
+        missionDone = true;
+      }
+    }
+  }
+  return { collected, missionDone };
+}
+
+
 // --- main.js ---
 
 
@@ -6240,7 +6553,7 @@ function advance(state, event) {
 
 
 
-
+
 
 const canvas = document.getElementById('game');
 let ctx = canvas.getContext('2d');   // riassegnato al contesto offscreen del renderer
@@ -6343,6 +6656,7 @@ function loadGirone(index) {
     bodies,
     encounters: makeEncounters(g, climb),
     pickups,
+    variety: createVariety(g, climb),    // missione + oggetti/amici/nemici/egg del brano
     threats: createThreatState(),
     pfx: createFx((index + 1) * 7919),   // particelle cinematografiche (deterministiche)
     events: [], fx: createEffects(), transition: null, active: null, threatMsg: '',
@@ -6455,6 +6769,7 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('wall')) drawWall(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H, juice.beat);
   if (!SKIP.has('enc')) for (const e of lv.encounters) drawEncounter(ctx, e, lv.climb, camY, time, e === lv.active);
   if (!SKIP.has('pick')) for (const pk of lv.pickups) drawPickup(ctx, pk, lv.climb, camY, time);
+  if (!SKIP.has('variety')) drawVariety(ctx, lv.variety, lv.climb, camY, time, VIEW_W, VIEW_H);
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
@@ -6510,6 +6825,15 @@ function drawOverlay() {
     pos,
     time,
   });
+  // missione del girone (banda dedicata, sotto l'iscrizione)
+  if (level && level.variety && !SKIP.has('variety')) {
+    drawMissionHUD(uctx, SCALE, VIEW_W, VIEW_H, {
+      text: level.variety.mission.text,
+      current: level.variety.mission.current,
+      target: level.variety.mission.target,
+      done: level.variety.mission.done,
+    });
+  }
 }
 
 // Post-processing con JUICE: battito a tempo, flow, flash/shake, vignettatura.
@@ -6744,6 +7068,27 @@ function loop(now) {
         emitFx(level.pfx, 'spark', mp.tx, mp.ty + cameraY, { count: 8, spread: 3 });
         impact(juice, 0.9, 0, -1);
       }
+    }
+  }
+
+  // raccolta varietà del brano (missione/oggetti/amici/nemici/easter egg)
+  if (level.variety) {
+    const vr = stepVariety(level.variety, cl);
+    for (const c of vr.collected) {
+      const mp = climbPos(cl);
+      // amico/nemico toccano la LEALTÀ (che decide la piramide finale)
+      if (c.effect === 'loyal+1') loyalty += 1;
+      else if (c.effect === 'loyal-1') loyalty -= 1;
+      const fx2 = c.kind === 'enemy' ? 'blood' : c.kind === 'egg' ? 'ash' : 'spark';
+      emitFx(level.pfx, fx2, mp.tx, mp.ty + cameraY, { count: c.kind === 'egg' ? 4 : 8, spread: 3 });
+      level.threats.lastMsg = (c.kind === 'friend' ? '◈ ' : c.kind === 'enemy' ? '✖ ' : '') + c.name;
+      level.threats.msgT = 2;
+      impact(juice, c.kind === 'enemy' ? 1.0 : 0.8, 0, c.kind === 'enemy' ? 1 : -1);
+      if (c.kind === 'enemy') breakFlow(juice);
+    }
+    if (vr.missionDone) {
+      level.events.push('warm');
+      impact(juice, 1.4, 0, -1);
     }
   }
 
