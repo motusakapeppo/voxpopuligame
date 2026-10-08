@@ -7339,6 +7339,35 @@ let SCALE = 3;
 // un piccolo anticipo percettivo.
 const LYRIC_LEAD = 0.0;
 
+// HUE — IDENTITÀ CROMATICA per canzone. Una rotazione di tinta applicata al
+// canvas visibile: il rosso della scena diventa ambra/arancio/ottanio/oro/…
+// dando a OGNI traccia un colore riconoscibile. La palette sorgente resta rossa
+// (identità dell'album), ma la resa visiva cambia davvero. Deterministico.
+const HUE = {
+  '01-intro':          { h: -10,  s: 0.85, b: 0.92 },   // rosso notte
+  '02-vento':          { h: -35,  s: 0.95, b: 1.05 },   // arancio vento
+  '03-tuoni':          { h: -60,  s: 0.80, b: 0.82 },   // ambra/oro tempesta (cupo)
+  '04-baghdad':        { h: 45,   s: 0.85, b: 0.92 },   // magenta/viola polvere
+  '05-hosonno':        { h: -90,  s: 0.55, b: 0.66 },   // ocra/verde-cupo sonno (spento)
+  '06-primoposto':     { h: -25,  s: 1.10, b: 1.12 },   // oro riflettori
+  '07-tictac':         { h: 150,  s: 0.75, b: 0.98 },   // ottanio meccanico
+  '08-tuttofinto':     { h: 70,   s: 1.00, b: 1.08 },   // rosa/ciano finto
+  '09-edera':          { h: 105,  s: 0.70, b: 0.82 },   // verde edera (organico)
+  '10-scendi':         { h: 195,  s: 0.75, b: 0.92 },   // blu discesa (notturno)
+  '11-lafinedelmondo': { h: -45,  s: 0.55, b: 0.68 },   // rosso spento apocalisse
+  '12-maranatha':      { h: -15,  s: 1.15, b: 1.18 },   // oro caldo rivelazione
+  '13-outro':          { h: 25,   s: 0.70, b: 0.82 },   // rame dissolvenza
+};
+
+// Applica la tinta della traccia al canvas visibile (CSS filter: GPU, gratis).
+function applyHue(audioId) {
+  const h = HUE[audioId];
+  if (!canvas || !canvas.style) return;
+  canvas.style.filter = h
+    ? `hue-rotate(${h.h}deg) saturate(${h.s}) brightness(${h.b})`
+    : 'none';
+}
+
 // GRADE — mood cromatico PER TRACCIA (delta deterministici sul post-processing).
 // Vive qui (non in themes.js, REF lock): ogni brano ha una "temperatura" diversa
 // restando nella palette rosso/nero. Valori piccoli: si sommano alla base di
@@ -7465,6 +7494,7 @@ function loadGirone(index) {
   });
   audio.play(g.audioId);   // la traccia del girone suona mentre lo giochi
   setBpm(juice, bpmFor(g.audioId));
+  applyHue(g.audioId);     // identità cromatica della traccia (rotazione tinta)
   return {
     girone: g, modStates, climb,
     bodies,
