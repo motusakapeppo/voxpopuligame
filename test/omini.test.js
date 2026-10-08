@@ -37,7 +37,7 @@ test('OMINI_ANIMS: almeno 4 animazioni, tutte uniche', () => {
 });
 
 test('createOmini: struttura iniziale attesa', () => {
-  const g = GIRONI[0];
+  const g = GIRONI[1];
   const cl = createClimb(g);
   const o = createOmini(g, cl);
   assert.deepEqual(o.list, []);
@@ -53,7 +53,9 @@ test('determinismo: due createOmini con lo stesso g.id -> sequenza di spawn iden
     const a = spawnLog(g);
     const b = spawnLog(g);
     assert.deepEqual(a, b, `${g.id}: sequenza di spawn non deterministica`);
-    assert.ok(a.length >= 1, `${g.id}: nessuno spawn`);
+    // la traccia 1 (tutorial) NON spawna omini: nessun rumore mentre si impara
+    if (String(g.id) === '01') assert.equal(a.length, 0, 'il tutorial non deve spawnare omini');
+    else assert.ok(a.length >= 1, `${g.id}: nessuno spawn`);
   }
 });
 
@@ -70,7 +72,7 @@ test('gli spawn cadono sempre nelle file 1..nRows-2', () => {
 });
 
 test('stepOmini: spawna quando il giocatore raggiunge nextRow e avanza di spawnEvery', () => {
-  const g = GIRONI[0];
+  const g = GIRONI[1];
   const cl = createClimb(g);
   const o = createOmini(g, cl);
   cl.lh.r = 1; cl.rh.r = 1;
@@ -88,7 +90,7 @@ test('stepOmini: spawna quando il giocatore raggiunge nextRow e avanza di spawnE
 });
 
 test('stepOmini: la lista è limitata (cap) e gli scaduti vengono rimossi', () => {
-  const g = GIRONI[0];
+  const g = GIRONI[1];
   const cl = createClimb(g);
   const o = createOmini(g, cl);
   for (let r = 0; r <= cl.nRows - 1; r++) {
@@ -106,7 +108,7 @@ test('stepOmini: la lista è limitata (cap) e gli scaduti vengono rimossi', () =
 });
 
 test('resolveOmino: tendi -> helped (-24, +1); spingi -> shoved (+48, -1)', () => {
-  const g = GIRONI[0];
+  const g = GIRONI[1];
   const cl = createClimb(g);
   const o = createOmini(g, cl);
   cl.lh.r = 4; cl.rh.r = 4;
@@ -129,7 +131,7 @@ test('resolveOmino: tendi -> helped (-24, +1); spingi -> shoved (+48, -1)', () =
 });
 
 test('ominoAt: il più vicino non risolto entro |dr| <= 1, altrimenti null', () => {
-  const g = GIRONI[0];
+  const g = GIRONI[1];
   const cl = createClimb(g);
   const o = createOmini(g, cl);
   cl.lh.r = 2; cl.rh.r = 2;
@@ -143,7 +145,7 @@ test('ominoAt: il più vicino non risolto entro |dr| <= 1, altrimenti null', () 
 });
 
 test('ominoAt ignora gli omini già risolti', () => {
-  const g = GIRONI[0];
+  const g = GIRONI[1];
   const cl = createClimb(g);
   const o = createOmini(g, cl);
   cl.lh.r = 2; cl.rh.r = 2;

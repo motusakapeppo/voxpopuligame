@@ -1308,6 +1308,12 @@ export function drawUIOverlay(ctx, S, W, H, o) {
     uiFont(ctx, uiFitSize(ctx, o.chapterTitle, W * S * 0.94, S, 17, 8), S);
     ctx.textAlign = 'center';
     uiTextShadow(ctx, o.chapterTitle, W / 2 - slide, chY + chH * 0.7, S, C.redHot, Math.min(1, k * 2.5));
+    // sottotitolo: la MECCANICA della traccia (chiarezza). Più piccolo, sotto.
+    if (o.chapterSub) {
+      ctx.globalAlpha = Math.min(1, k * 2.5);
+      uiFont(ctx, uiFitSize(ctx, o.chapterSub, W * S * 0.94, S, 8, 5), S);
+      uiTextShadow(ctx, o.chapterSub, W / 2 - slide, chY + chH - 2, S, C.red, Math.min(1, k * 2.5));
+    }
     ctx.textAlign = 'left';
   }
 

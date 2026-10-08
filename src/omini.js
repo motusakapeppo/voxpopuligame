@@ -40,12 +40,15 @@ function ominiLcg(state) {
 // Crea lo stato degli omini per un girone. `climb` serve solo per la geometria
 // (nRows/centerCol) al momento dello spawn.
 export function createOmini(g, _climb) {
+  // CHIAREZZA: la traccia 1 (tutorial) non ha omini — il giocatore impara a
+  // scalare senza rumore. Compaiono dalla 2 in poi.
+  const tutorial = String(g && g.id) === '01';
   return {
     list: [],
     t: 0,
     rng: ominiSeed(g),
-    nextRow: 2,
-    spawnEvery: 3,   // più frequenti: gli omini sono protagonisti della scalata
+    nextRow: tutorial ? 9999 : 2,
+    spawnEvery: tutorial ? 9999 : 3,   // tutorial: nessuno spawn
     spawned: 0,
   };
 }

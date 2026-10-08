@@ -376,6 +376,24 @@ window.addEventListener('keyup', ev => {
 
 const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').split(',').filter(Boolean));
 
+// Spiega la meccanica della traccia nella chapter card (chiarezza). Testo breve,
+// italiano, derivato da obiettivo + gimmick.
+function chapterHint(lv) {
+  if (!lv || !lv.girone) return '';
+  const kind = lv.objective ? lv.objective.kind : 'climb';
+  const gk = lv.gimmick ? lv.gimmick.kind : 'none';
+  const gtxt = { rhythmic: 'agisci A TEMPO', hold: 'TIENI PREMUTO', shove: 'reggi le SPINTE', sync: 'SINCRONIZZA col coro' };
+  const otxt = {
+    climb: 'Raggiungi la vetta', descend: 'Scendi fino in fondo',
+    beatClock: 'Arriva in cima IN TEMPO', survive: 'Sopravvivi (o fuggi in cima)',
+    collect: 'Raccogli gli oggetti', escort: 'Aiuta chi incontri (TENDI)',
+    holdGrip: 'Non far mai cedere la presa',
+  };
+  const parts = [otxt[kind] || ''];
+  if (gk && gk !== 'none') parts.push(gtxt[gk] || '');
+  return parts.filter(Boolean).join('  ·  ');
+}
+
 // Prompt in basso: cambia in base a chi incontri e al tipo di interazione.
 function updatePrompt() {
   const a = level && level.active;
@@ -388,8 +406,7 @@ function updatePrompt() {
   else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi' + gm);
 }
 
-function drawWorld(lv, camY) {
-  if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
+function drawWorld(lv, camY) {  if (!SKIP.has('theme')) drawThemeBack(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
   if (!SKIP.has('sky')) drawSkyline(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, juice.beat);
   // scene NPC per girone (dietro la parete): varieta' visiva per livello
   if (!SKIP.has('npc')) drawNpcScenes(ctx, lv.girone, lv.climb, camY, time, VIEW_W, VIEW_H);
@@ -466,7 +483,10 @@ function drawOverlay() {
     inscription: level ? level.girone.inscription.text : '',
     threatMsg: '',   // callout rosso soppresso: level.threatMsg resta per la logica
     chapterT: level ? level.chapter : 0,
+    // La chapter card mostra TITOLO + (se c'è) la meccanica nuova: così il
+    // giocatore SA cosa aspettarsi (chiarezza), invece di subire il caos.
     chapterTitle: level ? level.girone.title : '',
+    chapterSub: level ? chapterHint(level) : '',
     prompt: promptEl ? promptEl.textContent : '',
     promptK: promptEl && promptEl.classList.contains('show') ? 1 : 0,
     flow: flowRatio(juice),
