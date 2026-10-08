@@ -33,7 +33,7 @@ export function bundleModules(sources, order) {
 export const ORDER = [
   'palette.js','timestep.js','input.js','physics.js','gironi.js','levelgen.js','climb.js','mash.js','juice.js','karaoke.js','modifiers.js','threats.js','lyrics.js',
   'encounters.js','effects.js','fx.js','themes.js','ragdoll.js','renderer.js','transition.js','audio.js','collapse.js',
-  'cta.js','objective.js','figure.js','grip.js','omini.js','hazard.js','art.js','state.js','variety.js','main.js',
+  'cta.js','objective.js','gimmicks.js','figure.js','grip.js','omini.js','hazard.js','art.js','state.js','variety.js','main.js',
 ];
 
 function build() {

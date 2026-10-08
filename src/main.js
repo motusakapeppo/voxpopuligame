@@ -13,6 +13,7 @@ import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encoun
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createVariety, stepVariety } from './variety.js';
 import { createObjective, stepObjective, objectiveHud } from './objective.js';
+import { createGimmick, stepGimmick, gimmickAccepts, gimmickPrompt } from './gimmicks.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup, threatEffects } from './threats.js';
 import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone, mashPending } from './mash.js';
 import { createJuice, impact, addFlow, breakFlow, setBpm, stepJuice, shakeOffsetJ, punchZoom, flowRatio, bpmFor } from './juice.js';
@@ -151,6 +152,7 @@ function loadGirone(index) {
     grip: createGrip(g),                 // la PRESA: si erode coi pericoli, rigenera col tempo
     omini: createOmini(g, climb),        // i piccoli della scala (deterministici dal girone)
     objective: createObjective(g),       // obiettivo meccanico della traccia (climb/beatClock/…)
+    gimmick: createGimmick(g),           // meccanica d'interazione per-traccia (rhythmic/hold/…)
     collected: 0, helped: 0,             // contatori per gli obiettivi collect/escort
     activeOmino: null,
     lastLyricIdx: -1,                    // isteresi della lirica (non torna mai indietro)
@@ -219,6 +221,15 @@ function setPrompt(txt) {
 }
 function doVerb(verb) {
   if (state.phase !== 'playing' || !level) return;
+  // GIMMICK: per il tieni-premuto accumula pressione; per ritmico/sync accetta
+  // il gesto solo nella finestra del battito. Se non accettato, niente effetto.
+  if (level.gimmick && level.gimmick.kind !== 'none') {
+    const ok = gimmickAccepts(level.gimmick, true);
+    if (!ok) {                       // gesto fuori tempo / pressione insufficiente
+      action = verb; actionT = 0.2;
+      return;
+    }
+  }
   // OMINI: nessun incontro attivo ma un omino a portata -> il verbo parla con lui.
   // Stessi tasti (Z/X, pulsanti touch): nessun binding nuovo.
   if (!level.active && level.activeOmino) {
@@ -297,9 +308,10 @@ function updatePrompt() {
   if (!a) { setPrompt(''); return; }
   if (a.resolved) { setPrompt(''); return; }   // incontro risolto: niente prompt
   const d = KINDS[a.kind];
-  if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶');
-  else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]');
-  else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi');
+  const gm = level.gimmick && level.gimmick.kind !== 'none' ? '  [' + gimmickPrompt(level.gimmick) + ']' : '';
+  if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶' + gm);
+  else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]' + gm);
+  else setPrompt('◀ ' + d.prompt + ' ▶   [Z] tendi   [X] spingi' + gm);
 }
 
 function drawWorld(lv, camY) {
@@ -718,6 +730,21 @@ function loop(now) {
 
   level.active = encounterAt(cl, level.encounters);
   level.activeOmino = level.active ? null : ominoAt(level.omini, cl);
+
+  // GIMMICK per-traccia: ritmico/tieni-premuto/spinta/sincronizza. Modula il
+  // momento in cui un verbo è accettato + eventi di spinta periodica.
+  if (level.gimmick) {
+    const gr = stepGimmick(level.gimmick, sdt);
+    level.gimmickReady = gr.ready;
+    if (gr.shove) {                       // 'shove': una spinta ti butta giù di 1
+      const mp = climbPos(cl);
+      moveHands(cl, -1); gripHit(level.grip, 0.12);
+      emitFx(level.pfx, 'dust', mp.tx, mp.ty + cameraY, { count: 6 });
+      impact(juice, 0.9, 0, 1);
+    }
+  } else {
+    level.gimmickReady = true;
+  }
   updatePrompt();
 
   // OBIETTIVO della traccia: decide la VITTORIA (non più solo "raggiungi la cima").
