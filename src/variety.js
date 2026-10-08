@@ -12,9 +12,11 @@ import { centerCol } from './climb.js';
 // effect: 'loyal+1' (amico) | 'loyal-1' (nemico) | 'boost'|'firm'|'reveal' (item) | 'egg'
 const it = (kind, name, at, effect) => ({ kind, name, at, effect });
 
+// mission.kind: 'collect' | 'survive' | 'help' | 'descend' | 'resist'
+// Ogni brano ha un OBIETTIVO diverso: testo distinto + kind che ne dice il sapore.
 export const VARIETY = {
   '01-intro': {
-    mission: { text: 'Trova un motivo per restare sveglio', target: 3 },
+    mission: { kind: 'resist', text: 'Resta sveglio finché non sorge il sole', target: 3 },
     items: [
       it('friend', 'Vicino di letto', 0.30, 'loyal+1'),
       it('item', 'Letto sfatto', 0.44, 'boost'),
@@ -26,19 +28,18 @@ export const VARIETY = {
     ],
   },
   '02-vento': {
-    mission: { text: 'Tieni la rotta contro il vento', target: 3 },
+    mission: { kind: 'resist', text: 'Tieni la rotta mentre il vento ti spinge indietro', target: 3 },
     items: [
       it('friend', 'Compagno di viaggio', 0.28, 'loyal+1'),
       it('item', 'Bussola storta', 0.42, 'firm'),
       it('item', 'Vela strappata', 0.55, 'boost'),
       it('enemy', 'Raffica del sud', 0.68, 'loyal-1'),
       it('item', 'Brivido improvviso', 0.80, 'reveal'),
-      it('item', 'Graffito mai visto', 0.88, 'firm'),
       it('egg', 'Microfono rotto', 0.14, 'egg'),
     ],
   },
   '03-tuoni': {
-    mission: { text: 'Riparati dal sole dei suoi occhi', target: 3 },
+    mission: { kind: 'survive', text: 'Sopravvivi al tuono che ti cade addosso', target: 3 },
     items: [
       it('friend', 'La mamma', 0.26, 'loyal+1'),
       it('item', 'Collana di pianeti', 0.40, 'reveal'),
@@ -50,9 +51,10 @@ export const VARIETY = {
     ],
   },
   '04-baghdad': {
-    mission: { text: 'Uccidi i mostri che vivono in te', target: 4 },
+    mission: { kind: 'resist', text: 'Resisti ai mostri che ti crescono dentro', target: 4 },
     items: [
       it('friend', 'Il vicino che tace', 0.26, 'loyal+1'),
+      it('item', 'Cenere sul davanzale', 0.34, 'reveal'),
       it('item', 'Foglio nella stanza', 0.40, 'reveal'),
       it('item', 'Scudo di cranio', 0.54, 'firm'),
       it('enemy', 'Effetto domino', 0.66, 'loyal-1'),
@@ -62,19 +64,18 @@ export const VARIETY = {
     ],
   },
   '05-hosonno': {
-    mission: { text: 'Resisti al sonno fino all\u2019alba', target: 4 },
+    mission: { kind: 'survive', text: 'Sopravvivi al sonno fino all\u2019alba', target: 4 },
     items: [
       it('friend', 'Morfeo', 0.28, 'loyal+1'),
       it('item', 'Caffè caldo', 0.42, 'boost'),
       it('item', 'Latte fresco', 0.55, 'firm'),
       it('enemy', 'La Sirena', 0.68, 'loyal-1'),
       it('item', 'Pozzo della moneta', 0.80, 'reveal'),
-      it('item', 'Sveglia showtime', 0.90, 'boost'),
       it('egg', 'Cielo dentro il mare', 0.14, 'egg'),
     ],
   },
   '06-primoposto': {
-    mission: { text: 'Scala senza diventare come loro', target: 3 },
+    mission: { kind: 'resist', text: 'Resisti alla voglia di scavalcare gli altri', target: 3 },
     items: [
       it('friend', 'Il rivale onesto', 0.28, 'loyal+1'),
       it('item', 'Sorriso e lacrima', 0.44, 'firm'),
@@ -86,9 +87,10 @@ export const VARIETY = {
     ],
   },
   '07-tictac': {
-    mission: { text: 'Arriva prima che il tempo scada', target: 4 },
+    mission: { kind: 'survive', text: 'Sopravvivi al tempo che ti scade tra le mani', target: 4 },
     items: [
       it('friend', 'Il vecchio dell\u2019orologio', 0.26, 'loyal+1'),
+      it('item', 'Sabbia nella clessidra', 0.34, 'boost'),
       it('item', 'Chicco di personalità', 0.40, 'boost'),
       it('item', 'Affitto pagato', 0.54, 'firm'),
       it('enemy', 'La lancetta', 0.66, 'loyal-1'),
@@ -98,19 +100,18 @@ export const VARIETY = {
     ],
   },
   '08-tuttofinto': {
-    mission: { text: 'Riconosci ciò che è vero', target: 3 },
+    mission: { kind: 'collect', text: 'Raccogli le prove di ciò che è vero', target: 3 },
     items: [
       it('friend', 'Il violinista', 0.28, 'loyal+1'),
       it('item', 'Sipario rosso', 0.42, 'reveal'),
       it('item', 'Applauso finto', 0.55, 'firm'),
       it('enemy', 'La maschera', 0.68, 'loyal-1'),
       it('item', 'Sipario che si alza', 0.80, 'boost'),
-      it('item', 'Applauso del pubblico', 0.90, 'reveal'),
       it('egg', 'Passamontagna', 0.13, 'egg'),
     ],
   },
   '09-edera': {
-    mission: { text: 'Scendi e liberati dall\u2019edera', target: 4 },
+    mission: { kind: 'descend', text: 'Scendi e strappa l\u2019edera che ti trattiene', target: 4 },
     items: [
       it('friend', 'Anima di sotto', 0.28, 'loyal+1'),
       it('item', 'Ramo reciso', 0.42, 'firm'),
@@ -122,9 +123,10 @@ export const VARIETY = {
     ],
   },
   '10-scendi': {
-    mission: { text: 'Scendi in piazza con gli altri', target: 3 },
+    mission: { kind: 'help', text: 'Aiuta il popolo a scendere in piazza', target: 3 },
     items: [
       it('friend', 'Il popolo', 0.26, 'loyal+1'),
+      it('item', 'Bandiera strappata', 0.34, 'firm'),
       it('item', 'Pugno al cielo', 0.40, 'firm'),
       it('item', 'Voce che canta', 0.54, 'boost'),
       it('enemy', 'Le truppe', 0.66, 'loyal-1'),
@@ -134,19 +136,18 @@ export const VARIETY = {
     ],
   },
   '11-lafinedelmondo': {
-    mission: { text: 'Sopravvivi alla fine del mondo', target: 4 },
+    mission: { kind: 'survive', text: 'Sopravvivi all\u2019acqua che sale e al cielo che cade', target: 4 },
     items: [
       it('friend', 'Chi conosce il segreto', 0.26, 'loyal+1'),
       it('item', 'Fiore che appassisce', 0.40, 'reveal'),
       it('item', 'Cresta dell\u2019acqua', 0.54, 'firm'),
       it('enemy', 'Il lenzuolo nero', 0.66, 'loyal-1'),
       it('item', 'Buco nella nuvola', 0.78, 'boost'),
-      it('item', 'Nubi in festa', 0.90, 'reveal'),
       it('egg', 'Ultimo giorno di sole', 0.12, 'egg'),
     ],
   },
   '12-maranatha': {
-    mission: { text: 'Unisci le mani al coro', target: 3 },
+    mission: { kind: 'help', text: 'Unisci le mani al coro e reggi il mondo', target: 3 },
     items: [
       it('friend', 'Il coro', 0.28, 'loyal+1'),
       it('item', 'Palmo che racchiude', 0.42, 'firm'),
@@ -158,9 +159,10 @@ export const VARIETY = {
     ],
   },
   '13-outro': {
-    mission: { text: 'Guarda in faccia chi ti ha accompagnato', target: 3 },
+    mission: { kind: 'help', text: 'Accompagna a riva chi ti ha accompagnato', target: 3 },
     items: [
       it('friend', 'Frate che sento', 0.28, 'loyal+1'),
+      it('item', 'Bottiglia al tramonto', 0.34, 'reveal'),
       it('item', 'Latte della mamma', 0.42, 'firm'),
       it('item', 'Dosi di libertà', 0.55, 'boost'),
       it('enemy', 'Il compromesso', 0.68, 'loyal-1'),
@@ -180,7 +182,7 @@ function clampInt(v, lo, hi) { const n = Math.round(v); return n < lo ? lo : n >
 // Poi la colonna centrale di quella riga (centerCol): sempre raggiungibile.
 export function createVariety(girone, climb) {
   const id = girone.audioId;
-  const def = VARIETY[id] || { mission: { text: '', target: 2 }, items: [] };
+  const def = VARIETY[id] || { mission: { kind: 'collect', text: '', target: 2 }, items: [] };
   const nRows = climb.nRows;
   const items = def.items.map((src, i) => {
     const row = clampInt(1 + (nRows - 3) * src.at, 1, Math.max(1, nRows - 2));
@@ -189,7 +191,7 @@ export function createVariety(girone, climb) {
   });
   return {
     id,
-    mission: { text: def.mission.text, target: def.mission.target, current: 0, done: false },
+    mission: { kind: def.mission.kind, text: def.mission.text, target: def.mission.target, current: 0, done: false },
     items,
   };
 }

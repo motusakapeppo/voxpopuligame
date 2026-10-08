@@ -31,6 +31,36 @@ test('ogni girone ha: 1 missione (target 2..4), >=3 oggetti, >=1 amico, >=1 nemi
   }
 });
 
+test('le missioni sono DISTINTE su tutti i gironi (obiettivo diverso per brano)', () => {
+  const seen = new Map();
+  for (const id of VARIETY_IDS) {
+    const text = VARIETY[id].mission.text;
+    assert.ok(!seen.has(text), `missione duplicata "${text}" (${id} vs ${seen.get(text)})`);
+    seen.set(text, id);
+  }
+  assert.equal(seen.size, 13, 'attese 13 missioni distinte');
+});
+
+test('ogni girone ha un mission.kind definito e la varietà dei kind è reale', () => {
+  const KINDS_MISSION = ['collect', 'survive', 'help', 'descend', 'resist'];
+  const seen = new Set();
+  for (const id of VARIETY_IDS) {
+    const k = VARIETY[id].mission.kind;
+    assert.ok(typeof k === 'string' && k.length > 0, `${id}: mission.kind assente`);
+    assert.ok(KINDS_MISSION.includes(k), `${id}: mission.kind "${k}" non ammesso`);
+    seen.add(k);
+  }
+  assert.ok(seen.size >= 3, `mission.kind troppo poco vario (${seen.size} distinti)`);
+});
+
+test('createVariety propaga mission.kind (se presente)', () => {
+  for (const g of GIRONI) {
+    const cl = createClimb(g);
+    const v = createVariety(g, cl);
+    assert.equal(v.mission.kind, VARIETY[g.audioId].mission.kind, `${g.audioId}: kind non propagato`);
+  }
+});
+
 test('ogni oggetto è ben formato (kind/name/at/effect)', () => {
   for (const id of VARIETY_IDS) {
     for (const it of VARIETY[id].items) {
