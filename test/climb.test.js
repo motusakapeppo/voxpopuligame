@@ -244,6 +244,40 @@ test('BUG B: a riposo le mani derivano verso centerCol (niente braccia tese)', (
 });
 
 // ---------------------------------------------------------------------------
+// BUG B (scalata): il rientro non deve funzionare SOLO da fermi. Anche TENENDO
+// PREMUTO SU le mani devono convergere verso una coppia larga-quanto-le-spalle,
+// così le braccia non restano mai tese a fine livello. Qui: parto con le mani
+// molto divaricate e salgo per 400 frame; il divario deve ridursi.
+// ---------------------------------------------------------------------------
+test('BUG B (in scalata): tenendo SU il divario tra le mani si riduce', () => {
+  const cl = createClimb(GIRONI[0]);
+  const row = Math.floor(cl.nRows / 2);
+  cl.lh = { c: 8, r: row }; cl.rh = { c: 12, r: row };
+  cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
+  cl.reach = 0; cl.which = null;
+  const gap0 = Math.abs(cl.rh.c - cl.lh.c);
+  assert.ok(gap0 > 2, 'setup: mani divaricate');
+  for (let i = 0; i < 400; i++) stepClimb(cl, { left:false, right:false, up:true, down:false }, 0.016);
+  const gap1 = Math.abs(cl.rhA.c - cl.lhA.c);
+  assert.ok(gap1 < gap0 - 0.5, `in scalata il divario non si è ridotto: ${gap0} -> ${gap1}`);
+  assert.ok(cl.has(Math.round(cl.lhA.c), cl.lh.r) && cl.has(Math.round(cl.rhA.c), cl.rh.r),
+    'convergenza ha lasciato appigli validi');
+});
+
+// Un movimento laterale esplicito NON deve venire annullato subito: per ~150ms
+// la convergenza è sospesa (lateralT), poi riprende.
+test('BUG B: la convergenza è sospesa per ~150ms dopo un laterale', () => {
+  const cl = createClimb(GIRONI[0]);
+  const row = Math.floor(cl.nRows / 2);
+  cl.lh = { c: 6, r: row }; cl.rh = { c: 14, r: row };
+  cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
+  cl.reach = 0; cl.which = null; cl.lateralT = 0.15;
+  const before = cl.lhA.c;
+  for (let i = 0; i < 6; i++) stepClimb(cl, { left:false, right:false, up:false, down:false }, 0.016);
+  assert.ok(Math.abs(cl.lhA.c - before) < 0.02, 'sospensione non attiva: ' + cl.lhA.c);
+});
+
+// ---------------------------------------------------------------------------
 // V4: SHAPES — varietà strutturale della parete. Ogni girone può scegliere una
 // forma (g.climb.shape). Default 'pyramid' = comportamento storico ESATTO.
 // La REPAIR PASS garantisce che ogni fila resti non vuota (il bot e i test

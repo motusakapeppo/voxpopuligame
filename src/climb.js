@@ -123,7 +123,7 @@ export function createClimb(g) {
     reach: 0,
     from: null, to: null, which: null,
     weakRows, weakTimer: 0, collapsed: new Set(), collapseEvent: null,
-    reached: false,
+    reached: false, lateralT: 0,
   };
 }
 
@@ -213,7 +213,12 @@ function autoStep(cl) {
   for (const which of order) {
     const cur = which === 'l' ? cl.lh : cl.rh;
     const r = Math.max(0, Math.min(cl.nRows - 1, cur.r + dir));
-    const c = nearestCol(cl, cur.c, r);
+    // BUG B: invece di conservare l'offset laterale, la mano mira alla COPPIA
+    // CENTRALE della nuova riga (sx: centerCol, dx: centerCol+1). Così, salendo,
+    // le braccia tornano naturalmente alla posa rilassata.
+    const cc = centerCol(cl, r);
+    const aim = which === 'l' ? cc : (cl.has(cc + 1, r) ? cc + 1 : cc);
+    const c = cl.has(aim, r) ? aim : nearestCol(cl, cur.c, r);
     if (c !== null) {
       reachOne(cl, which, { c, r });
       cl.lead = which === 'l' ? 'r' : 'l';   // alterna
@@ -223,19 +228,26 @@ function autoStep(cl) {
   return false;
 }
 
-// BUG B: a riposo (nessun input, nessun reach) le colonne di ENTRAMBE le mani
-// derivano dolcemente verso il centro della loro fila. Deterministico, nessun
-// RNG: evita che un braccio resti teso fino a fine livello dopo un movimento
-// laterale. La fascia di appigli è contigua, quindi la deriva resta valida.
-const DRIFT_RATE = 1.5;   // colonne al secondo
-function driftToCenter(cl, dt) {
+// BUG B: le colonne delle mani convergono verso una COPPIA larga-quanto-le-spalle
+// CENTRATA sulla fila: mano sinistra → centerCol, mano destra → centerCol+1 (il
+// default storico c0/c0+1). Deterministico, nessun RNG. Funziona SEMPRE — anche
+// mentre si scala (tenendo SU): è questo che evita che un braccio resti teso fino
+// a fine livello dopo un movimento laterale. Sospesa: (a) sulla mano che sta
+// raggiungendo (cl.which), (b) per LATERAL_HOLD secondi dopo un laterale esplicito.
+const CONVERGE_RATE = 1.8;   // colonne al secondo
+const LATERAL_HOLD = 0.15;   // s di sospensione dopo un movimento laterale
+function convergeHands(cl, dt) {
+  if ((cl.lateralT || 0) > 0) return;
   for (const which of ['l', 'r']) {
+    if (cl.which === which) continue;          // mano in reach: non toccarla
     const hold = which === 'l' ? cl.lh : cl.rh;
     const anim = which === 'l' ? cl.lhA : cl.rhA;
-    const target = centerCol(cl, hold.r);
+    const cc = centerCol(cl, hold.r);
+    const target = which === 'l' ? cc
+      : (cl.has(cc + 1, hold.r) ? cc + 1 : cc);
     const dc = target - anim.c;
     if (Math.abs(dc) < 1e-4) { anim.c = target; hold.c = target; continue; }
-    const step = Math.sign(dc) * Math.min(Math.abs(dc), DRIFT_RATE * dt);
+    const step = Math.sign(dc) * Math.min(Math.abs(dc), CONVERGE_RATE * dt);
     const nc = anim.c + step;
     if (cl.has(Math.round(nc), hold.r)) { anim.c = nc; hold.c = Math.round(nc); }
     else { anim.c = target; hold.c = target; }   // fallback: salta al centro valido
@@ -267,19 +279,20 @@ export function stepClimb(cl, input, dt) {
     const dir = cl.dir || 1;
     const advance = dir === 1 ? input.up : input.down;
     const retreat = dir === 1 ? input.down : input.up;
-    if (input.left) reachOne(cl, 'l', { c: sideCol(cl, cl.lh, -1), r: cl.lh.r });
-    else if (input.right) reachOne(cl, 'r', { c: sideCol(cl, cl.rh, 1), r: cl.rh.r });
+    if (input.left) { reachOne(cl, 'l', { c: sideCol(cl, cl.lh, -1), r: cl.lh.r }); cl.lateralT = LATERAL_HOLD; }
+    else if (input.right) { reachOne(cl, 'r', { c: sideCol(cl, cl.rh, 1), r: cl.rh.r }); cl.lateralT = LATERAL_HOLD; }
     else if (advance) autoStep(cl);
     else if (retreat) {
       const rr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r - dir));
       const rc = nearestCol(cl, cl.lh.c, rr);
       if (rc !== null) reachOne(cl, 'l', { c: rc, r: rr });
-    } else {
-      // BUG B: a riposo le mani derivano verso il centro della fila, così le
-      // braccia non restano tese dopo un movimento laterale. Deterministico.
-      driftToCenter(cl, d);
     }
   }
+
+  // BUG B: convergenza CONTINUA delle mani verso la coppia spalle (anche in
+  // scalata). Sospesa durante la corsa laterale recente e sulla mano in reach.
+  if (cl.lateralT > 0) cl.lateralT = Math.max(0, cl.lateralT - d);
+  convergeHands(cl, d);
 
   // bacino: segue il centro delle mani con ritardo (dondolio) e non supera
   // mai la presa. Quando un corpo vicino cede (piantata), dà un "tirone" su.
