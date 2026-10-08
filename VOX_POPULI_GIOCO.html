@@ -577,6 +577,25 @@ function autoStep(cl) {
   }
   return false;
 }
+
+// BUG B: a riposo (nessun input, nessun reach) le colonne di ENTRAMBE le mani
+// derivano dolcemente verso il centro della loro fila. Deterministico, nessun
+// RNG: evita che un braccio resti teso fino a fine livello dopo un movimento
+// laterale. La fascia di appigli è contigua, quindi la deriva resta valida.
+const DRIFT_RATE = 1.5;   // colonne al secondo
+function driftToCenter(cl, dt) {
+  for (const which of ['l', 'r']) {
+    const hold = which === 'l' ? cl.lh : cl.rh;
+    const anim = which === 'l' ? cl.lhA : cl.rhA;
+    const target = centerCol(cl, hold.r);
+    const dc = target - anim.c;
+    if (Math.abs(dc) < 1e-4) { anim.c = target; hold.c = target; continue; }
+    const step = Math.sign(dc) * Math.min(Math.abs(dc), DRIFT_RATE * dt);
+    const nc = anim.c + step;
+    if (cl.has(Math.round(nc), hold.r)) { anim.c = nc; hold.c = Math.round(nc); }
+    else { anim.c = target; hold.c = target; }   // fallback: salta al centro valido
+  }
+}
 function stepClimb(cl, input, dt) {
   const d = Number.isFinite(dt) ? dt : 0.016;
   // presa: recupera verso 1 quando la mano è ferma
@@ -596,13 +615,24 @@ function stepClimb(cl, input, dt) {
       if (k >= 1) { if (w === 'l') cl.lh = { ...to }; else cl.rh = { ...to }; cl.which = null; }
     }
   } else {
-    // input manuale. ↑ = avanza verso l'obiettivo (sale in 'up', scende in 'down');
-    // ← → spostano una singola mano di lato; ↓ = retrocede (opposto).
-    const ddir = cl.dir || 1;
+    // input manuale FISICO: ↑ = SU, ↓ = GIÙ, SEMPRE, su ogni livello.
+    // Il tasto che punta verso l'obiettivo avanza (autoStep); quello opposto
+    // retrocede di una fila. ← → spostano una singola mano di lato.
+    const dir = cl.dir || 1;
+    const advance = dir === 1 ? input.up : input.down;
+    const retreat = dir === 1 ? input.down : input.up;
     if (input.left) reachOne(cl, 'l', { c: sideCol(cl, cl.lh, -1), r: cl.lh.r });
     else if (input.right) reachOne(cl, 'r', { c: sideCol(cl, cl.rh, 1), r: cl.rh.r });
-    else if (input.up) autoStep(cl);
-    else if (input.down) reachOne(cl, 'l', { c: cl.lh.c, r: Math.max(0, Math.min(cl.nRows - 1, cl.lh.r - ddir)) });
+    else if (advance) autoStep(cl);
+    else if (retreat) {
+      const rr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r - dir));
+      const rc = nearestCol(cl, cl.lh.c, rr);
+      if (rc !== null) reachOne(cl, 'l', { c: rc, r: rr });
+    } else {
+      // BUG B: a riposo le mani derivano verso il centro della fila, così le
+      // braccia non restano tese dopo un movimento laterale. Deterministico.
+      driftToCenter(cl, d);
+    }
   }
 
   // bacino: segue il centro delle mani con ritardo (dondolio) e non supera
@@ -701,6 +731,11 @@ function mashRatio(m) {
   return p < 0 ? 0 : p > 1 ? 1 : p;
 }
 function mashDone(m) { return m.won || m.lost; }
+
+// True finché la lotta non è stata RISOLTA dal chiamante (vinta/persa ma non
+// ancora consumata). Serve a main.js per continuare a gestire il ramo won/lost
+// anche quando `active` è già false, evitando che l'overlay resti bloccato.
+function mashPending(m) { return !!(m && (m.active || m.won || m.lost)); }
 
 
 // --- juice.js ---
@@ -6330,6 +6365,10 @@ function advance(state, event) {
         s.phase = 'unlocked';
         s.unlocked.add(GIRONI[state.gironeIndex].audioId);
       }
+      if (event === 'defeat') {
+        s.gironeIndex = Math.max(0, state.gironeIndex - 1);
+        s.phase = 'playing';
+      }
       break;
     case 'unlocked':
       if (event === 'audioDone') {
@@ -6777,6 +6816,7 @@ const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').spli
 function updatePrompt() {
   const a = level && level.active;
   if (!a) { setPrompt(''); return; }
+  if (a.resolved) { setPrompt(''); return; }   // incontro risolto: niente prompt
   const d = KINDS[a.kind];
   if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶');
   else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]');
@@ -6978,9 +7018,10 @@ function loop(now) {
   level.events.length = 0;
   if (level.chapter > 0) level.chapter -= dt;
   const NONE = { left: false, right: false, up: false, down: false };
-  // Il mash blocca tutto: stai lottando.
-  if (mash.active) {
-    if (!mash.hold) stepMash(mash, sdt);   // debug ?phase=mash: barra ferma
+  // Il mash blocca tutto: stai lottando. Il ramo resta attivo anche dopo la
+  // vittoria/sconfitta (won/lost) finché non viene risolto e resettato.
+  if (mashPending(mash)) {
+    if (mash.active && !mash.hold) stepMash(mash, sdt);   // debug ?phase=mash: barra ferma
     const mp = climbPos(cl);
     if (mash.won) {
       // hai vinto: butti giù l'avversario e sali di 3
