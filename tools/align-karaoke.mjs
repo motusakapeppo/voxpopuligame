@@ -13,7 +13,7 @@
 //      (in ordine), con spaziatura minima ~1.2s; testa e coda riempite solo se
 //      c'e' audio/spazio reale. Niente Math.random: tutto deterministico.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { alignWithFill } from './align-core.mjs';
+import { alignLinesWithMeta } from './align-core.mjs';
 import { clipDur } from './clip-durations.mjs';
 
 const words = JSON.parse(readFileSync('tools/_words.json', 'utf8'));
@@ -25,19 +25,27 @@ const summary = [];
 for (const [id, w] of Object.entries(words)) {
   const lines = official[id] || [];
   const ws = (w && w.words) || [];
-  // durata REALE della clip (single source of truth): la lirica copre fino in fondo.
   const duration = clipDur(id);
 
-  const res = alignWithFill(lines, ws, { duration, minSpacing: 1.3, maxGap: 2.2 });
+  // SOLO RIGHE ANCORATE (nessun gap-fill): l'inizio di ogni riga è l'onset REALE
+  // della prima parola cantata matchata da Whisper. Meglio poche righe CORRETTE
+  // che molte righe con tempi inventati. La riga resta a schermo fino alla
+  // successiva (lyricIndexAt tiene l'ultima), come in un karaoke vero.
+  // PASS 1 stretto; PASS 2 largo solo se lo stretto dà < 2 righe (clip corte).
+  let res = alignLinesWithMeta(lines, ws, { window: 12, minRatio: 0.5, requireLast: true, duration });
+  let pass = 'strict';
+  if (res.entries.length < 2) {
+    const loose = alignLinesWithMeta(lines, ws, { window: 24, minRatio: 0.4, requireLast: false, duration });
+    if (loose.entries.length > res.entries.length) { res = loose; pass = 'loose'; }
+  }
 
   karaoke[id] = res.entries;
   summary.push({
     id,
-    pass: res.pass,
+    pass,
     lines: lines.length,
     words: ws.length,
-    anchors: res.anchors.length,
-    matched: res.entries.length,
+    anchors: res.entries.length,
     offset: res.offset,
     first: res.entries[0] ? res.entries[0][1] : '',
   });
@@ -56,8 +64,7 @@ for (const s of summary) {
     '| ' + s.pass.padEnd(6),
     '| righe', String(s.lines).padStart(3),
     '| parole', String(s.words).padStart(4),
-    '| anchor', String(s.anchors).padStart(3),
-    '| voci', String(s.matched).padStart(3),
+    '| voci', String(s.anchors).padStart(3),
     '| off', s.offset.toFixed(2).padStart(5),
     '| prima:', s.first.slice(0, 40)
   );
