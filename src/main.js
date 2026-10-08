@@ -831,6 +831,14 @@ function loop(now) {
     const prog = climbProgress(cl);
     ctx.fillStyle = C.black; ctx.fillRect(VIEW_W - 4, 0, 4, VIEW_H);
     ctx.fillStyle = C.red; ctx.fillRect(VIEW_W - 4, Math.round(VIEW_H * (1 - prog)), 4, Math.round(VIEW_H * prog));
+    // BARRA DELLA PRESA (a sinistra): scende = presa che si erode. Rossa accesa
+    // quando la presa è bassa (pericolo), rossa scura quando è salda. Rende la
+    // posta in gioco VISIBILE e competitiva.
+    const gr = level.grip ? level.grip.v : 1;
+    ctx.fillStyle = C.black; ctx.fillRect(0, 0, 4, VIEW_H);
+    ctx.fillStyle = gr < 0.34 ? C.redHot : C.redDark;
+    ctx.fillRect(0, Math.round(VIEW_H * (1 - gr)), 4, Math.round(VIEW_H * gr));
+    if (gr < 0.34 && Math.sin(time * 14) > 0) { ctx.fillStyle = C.white; ctx.fillRect(0, 0, 4, 1); }
   }, { post: playingPost(dt, 0) });
   drawOverlay();
 }

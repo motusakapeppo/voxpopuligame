@@ -44,8 +44,8 @@ export function createOmini(g, _climb) {
     list: [],
     t: 0,
     rng: ominiSeed(g),
-    nextRow: 4,
-    spawnEvery: 5,
+    nextRow: 2,
+    spawnEvery: 3,   // più frequenti: gli omini sono protagonisti della scalata
     spawned: 0,
   };
 }

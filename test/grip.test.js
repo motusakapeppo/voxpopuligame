@@ -11,8 +11,8 @@ test('createGrip: defaults completi e v iniziale a 1', () => {
   const g = createGrip();
   assert.equal(g.v, 1);
   assert.deepEqual(g.cfg, {
-    hitWind: 0.10, hitQuake: 0.22, hitDebris: 0.18,
-    hitIvy: 0.12, hitMash: 0.45, regen: 0.10,
+    hitWind: 0.12, hitQuake: 0.26, hitDebris: 0.22,
+    hitIvy: 0.14, hitMash: 0.5, regen: 0.055, scale: 1,
   });
 });
 
@@ -20,8 +20,8 @@ test('createGrip: override parziale da g.grip, defaults per il resto', () => {
   const g = createGrip({ grip: { hitMash: 0.9, regen: 0.5 } });
   assert.equal(g.cfg.hitMash, 0.9);
   assert.equal(g.cfg.regen, 0.5);
-  assert.equal(g.cfg.hitWind, 0.10);
-  assert.equal(g.cfg.hitQuake, 0.22);
+  assert.equal(g.cfg.hitWind, 0.12);
+  assert.equal(g.cfg.hitQuake, 0.26);
 });
 
 test('gripHit: sottrae e clampa a 0 (mai negativo)', () => {
@@ -36,7 +36,7 @@ test('stepGrip: rigenera monotono e finito, clamp a 1', () => {
   const g = createGrip();
   gripHit(g, 0.5);
   let prev = g.v;
-  for (let i = 0; i < 500; i++) {
+  for (let i = 0; i < 2000; i++) {
     stepGrip(g, 0.016);
     assert.ok(Number.isFinite(g.v), 'v non finito');
     assert.ok(g.v >= prev - 1e-12, 'regen non monotona');

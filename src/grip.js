@@ -7,23 +7,29 @@
 // ============================================================================
 
 const DEFAULT_CFG = {
-  hitWind: 0.10,
-  hitQuake: 0.22,
-  hitDebris: 0.18,
-  hitIvy: 0.12,
-  hitMash: 0.45,
-  regen: 0.10,
+  hitWind: 0.12,
+  hitQuake: 0.26,
+  hitDebris: 0.22,
+  hitIvy: 0.14,
+  hitMash: 0.5,
+  regen: 0.055,   // rigenerazione PIÙ LENTA = più tensione (competitivo)
 };
 
 // createGrip(g) — g.grip opzionale sovrascrive i default (merge parziale).
+// Moltiplica l'erosione per `g.difficulty` (default 1): tracce più avanzate
+// possono essere più dure (più rapido a svuotare la presa).
 export function createGrip(g) {
   const cfg = { ...DEFAULT_CFG, ...((g && g.grip) || {}) };
+  const diff = Number.isFinite(g && g.difficulty) ? g.difficulty : 1;
+  // scala SOLO i colpi (non la rigenerazione): più difficile = presa più fragile.
+  cfg.scale = diff > 0 ? diff : 1;
   return { v: 1, cfg };
 }
 
-// gripHit — un colpo erode la presa; clamp a 0 (mai negativa).
+// gripHit — un colpo erode la presa (scalata per difficulty); clamp a 0.
 export function gripHit(grip, amt) {
-  grip.v = Math.max(0, grip.v - amt);
+  const s = grip.cfg && Number.isFinite(grip.cfg.scale) ? grip.cfg.scale : 1;
+  grip.v = Math.max(0, grip.v - amt * s);
   return grip.v;
 }
 
