@@ -176,17 +176,18 @@ test('drawLyricsOverlay: riga attiva ben visibile (bianco alpha >= 0.9, banda >=
 // retrocompatibile quando omesso.
 test('drawLyricsPixel: minIdx (isteresi) blocca il regresso dell\'indice', () => {
   const W = 320, H = 180;
-  // a pos=1 l'indice naturale è 0 ('prima riga'); con minIdx=2 deve restare 2.
+  // LINES = [[0,'prima riga'],[5,'seconda riga'],[10,'terza riga']].
+  // a pos=10.5 l'indice naturale è 2 e la riga 2 è "giovane" (entro HOLD).
   const ctx = recCtx();
-  drawLyricsPixel(ctx, LINES, 1, 2, W, H, 2);
+  drawLyricsPixel(ctx, LINES, 10.5, 2, W, H, 2);
   const texts = ctx.calls.filter(c => c.op === 'fillText').map(c => c.text);
-  assert.ok(texts.includes('terza riga'), 'con minIdx=2 deve mostrare l\'indice 2, non la 0: ' + JSON.stringify(texts));
+  assert.ok(texts.includes('terza riga'), 'con minIdx=2 deve mostrare l\'indice 2: ' + JSON.stringify(texts));
   assert.ok(!texts.includes('prima riga'), 'non deve regredire alla riga 0');
-  // retrocompatibile: senza minIdx torna il comportamento storico (indice 0)
+  // retrocompatibile: senza minIdx torna il comportamento storico (indice calcolato)
   const ctx2 = recCtx();
-  drawLyricsPixel(ctx2, LINES, 1, 2, W, H);
+  drawLyricsPixel(ctx2, LINES, 10.5, 2, W, H);
   const t2 = ctx2.calls.filter(c => c.op === 'fillText').map(c => c.text);
-  assert.ok(t2.includes('prima riga'), 'senza minIdx comportamento storico');
+  assert.ok(t2.includes('terza riga'), 'senza minIdx comportamento storico');
 });
 
 test('drawLyricsPixel: PROTAGONISTA pixel leggibile (bianco + alone nero, NIENTE banda full-width)', () => {

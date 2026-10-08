@@ -1406,11 +1406,15 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H, minIdx) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   const y = h * 0.30 + Math.sin(t * 0.7) * 1.5;
+  // FADE: la riga non resta "incollata". Oltre LYRIC_HOLD secondi dall'onset
+  // sfuma: con anchor sparsi, altrimenti il testo restava fermo 10-18s.
+  const la = lyricAlpha(lines, idx, pos);
+  if (la <= 0) { ctx.restore(); return; }
 
-  // fantasma riga precedente: rossa tenue, sopra, shrink-to-fit
-  if (prev) {
+  // fantasma riga precedente: rossa tenue, sopra, shrink-to-fit (sfuma col fade)
+  if (prev && la > 0.6) {
     const ps = fit1(prev);
-    ctx.font = font(ps); ctx.fillStyle = C.red; ctx.globalAlpha = 0.30;
+    ctx.font = font(ps); ctx.fillStyle = C.red; ctx.globalAlpha = 0.30 * la;
     ctx.fillText(prev, w / 2, y - size - 6);
   }
 
@@ -1425,10 +1429,10 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H, minIdx) {
     const ln = rows[li];
     const ly = Math.round(y + (li - (rows.length - 1) / 2) * step);
     // ombra morbida: copia nera offset down-right (1,2), alpha ridotta → profondità
-    ctx.globalAlpha = 0.45; ctx.fillStyle = C.black;
+    ctx.globalAlpha = 0.45 * la; ctx.fillStyle = C.black;
     ctx.fillText(ln, cx + 1, ly + 2);
     // alone solido: 4 ortogonali + 4 diagonali a 1px, tutto nero
-    ctx.globalAlpha = 0.95; ctx.fillStyle = C.black;
+    ctx.globalAlpha = 0.95 * la; ctx.fillStyle = C.black;
     ctx.fillText(ln, cx - 1, ly);
     ctx.fillText(ln, cx + 1, ly);
     ctx.fillText(ln, cx, ly - 1);
@@ -1438,7 +1442,7 @@ export function drawLyricsPixel(ctx, lines, pos, time, W, H, minIdx) {
     ctx.fillText(ln, cx - 1, ly + 1);
     ctx.fillText(ln, cx + 1, ly + 1);
     // corpo: bianco pieno, il tono più leggibile della palette
-    ctx.globalAlpha = 1; ctx.fillStyle = C.white;
+    ctx.globalAlpha = la; ctx.fillStyle = C.white;
     ctx.fillText(ln, cx, ly);
   }
   ctx.restore();
@@ -1465,6 +1469,22 @@ export function lyricIndexAt(lines, pos, minIdx) {
   }
   const floor = Number.isFinite(minIdx) ? Math.max(0, Math.floor(minIdx)) : 0;
   return Math.max(floor, idx);
+}
+
+// Durata massima per cui una riga resta a schermo dopo il suo onset. Oltre,
+// sparisce (fade) invece di restare "incollata": con gli anchor sparsi una riga
+// poteva restare ferma 10-18s. Ora la lirica è sempre pertinente.
+export const LYRIC_HOLD = 4.5;
+
+// Ritorna l'alpha (0..1) della riga idx al tempo pos: 1 per i primi HOLD secondi,
+// poi fade rapido. Le righe isolate non restano ferme per sempre.
+export function lyricAlpha(lines, idx, pos) {
+  if (!lines || idx < 0 || idx >= lines.length) return 0;
+  const start = Number.isFinite(lines[idx][0]) ? lines[idx][0] : 0;
+  const age = pos - start;
+  if (age < 0) return 0;
+  if (age <= LYRIC_HOLD) return 1;
+  return Math.max(0, 1 - (age - LYRIC_HOLD) / 1.2);   // fade in ~1.2s
 }
 
 export function drawLyricsOverlay(uctx, S, lines, pos, W, H, time) {
