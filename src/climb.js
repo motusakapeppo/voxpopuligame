@@ -12,6 +12,65 @@ export const HOLD_TIME = 0.14;      // recupero della presa dopo lo spostamento
 const HANG = 11;                    // bacino sotto le mani ≈ 0.5h (posa "X" reale)
 const PLANT_PULL = 4;               // quanto il corpo "sale" quando una mano pianta
 
+// V4: FORME della parete. Ogni girone può scegliere una struttura diversa, così
+// i brani non si sentono tutti uguali. 'pyramid' = comportamento storico ESATTO.
+export const SHAPES = ['pyramid', 'gaps', 'spiral', 'overhang'];
+
+// REPAIR PASS: garantisce che OGNI fila abbia almeno un appiglio. Il bot di
+// scalata (nearestCol) e i test "almeno un appiglio per fila" ci contano: senza
+// questa pass una forma potrebbe svuotare una fila e bloccare l'ascesa.
+function repairRows(holds, nRows, nCols, cx, cols) {
+  let center = 0;
+  for (let c = 1; c < nCols; c++)
+    if (Math.abs(cols[c] - cx) < Math.abs(cols[center] - cx)) center = c;
+  for (let r = 0; r < nRows; r++) {
+    if (holds[r].some(Boolean)) continue;
+    holds[r][center] = true;
+  }
+}
+
+// Applica una forma alla griglia di appigli (mutazione in place, ritorna holds).
+// Deterministico: nessun RNG. `cols` = coordinate x delle colonne, `cx` = centro.
+export function applyShape(holds, nRows, nCols, shape, cx, cols) {
+  if (shape === 'gaps') {
+    // buchi deterministici: alcune prese mancano, la parete è più "rotta"
+    for (let r = 0; r < nRows; r++)
+      for (let c = 0; c < nCols; c++)
+        if ((r * 7 + c * 3) % 11 === 0) holds[r][c] = false;
+    repairRows(holds, nRows, nCols, cx, cols);
+    return holds;
+  }
+  if (shape === 'spiral') {
+    // la fascia valida si sposta di lato salendo (serpentina deterministica)
+    for (let r = 0; r < nRows; r++) {
+      const shift = Math.round(Math.sin(r * 0.3) * 4);
+      if (shift === 0) continue;
+      let lo = -1, hi = -1;
+      for (let c = 0; c < nCols; c++) if (holds[r][c]) { if (lo < 0) lo = c; hi = c; }
+      if (lo < 0) continue;
+      for (let c = 0; c < nCols; c++) holds[r][c] = false;
+      for (let c = lo + shift; c <= hi + shift; c++)
+        if (c >= 0 && c < nCols) holds[r][c] = true;
+    }
+    repairRows(holds, nRows, nCols, cx, cols);
+    return holds;
+  }
+  if (shape === 'overhang') {
+    // larghezza NON monotona: alcune file sporgono oltre quelle sotto
+    for (let r = 0; r < nRows; r++) {
+      if (r % 3 !== 1) continue;
+      let lo = -1, hi = -1;
+      for (let c = 0; c < nCols; c++) if (holds[r][c]) { if (lo < 0) lo = c; hi = c; }
+      if (lo < 0) continue;
+      for (let c = lo - 2; c <= hi + 2; c++)
+        if (c >= 0 && c < nCols) holds[r][c] = true;
+    }
+    repairRows(holds, nRows, nCols, cx, cols);
+    return holds;
+  }
+  return holds;   // 'pyramid' (default) o sconosciuta: identità
+}
+
 // griglia di appigli derivata dal girone: più stretta salendo (piramide)
 export function createClimb(g) {
   const cx = 160;
@@ -33,6 +92,10 @@ export function createClimb(g) {
   const halfWidth = r => 120 - (r / Math.max(1, nRows - 1)) * 90;
   const holds = rows.map((_, r) => cols.map((x, c) => Math.abs(x - cx) <= halfWidth(r)));
 
+  // V4: forma della parete (default 'pyramid' = griglia storica invariata).
+  const shape = SHAPES.includes(pc.shape) ? pc.shape : 'pyramid';
+  applyShape(holds, nRows, cols.length, shape, cx, cols);
+
   const has = (c, r) => c >= 0 && c < cols.length && r >= 0 && r < nRows && holds[r][c];
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
@@ -50,7 +113,7 @@ export function createClimb(g) {
   const seed = String(g.id || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 5, 0);
   for (let r = 4 + seed; r < nRows - 3; r += weakEvery) weakRows.add(r);
   return {
-    cols, rows, holds, has, xOf, yOf, nRows, cx, dir,
+    cols, rows, holds, has, xOf, yOf, nRows, cx, dir, shape,
     reachDur: reach, holdTime: hold, hang, weakEvery,
     lh: { c: c0, r: startR }, rh: { c: c0 + 1, r: startR },
     lhA: { c: c0, r: startR }, rhA: { c: c0 + 1, r: startR },  // animati (float)

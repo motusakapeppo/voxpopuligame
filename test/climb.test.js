@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClimb, stepClimb, climbPos, climbProgress, centerCol, rowCols, encounterAt, moveHands } from '../src/climb.js';
+import { createClimb, stepClimb, climbPos, climbProgress, centerCol, rowCols, encounterAt, moveHands, SHAPES, applyShape } from '../src/climb.js';
 import { GIRONI } from '../src/gironi.js';
 
 // Il bot di scalata: muove le mani verso l'alto finché non raggiunge la cima.
@@ -241,4 +241,106 @@ test('BUG B: a riposo le mani derivano verso centerCol (niente braccia tese)', (
   }
   assert.ok(prevL < d0L - 0.5, 'L non si è avvicinata al centro');
   assert.ok(prevR < d0R - 0.5, 'R non si è avvicinata al centro');
+});
+
+// ---------------------------------------------------------------------------
+// V4: SHAPES — varietà strutturale della parete. Ogni girone può scegliere una
+// forma (g.climb.shape). Default 'pyramid' = comportamento storico ESATTO.
+// La REPAIR PASS garantisce che ogni fila resti non vuota (il bot e i test
+// "almeno un appiglio per fila" ci contano).
+// ---------------------------------------------------------------------------
+test('SHAPES: espone le forme supportate e pyramid è il default', () => {
+  assert.ok(Array.isArray(SHAPES), 'SHAPES non è un array');
+  for (const s of ['pyramid', 'gaps', 'spiral', 'overhang'])
+    assert.ok(SHAPES.includes(s), 'shape mancante: ' + s);
+  const cl = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
+  assert.equal(cl.shape, 'pyramid', 'default shape deve essere pyramid');
+});
+
+test('applyShape: ogni forma lascia OGNI fila con >=1 appiglio (repair pass)', () => {
+  const base = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
+  for (const shape of SHAPES) {
+    const holds = base.holds.map(row => row.slice());
+    applyShape(holds, base.nRows, base.cols.length, shape, base.cx, base.cols);
+    for (let r = 0; r < base.nRows; r++)
+      assert.ok(holds[r].some(Boolean), `${shape}: fila ${r} senza appigli`);
+  }
+});
+
+test('applyShape: pyramid è identità (nessuna modifica)', () => {
+  const base = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
+  const holds = base.holds.map(row => row.slice());
+  applyShape(holds, base.nRows, base.cols.length, 'pyramid', base.cx, base.cols);
+  assert.deepEqual(holds, base.holds, 'pyramid non deve modificare la griglia');
+});
+
+test('applyShape: gaps rimuove appigli ma la repair pass tiene ogni fila viva', () => {
+  const base = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
+  const holds = base.holds.map(row => row.slice());
+  applyShape(holds, base.nRows, base.cols.length, 'gaps', base.cx, base.cols);
+  const before = base.holds.flat().filter(Boolean).length;
+  const after = holds.flat().filter(Boolean).length;
+  assert.ok(after < before, 'gaps non ha rimosso alcun appiglio');
+  for (let r = 0; r < base.nRows; r++)
+    assert.ok(holds[r].some(Boolean), `gaps: fila ${r} vuota`);
+});
+
+test('applyShape: spiral sposta la fascia valida in funzione della fila', () => {
+  const base = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
+  const holds = base.holds.map(row => row.slice());
+  applyShape(holds, base.nRows, base.cols.length, 'spiral', base.cx, base.cols);
+  // il centro valido di almeno una fila non coincide col centro geometrico
+  let shifted = false;
+  for (let r = 0; r < base.nRows; r++) {
+    const cs = [];
+    for (let c = 0; c < base.cols.length; c++) if (holds[r][c]) cs.push(c);
+    if (!cs.length) continue;
+    const mid = (cs[0] + cs[cs.length - 1]) / 2;
+    if (Math.abs(mid - 10) > 0.5) { shifted = true; break; }
+  }
+  assert.ok(shifted, 'spiral non ha spostato alcuna fascia');
+});
+
+test('applyShape: overhang ha larghezza NON monotona (qualche fila più larga di quella sotto)', () => {
+  const base = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
+  const holds = base.holds.map(row => row.slice());
+  applyShape(holds, base.nRows, base.cols.length, 'overhang', base.cx, base.cols);
+  const width = r => holds[r].filter(Boolean).length;
+  let wider = false;
+  for (let r = 1; r < base.nRows; r++) if (width(r) > width(r - 1)) { wider = true; break; }
+  assert.ok(wider, 'overhang: nessuna fila più larga di quella sotto');
+});
+
+test('createClimb: g.climb.shape viene applicato e registrato', () => {
+  const g = { ...GIRONI[0], climb: { ...GIRONI[0].climb, shape: 'gaps' } };
+  const cl = createClimb(g);
+  assert.equal(cl.shape, 'gaps');
+  for (let r = 0; r < cl.nRows; r++)
+    assert.ok(cl.holds[r].some(Boolean), `gaps: fila ${r} vuota`);
+});
+
+test('createClimb: shape sconosciuta ricade su pyramid (robustezza)', () => {
+  const g = { ...GIRONI[0], climb: { ...GIRONI[0].climb, shape: 'boh' } };
+  const cl = createClimb(g);
+  assert.equal(cl.shape, 'pyramid');
+  assert.deepEqual(cl.holds, createClimb(GIRONI[0]).holds);
+});
+
+test('il bot risolve TUTTI i gironi con la loro shape', () => {
+  for (const g of GIRONI) {
+    const r = solveClimb(g);
+    assert.ok(r.ok, `${g.id} (${g.climb && g.climb.shape}): bloccato a fila ${r.r}/${r.nRows}`);
+  }
+});
+
+test('almeno 3 shape distinte tra i 13 gironi', () => {
+  const shapes = GIRONI.map(g => (g.climb && g.climb.shape) || 'pyramid');
+  assert.ok(new Set(shapes).size >= 3, 'meno di 3 shape distinte: ' + JSON.stringify(shapes));
+});
+
+test('girone 01 resta pyramid-monotono (base >= cima)', () => {
+  const cl = createClimb(GIRONI[0]);
+  assert.equal(cl.shape, 'pyramid');
+  const count = r => cl.holds[r].filter(Boolean).length;
+  assert.ok(count(0) >= count(cl.nRows - 1), 'la base deve essere >= della cima');
 });
