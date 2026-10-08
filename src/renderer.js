@@ -108,7 +108,9 @@ export function createRenderer(canvas, W, H) {
   const glowCtx = glow.getContext('2d');
   const scratchCtx = scratch.getContext('2d');
   const tmpCtx = tmp.getContext('2d');
-  const outCtx = out.getContext('2d');
+  // out buffer: subisce getImageData/putImageData OGNI frame (color grading) →
+  // willReadFrequently evita il warning e tiene il buffer in memoria CPU (più veloce).
+  const outCtx = out.getContext('2d', { willReadFrequently: true });
   // il canvas VISIBILE è opaco per costruzione (out copre tutto lo schermo):
   // alpha:false lascia che il browser salti la composizione del canale alpha
   // (guida di maestria §7.4).

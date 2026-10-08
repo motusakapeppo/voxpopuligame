@@ -48,6 +48,11 @@ export function createAudio({ storage, loadClip }) {
       if (!enabled) return;
       const clip = await loadClip(id);        // in dev: URL; in build: data URI
       if (!clip) return;
+      // Su file:// il browser TRATTA ogni file: come origine unica: caricare un
+      // file: relativo fallirebbe con "Unsafe attempt to load URL". In build la
+      // clip è un data: URI (sempre sicuro); in dev si usa un server http.
+      const isFileScheme = (typeof location !== 'undefined' && location.protocol === 'file:');
+      if (isFileScheme && !/^data:/.test(clip)) return;   // evita il tentativo file:
       this.stop();
       audioEl = new Audio(clip);
       audioEl.volume = 0.9;
