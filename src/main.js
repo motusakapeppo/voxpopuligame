@@ -12,6 +12,7 @@ import { drawWall, drawPlayer, drawEncounter, drawInscription, drawTitle, drawLy
 import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encounters.js';
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createVariety, stepVariety } from './variety.js';
+import { createObjective, stepObjective, objectiveHud } from './objective.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup, threatEffects } from './threats.js';
 import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone, mashPending } from './mash.js';
 import { createJuice, impact, addFlow, breakFlow, setBpm, stepJuice, shakeOffsetJ, punchZoom, flowRatio, bpmFor } from './juice.js';
@@ -149,6 +150,8 @@ function loadGirone(index) {
     threats: createThreatState(),
     grip: createGrip(g),                 // la PRESA: si erode coi pericoli, rigenera col tempo
     omini: createOmini(g, climb),        // i piccoli della scala (deterministici dal girone)
+    objective: createObjective(g),       // obiettivo meccanico della traccia (climb/beatClock/…)
+    collected: 0, helped: 0,             // contatori per gli obiettivi collect/escort
     activeOmino: null,
     lastLyricIdx: -1,                    // isteresi della lirica (non torna mai indietro)
     lastLyricPos: 0,                     // posizione audio del frame precedente (rileva il loop)
@@ -222,6 +225,7 @@ function doVerb(verb) {
     const eff = resolveOmino(level.omini, level.activeOmino, verb);
     if (eff.dy) moveHands(level.climb, Math.round(-eff.dy / 24));
     loyalty += eff.loyal;
+    if (verb === 'tendi') level.helped = (level.helped || 0) + 1;   // obiettivo 'escort'
     action = verb;
     actionT = 0.5;
     return;
@@ -236,6 +240,7 @@ function doVerb(verb) {
   // l'esito sposta la scalata su/giù
   if (eff.dy) moveHands(cl, Math.round(-eff.dy / 24));
   loyalty += eff.loyal;
+  if (verb === 'tendi') level.helped = (level.helped || 0) + 1;     // obiettivo 'escort'
   action = verb === 'tendi' ? 'tendi' : 'spingi';
   actionT = verb === 'tendi' ? 0.72 : 0.62;
 }
@@ -375,12 +380,23 @@ function drawOverlay() {
   });
   // missione del girone (banda dedicata, sotto l'iscrizione)
   if (level && level.variety && !SKIP.has('variety')) {
-    drawMissionHUD(uctx, SCALE, VIEW_W, VIEW_H, {
-      text: level.variety.mission.text,
-      current: level.variety.mission.current,
-      target: level.variety.mission.target,
-      done: level.variety.mission.done,
-    });
+    // Se l'obiettivo della traccia NON è un semplice 'climb', mostra l'obiettivo
+    // reale (BATTI IL TEMPO / SOPRAVVIVI / SCORTA / REGGI LA PRESA / SCENDI).
+    const oh = level.objective && level.objective.kind !== 'climb' ? objectiveHud(level.objective) : null;
+    if (oh) {
+      const cur = Math.round(oh.progress * 100);
+      drawMissionHUD(uctx, SCALE, VIEW_W, VIEW_H, {
+        text: oh.text,
+        current: cur, target: 100, done: level.objective.done,
+      });
+    } else {
+      drawMissionHUD(uctx, SCALE, VIEW_W, VIEW_H, {
+        text: level.variety.mission.text,
+        current: level.variety.mission.current,
+        target: level.variety.mission.target,
+        done: level.variety.mission.done,
+      });
+    }
   }
 }
 
@@ -645,6 +661,7 @@ function loop(now) {
   if (level.variety) {
     const vr = stepVariety(level.variety, cl);
     for (const c of vr.collected) {
+      level.collected = (level.collected || 0) + 1;   // conteggio per obiettivo 'collect'
       const mp = climbPos(cl);
       // amico/nemico toccano la LEALTÀ (che decide la piramide finale)
       if (c.effect === 'loyal+1') loyalty += 1;
@@ -703,7 +720,29 @@ function loop(now) {
   level.activeOmino = level.active ? null : ominoAt(level.omini, cl);
   updatePrompt();
 
-  if (cl.reached && state.phase === 'playing') {
+  // OBIETTIVO della traccia: decide la VITTORIA (non più solo "raggiungi la cima").
+  // Sconfitta per obiettivo mancato (tempo/presa) riusa il motore di sconfitta.
+  if (level.objective && state.phase === 'playing') {
+    stepObjective(level.objective, {
+      reachedTop: cl.reached,
+      gripRatio: level.grip ? level.grip.v : 1,
+      collected: level.collected || 0,
+      helped: level.helped || 0,
+      progress: climbProgress(cl),
+    }, sdt);
+    if (level.objective.failed) {         // es. tempo scaduto / presa persa
+      emitFx(level.pfx, 'blood', pos.tx, pos.ty + cameraY, { count: 10 });
+      impact(juice, 1.5, 0, 1); breakFlow(juice);
+      state = advance(state, 'defeat');
+      level = loadGirone(state.gironeIndex);
+      return;
+    }
+    if (level.objective.done) {
+      emitFx(level.pfx, 'shock', pos.tx, pos.ty + cameraY, { count: 1 });
+      impact(juice, 1.6, 0, -1);
+      state = advance(state, 'reachedTop');
+    }
+  } else if (cl.reached && state.phase === 'playing') {
     emitFx(level.pfx, 'shock', pos.tx, pos.ty + cameraY, { count: 1 });
     impact(juice, 1.6, 0, -1);
     state = advance(state, 'reachedTop');
