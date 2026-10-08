@@ -101,7 +101,16 @@ export function pose(state, phase) {
       return { lean: 0.3, bob: 0, aL: [1.4, -0.5], aR: [1.4, -0.5], lL: [-0.25, 0.15], lR: [0.3, 0.15] };
     }
     case 'reach': {
-      return { lean: -0.05, bob: -0.5, aL: [-2.7, -0.2], aR: [0.4, 0.5], lL: [-0.15, 0.1], lR: [0.2, 0.1] };
+      // braccia protese in alto con oscillazione alternata: una mano sale
+      // mentre l'altra si distende appena. Mai congelate, mai distese di lato.
+      return {
+        lean: -0.05 + 0.02 * s,
+        bob: -0.5 + 0.2 * s,
+        aL: [-2.45 + 0.3 * s, -0.3 + 0.08 * s],
+        aR: [-2.15 + 0.3 * s2, -0.4 + 0.08 * s2],
+        lL: [-0.15 + 0.04 * s, 0.1],
+        lR: [0.2 + 0.04 * s2, 0.1],
+      };
     }
     case 'tendi': {
       return { lean: -0.1, bob: -0.5, aL: [-2.6, -0.3], aR: [-2.2, -0.3], lL: [-0.2, 0.15], lR: [0.25, 0.15] };

@@ -29,6 +29,28 @@ test('walk/run/climb/idle sono animati: la posa cambia col tempo', () => {
   }
 });
 
+// BUG utente: la figura "apre le braccia e resta così". reach era una posa
+// STATICA e asimmetrica (un braccio in alto, l'altro disteso di lato): qui si
+// pretende che respiri col tempo e che le braccia restino in un range umano.
+test('reach è animato: la posa cambia col tempo (niente braccia congelate)', () => {
+  const a = pose('reach', 0.0), b = pose('reach', 1.5);
+  const moved = JSON.stringify([a.aL, a.aR, a.lL, a.lR, a.bob]) !==
+                JSON.stringify([b.aL, b.aR, b.lL, b.lR, b.bob]);
+  assert.ok(moved, 'reach è statico (non cambia con la fase)');
+});
+
+test('reach: braccia in banda naturale, mai il paio congelato (-2.7, 0.4)', () => {
+  for (let ph = 0; ph < 6.28; ph += 0.2) {
+    const p = pose('reach', ph);
+    assert.ok(p.aL[0] >= -3.0 && p.aL[0] <= 0.9,
+      'aL[0] fuori banda naturale a phase=' + ph.toFixed(1) + ': ' + p.aL[0]);
+    assert.ok(p.aR[0] >= -3.0 && p.aR[0] <= 0.9,
+      'aR[0] fuori banda naturale a phase=' + ph.toFixed(1) + ': ' + p.aR[0]);
+    assert.ok(!(Math.abs(p.aL[0] + 2.7) < 1e-9 && Math.abs(p.aR[0] - 0.4) < 1e-9),
+      'reach è ancora il paio congelato (-2.7, 0.4) a phase=' + ph.toFixed(1));
+  }
+});
+
 test('walk alterna le gambe (non è un blocco rigido)', () => {
   const a = pose('walk', 0.6);
   assert.notEqual(a.lL[0].toFixed(2), a.lR[0].toFixed(2));
