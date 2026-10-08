@@ -160,6 +160,25 @@ function autoStep(cl) {
   return false;
 }
 
+// BUG B: a riposo (nessun input, nessun reach) le colonne di ENTRAMBE le mani
+// derivano dolcemente verso il centro della loro fila. Deterministico, nessun
+// RNG: evita che un braccio resti teso fino a fine livello dopo un movimento
+// laterale. La fascia di appigli è contigua, quindi la deriva resta valida.
+const DRIFT_RATE = 1.5;   // colonne al secondo
+function driftToCenter(cl, dt) {
+  for (const which of ['l', 'r']) {
+    const hold = which === 'l' ? cl.lh : cl.rh;
+    const anim = which === 'l' ? cl.lhA : cl.rhA;
+    const target = centerCol(cl, hold.r);
+    const dc = target - anim.c;
+    if (Math.abs(dc) < 1e-4) { anim.c = target; hold.c = target; continue; }
+    const step = Math.sign(dc) * Math.min(Math.abs(dc), DRIFT_RATE * dt);
+    const nc = anim.c + step;
+    if (cl.has(Math.round(nc), hold.r)) { anim.c = nc; hold.c = Math.round(nc); }
+    else { anim.c = target; hold.c = target; }   // fallback: salta al centro valido
+  }
+}
+
 export function stepClimb(cl, input, dt) {
   const d = Number.isFinite(dt) ? dt : 0.016;
   // presa: recupera verso 1 quando la mano è ferma
@@ -179,13 +198,24 @@ export function stepClimb(cl, input, dt) {
       if (k >= 1) { if (w === 'l') cl.lh = { ...to }; else cl.rh = { ...to }; cl.which = null; }
     }
   } else {
-    // input manuale. ↑ = avanza verso l'obiettivo (sale in 'up', scende in 'down');
-    // ← → spostano una singola mano di lato; ↓ = retrocede (opposto).
-    const ddir = cl.dir || 1;
+    // input manuale FISICO: ↑ = SU, ↓ = GIÙ, SEMPRE, su ogni livello.
+    // Il tasto che punta verso l'obiettivo avanza (autoStep); quello opposto
+    // retrocede di una fila. ← → spostano una singola mano di lato.
+    const dir = cl.dir || 1;
+    const advance = dir === 1 ? input.up : input.down;
+    const retreat = dir === 1 ? input.down : input.up;
     if (input.left) reachOne(cl, 'l', { c: sideCol(cl, cl.lh, -1), r: cl.lh.r });
     else if (input.right) reachOne(cl, 'r', { c: sideCol(cl, cl.rh, 1), r: cl.rh.r });
-    else if (input.up) autoStep(cl);
-    else if (input.down) reachOne(cl, 'l', { c: cl.lh.c, r: Math.max(0, Math.min(cl.nRows - 1, cl.lh.r - ddir)) });
+    else if (advance) autoStep(cl);
+    else if (retreat) {
+      const rr = Math.max(0, Math.min(cl.nRows - 1, cl.lh.r - dir));
+      const rc = nearestCol(cl, cl.lh.c, rr);
+      if (rc !== null) reachOne(cl, 'l', { c: rc, r: rr });
+    } else {
+      // BUG B: a riposo le mani derivano verso il centro della fila, così le
+      // braccia non restano tese dopo un movimento laterale. Deterministico.
+      driftToCenter(cl, d);
+    }
   }
 
   // bacino: segue il centro delle mani con ritardo (dondolio) e non supera

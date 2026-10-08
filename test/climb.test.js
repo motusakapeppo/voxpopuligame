@@ -7,9 +7,11 @@ import { GIRONI } from '../src/gironi.js';
 // Verifica che OGNI girone sia arrampicabile (non più "percorribile a piedi").
 function solveClimb(g) {
   const cl = createClimb(g);
-  const noInput = { left: false, right: false, up: false, down: false };
+  // preme il tasto che punta verso l'obiettivo: ↑ per 'up', ↓ per 'down'
+  const act = cl.dir === 1
+    ? { left: false, right: false, up: true, down: false }
+    : { left: false, right: false, up: false, down: true };
   for (let t = 0; t < 6000; t++) {
-    const act = { left: false, right: false, up: true, down: false };
     stepClimb(cl, act, 0.016);
     if (cl.reached) return { ok: true, steps: t };
   }
@@ -181,11 +183,26 @@ test('createClimb direzione down: parte in cima e scende', () => {
   assert.equal(dn.lh.r, dn.nRows - 1, 'down deve partire in cima');
 });
 
-test('stepClimb down: autoStep fa SCENDERE (r diminuisce)', () => {
+test('stepClimb down: il tasto ↓ fa SCENDERE (r diminuisce), ↑ risale', () => {
   const dn = createClimb({ id: 'd', bodies: GIRONI[0].bodies, direction: 'down' });
-  const r0 = dn.lh.r;
+  const r0 = Math.max(dn.lh.r, dn.rh.r);
+  // ↓ = fisicamente GIÙ: verso l'obiettivo 'down' → r diminuisce
+  for (let i = 0; i < 120; i++) stepClimb(dn, { left:false, right:false, up:false, down:true }, 0.016);
+  const rDown = Math.max(dn.lh.r, dn.rh.r);
+  assert.ok(rDown < r0, 'down: ↓ deve far scendere (r diminuisce)');
+  // ↑ = fisicamente SU: si retrocede di una fila → r aumenta
   for (let i = 0; i < 120; i++) stepClimb(dn, { left:false, right:false, up:true, down:false }, 0.016);
-  assert.ok(Math.max(dn.lh.r, dn.rh.r) < r0, 'down: le mani devono scendere, non salire');
+  assert.ok(Math.max(dn.lh.r, dn.rh.r) > rDown, 'down: ↑ deve far risalire (r aumenta)');
+});
+
+test('stepClimb up: il tasto ↑ fa SALIRE (r aumenta), ↓ scende', () => {
+  const up = createClimb({ id: 'u', bodies: GIRONI[0].bodies, direction: 'up' });
+  const r0 = Math.max(up.lh.r, up.rh.r);
+  for (let i = 0; i < 120; i++) stepClimb(up, { left:false, right:false, up:true, down:false }, 0.016);
+  const rUp = Math.max(up.lh.r, up.rh.r);
+  assert.ok(rUp > r0, 'up: ↑ deve far salire (r aumenta)');
+  for (let i = 0; i < 120; i++) stepClimb(up, { left:false, right:false, up:false, down:true }, 0.016);
+  assert.ok(Math.max(up.lh.r, up.rh.r) < rUp, 'up: ↓ deve far scendere (r diminuisce)');
 });
 
 test('stepClimb down: reached quando si arriva in BASSO', () => {
@@ -193,4 +210,35 @@ test('stepClimb down: reached quando si arriva in BASSO', () => {
   dn.lh.r = 0; dn.rh.r = 0; dn.lhA.r = 0; dn.rhA.r = 0;
   stepClimb(dn, { left:false, right:false, up:false, down:false }, 0.016);
   assert.ok(dn.reached, 'down: reached al fondo');
+});
+
+// ---------------------------------------------------------------------------
+// BUG B: dopo un movimento laterale le mani restavano offset per sempre e
+// l'IK teneva un braccio teso fino a fine livello. A riposo (nessun input,
+// nessun reach) le colonne devono derivare dolcemente verso il centro fila.
+// ---------------------------------------------------------------------------
+test('BUG B: a riposo le mani derivano verso centerCol (niente braccia tese)', () => {
+  const cl = createClimb(GIRONI[0]);
+  const row = Math.floor(cl.nRows / 2);
+  const center = centerCol(cl, row);
+  const cs = rowCols(cl, row);
+  const left = cs[0], right = cs[cs.length - 1];
+  cl.lh = { c: left, r: row }; cl.rh = { c: right, r: row };
+  cl.lhA = { ...cl.lh }; cl.rhA = { ...cl.rh };
+  cl.reach = 0; cl.which = null;
+  const d0L = Math.abs(cl.lhA.c - center), d0R = Math.abs(cl.rhA.c - center);
+  assert.ok(d0L > 0.5 && d0R > 0.5, 'setup: le mani non sono offsettate');
+  let prevL = d0L, prevR = d0R;
+  for (let i = 0; i < 120; i++) {
+    stepClimb(cl, { left:false, right:false, up:false, down:false }, 0.016);
+    const dL = Math.abs(cl.lhA.c - center), dR = Math.abs(cl.rhA.c - center);
+    assert.ok(dL <= prevL + 1e-9, `L non monotona a ${i}: ${dL} > ${prevL}`);
+    assert.ok(dR <= prevR + 1e-9, `R non monotona a ${i}: ${dR} > ${prevR}`);
+    assert.ok(Number.isFinite(cl.lhA.c) && Number.isFinite(cl.rhA.c), 'coord non finita');
+    assert.ok(cl.has(Math.round(cl.lhA.c), row) && cl.has(Math.round(cl.rhA.c), row),
+      'la deriva ha lasciato un appiglio valido');
+    prevL = dL; prevR = dR;
+  }
+  assert.ok(prevL < d0L - 0.5, 'L non si è avvicinata al centro');
+  assert.ok(prevR < d0R - 0.5, 'R non si è avvicinata al centro');
 });
