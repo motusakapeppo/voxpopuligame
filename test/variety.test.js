@@ -24,7 +24,7 @@ test('ogni girone ha: 1 missione (target 2..4), >=3 oggetti, >=1 amico, >=1 nemi
     const v = VARIETY[id];
     assert.ok(v.mission && typeof v.mission.text === 'string' && v.mission.text.length > 0, `${id}: missione assente`);
     assert.ok(Number.isFinite(v.mission.target) && v.mission.target >= 2 && v.mission.target <= 4, `${id}: target ${v.mission.target}`);
-    assert.ok(Array.isArray(v.items) && v.items.length >= 3, `${id}: <3 oggetti`);
+    assert.ok(Array.isArray(v.items) && v.items.length >= 6, `${id}: <6 oggetti (varietà scarsa)`);
     for (const kind of ['friend', 'enemy', 'egg']) {
       assert.ok(v.items.some(it => it.kind === kind), `${id}: manca un ${kind}`);
     }
