@@ -51,6 +51,7 @@ export function createAudio({ storage, loadClip }) {
       this.stop();
       audioEl = new Audio(clip);
       audioEl.volume = 0.9;
+      audioEl.loop = true;                    // la traccia del girone riparte da capo
       current = id;
       await audioEl.play().catch(() => {});   // autoplay può fallire: non lanciare
     },

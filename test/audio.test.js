@@ -25,6 +25,20 @@ test('markUnlocked abilita la tracklist (riascolto)', () => {
   assert.equal(a.isUnlocked('05-hosonno'), true);
 });
 
+test('la traccia del girone va in loop: quando finisce riparte da capo', async () => {
+  let created = null;
+  globalThis.Audio = class {
+    constructor(src) { this.src = src; created = this; }
+    play() { return Promise.resolve(); }
+    pause() { this.paused = true; }
+  };
+  const a = createAudio({ storage: createMemoryStorage(), loadClip: async id => 'clip:' + id });
+  await a.play('03-tuoni');
+  assert.equal(created.loop, true, 'audioEl.loop deve essere true per far ripartire la traccia');
+  a.stop();
+  assert.equal(created.paused, true, 'stop deve mettere in pausa e rilasciare l\'elemento');
+});
+
 test('il toggle spegne l\'audio', async () => {
   const played = [];
   globalThis.Audio = class { constructor(src) { played.push(src); } play() { return Promise.resolve(); } pause() {} };
