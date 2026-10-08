@@ -45,3 +45,8 @@ export function mashRatio(m) {
   return p < 0 ? 0 : p > 1 ? 1 : p;
 }
 export function mashDone(m) { return m.won || m.lost; }
+
+// True finché la lotta non è stata RISOLTA dal chiamante (vinta/persa ma non
+// ancora consumata). Serve a main.js per continuare a gestire il ramo won/lost
+// anche quando `active` è già false, evitando che l'overlay resti bloccato.
+export function mashPending(m) { return !!(m && (m.active || m.won || m.lost)); }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone, MASH_DUR } from '../src/mash.js';
+import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone, mashPending, MASH_DUR } from '../src/mash.js';
 
 test('createMash parte inattivo e pulito', () => {
   const m = createMash();
@@ -42,4 +42,21 @@ test('stepMash tollera dt non finito', () => {
 test('mashRatio resta sempre in 0..1', () => {
   const m = createMash();
   for (const p of [-5, 0, 0.5, 5, NaN]) { m.progress = p; const r = mashRatio(m); assert.ok(r >= 0 && r <= 1); }
+});
+
+test('mashPending resta true finché la lotta non è risolta (won/lost)', () => {
+  const m = startMash(createMash(), { kind: 'grabber' });
+  assert.equal(mashPending(m), true);            // attiva
+  for (let i = 0; i < 20 && m.active; i++) mashHit(m);
+  assert.equal(m.won, true);
+  assert.equal(m.active, false);
+  assert.equal(mashPending(m), true);            // vinta ma non ancora risolta
+});
+
+test('mashPending è false dopo il reset (createMash)', () => {
+  const m = createMash();
+  assert.equal(mashPending(m), false);
+  assert.equal(m.active, false);
+  assert.equal(m.won, false);
+  assert.equal(m.lost, false);
 });

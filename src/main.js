@@ -13,7 +13,7 @@ import { KINDS, GIRONE_ENCOUNTERS, resolveEncounter, isAutoKind } from './encoun
 import { createClimb, stepClimb, climbPos, climbProgress, encounterAt, centerCol, moveHands } from './climb.js';
 import { createVariety, stepVariety } from './variety.js';
 import { createThreatState, stepThreats, pickupPositions, applyPickup, threatEffects } from './threats.js';
-import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone } from './mash.js';
+import { createMash, startMash, mashHit, stepMash, mashRatio, mashDone, mashPending } from './mash.js';
 import { createJuice, impact, addFlow, breakFlow, setBpm, stepJuice, shakeOffsetJ, punchZoom, flowRatio, bpmFor } from './juice.js';
 import { KARAOKE } from './karaoke.js';
 import { createRenderer } from './renderer.js';
@@ -221,6 +221,7 @@ const SKIP = new Set((new URLSearchParams(location.search).get('no') || '').spli
 function updatePrompt() {
   const a = level && level.active;
   if (!a) { setPrompt(''); return; }
+  if (a.resolved) { setPrompt(''); return; }   // incontro risolto: niente prompt
   const d = KINDS[a.kind];
   if (a.kind === 'helper') setPrompt('◀ ' + d.prompt + ' ▶');
   else if (a.kind === 'grabber') setPrompt('◀ ' + d.prompt + ' ▶   [MARTELLA Z/X]');
@@ -422,9 +423,10 @@ function loop(now) {
   level.events.length = 0;
   if (level.chapter > 0) level.chapter -= dt;
   const NONE = { left: false, right: false, up: false, down: false };
-  // Il mash blocca tutto: stai lottando.
-  if (mash.active) {
-    if (!mash.hold) stepMash(mash, sdt);   // debug ?phase=mash: barra ferma
+  // Il mash blocca tutto: stai lottando. Il ramo resta attivo anche dopo la
+  // vittoria/sconfitta (won/lost) finché non viene risolto e resettato.
+  if (mashPending(mash)) {
+    if (mash.active && !mash.hold) stepMash(mash, sdt);   // debug ?phase=mash: barra ferma
     const mp = climbPos(cl);
     if (mash.won) {
       // hai vinto: butti giù l'avversario e sali di 3
