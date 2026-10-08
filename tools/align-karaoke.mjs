@@ -14,6 +14,7 @@
 //      c'e' audio/spazio reale. Niente Math.random: tutto deterministico.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { alignWithFill } from './align-core.mjs';
+import { clipDur } from './clip-durations.mjs';
 
 const words = JSON.parse(readFileSync('tools/_words.json', 'utf8'));
 const official = JSON.parse(readFileSync('tools/_official.json', 'utf8'));
@@ -24,11 +25,10 @@ const summary = [];
 for (const [id, w] of Object.entries(words)) {
   const lines = official[id] || [];
   const ws = (w && w.words) || [];
-  // durata stimata della clip: onset dell'ultima parola whisper + ~1s.
-  const lastOnset = ws.length ? Number(ws[ws.length - 1][0]) : 0;
-  const duration = Number.isFinite(lastOnset) ? lastOnset + 1 : 0;
+  // durata REALE della clip (single source of truth): la lirica copre fino in fondo.
+  const duration = clipDur(id);
 
-  const res = alignWithFill(lines, ws, { duration, minSpacing: 1.2 });
+  const res = alignWithFill(lines, ws, { duration, minSpacing: 1.3, maxGap: 2.2 });
 
   karaoke[id] = res.entries;
   summary.push({
