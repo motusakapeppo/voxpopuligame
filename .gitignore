@@ -1,3 +1,4 @@
 node_modules/
 _shots/
+_verify/
 *.log
