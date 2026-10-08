@@ -39,12 +39,12 @@ test('i 13 gironi hanno firme modificatore pairwise distinte', () => {
   assert.equal(new Set(sigs).size, 13, 'firme duplicate: ' + JSON.stringify(sigs));
 });
 
-test('ogni girone dichiara una shape di scalata valida', () => {
-  const VALID = ['pyramid', 'gaps', 'spiral', 'overhang'];
+test('ogni girone dichiara un LAYOUT di scalata valido', () => {
+  const VALID = ['pyramid', 'wide', 'narrow', 'funnel', 'cavern', 'zigzag', 'stair', 'double'];
   for (const g of GIRONI) {
-    assert.ok(g.climb && typeof g.climb.shape === 'string', g.id + ': shape mancante');
-    assert.ok(VALID.includes(g.climb.shape), g.id + ': shape sconosciuta ' + g.climb.shape);
+    assert.ok(g.climb && typeof g.climb.layout === 'string', g.id + ': layout mancante');
+    assert.ok(VALID.includes(g.climb.layout), g.id + ': layout sconosciuto ' + g.climb.layout);
   }
-  const shapes = GIRONI.map(g => g.climb.shape);
-  assert.ok(new Set(shapes).size >= 3, 'meno di 3 shape distinte: ' + JSON.stringify(shapes));
+  const layouts = GIRONI.map(g => g.climb.layout);
+  assert.ok(new Set(layouts).size >= 3, 'meno di 3 layout distinti: ' + JSON.stringify(layouts));
 });

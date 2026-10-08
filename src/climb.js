@@ -6,6 +6,7 @@
 // corpo "tira su" invece di teletrasportarsi. Tutto deterministico e testabile.
 // ============================================================================
 import { STEP_Y, TOP_Y } from './gironi.js';
+import { resolveLayout, buildGrid } from './levelgen.js';
 
 export const REACH_TIME = 0.11;     // durata di un movimento di mano (s) — più veloce
 export const HOLD_TIME = 0.14;      // recupero della presa dopo lo spostamento
@@ -83,29 +84,39 @@ export function createClimb(g) {
   const hang = Number.isFinite(pc.hang) ? pc.hang : HANG;
   const weakEvery = Number.isFinite(pc.weakEvery) && pc.weakEvery > 0 ? pc.weakEvery : 8;
   const bottomY = Math.max(...g.bodies.map(b => b.y));
-  const nRows = Math.max(2, Math.floor((bottomY - TOP_Y) / STEP_Y) + 1);
-  // appigli a 11px: la distanza tra le due mani resta ~1.4× la larghezza spalle,
-  // quindi le braccia salgono quasi verticali (posa da arrampicata), non a V rovesciata.
-  const cols = Array.from({ length: 21 }, (_, i) => 160 - 10 * 11 + i * 11);
-  const rows = Array.from({ length: nRows }, (_, r) => bottomY - r * STEP_Y); // r=0 in basso
-
-  const halfWidth = r => 120 - (r / Math.max(1, nRows - 1)) * 90;
-  const holds = rows.map((_, r) => cols.map((x, c) => Math.abs(x - cx) <= halfWidth(r)));
+  // V5 LEVELGEN: layout per-traccia (colonne/passo/larghezza/corsie/file). Il
+  // layout di default riproduce ESATTAMENTE la griglia storica.
+  const layout = resolveLayout(g);
+  const rowStep = Number.isFinite(layout.rowStep) ? layout.rowStep : STEP_Y;
+  const nRows = Math.max(2, Math.floor((bottomY - TOP_Y) / rowStep) + 1);
+  const grid = buildGrid(layout, nRows);
+  const cols = grid.cols;
+  const rows = Array.from({ length: nRows }, (_, r) => bottomY - r * rowStep); // r=0 in basso
+  const holds = grid.holds;
 
   // V4: forma della parete (default 'pyramid' = griglia storica invariata).
   const shape = SHAPES.includes(pc.shape) ? pc.shape : 'pyramid';
   applyShape(holds, nRows, cols.length, shape, cx, cols);
+  // V5: garanzia finale — ogni fila non vuota (il bot/nearestCol ci contano).
+  repairRows(holds, nRows, cols.length, cx, cols);
 
   const has = (c, r) => c >= 0 && c < cols.length && r >= 0 && r < nRows && holds[r][c];
   const xOf = c => cols[Math.max(0, Math.min(cols.length - 1, Math.round(c)))];
   const yOf = r => rows[Math.max(0, Math.min(nRows - 1, Math.round(r)))];
 
-  const c0 = 10;   // centro (160): con 21 colonne l'indice centrale è 10
+  // indice della colonna più vicina al centro (dipende dal numero di colonne).
+  let c0 = 0;
+  for (let c = 1; c < cols.length; c++)
+    if (Math.abs(cols[c] - cx) < Math.abs(cols[c0] - cx)) c0 = c;
   // V3: DIREZIONE. 'down' (es. 09 EDERA) = si parte in cima e si SCENDE.
   const dir = (g && g.direction === 'down') ? -1 : 1;
   const startR = dir === 1 ? 0 : nRows - 1;
+  // se la mano destra (c0+1) non ha appiglio sulla fila di partenza, usane una valida
+  let cR = c0 + 1;
+  if (!has(cR, startR)) { const nc = nearestCol({ has, cols, nRows }, cR, startR); cR = nc == null ? c0 : nc; }
+  const lh0 = has(c0, startR) ? c0 : (nearestCol({ has, cols, nRows }, c0, startR) ?? 0);
   // posizione iniziale del bacino = centro presa + HANG
-  const bx0 = (xOf(c0) + xOf(c0 + 1)) / 2;
+  const bx0 = (xOf(lh0) + xOf(cR)) / 2;
   const by0 = yOf(startR) + hang;
   // appigli DEBOLI: ogni tanto un corpo cede mentre ci sali sopra (deterministico
   // per girone, così è sempre lo stesso e testabile)
@@ -113,10 +124,10 @@ export function createClimb(g) {
   const seed = String(g.id || '').split('').reduce((a, ch) => (a + ch.charCodeAt(0)) % 5, 0);
   for (let r = 4 + seed; r < nRows - 3; r += weakEvery) weakRows.add(r);
   return {
-    cols, rows, holds, has, xOf, yOf, nRows, cx, dir, shape,
+    cols, rows, holds, has, xOf, yOf, nRows, cx, dir, shape, layout,
     reachDur: reach, holdTime: hold, hang, weakEvery,
-    lh: { c: c0, r: startR }, rh: { c: c0 + 1, r: startR },
-    lhA: { c: c0, r: startR }, rhA: { c: c0 + 1, r: startR },  // animati (float)
+    lh: { c: lh0, r: startR }, rh: { c: cR, r: startR },
+    lhA: { c: lh0, r: startR }, rhA: { c: cR, r: startR },  // animati (float)
     lhHold: 1, rhHold: 1,                            // presa 0..1
     bx: bx0, by: by0, vby: 0,                        // bacino (animato)
     lead: 'l',                                      // quale mano sale per prossima

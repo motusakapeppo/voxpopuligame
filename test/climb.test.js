@@ -283,8 +283,30 @@ test('BUG B: la convergenza è sospesa per ~150ms dopo un laterale', () => {
 // La REPAIR PASS garantisce che ogni fila resti non vuota (il bot e i test
 // "almeno un appiglio per fila" ci contano).
 // ---------------------------------------------------------------------------
-test('SHAPES: espone le forme supportate e pyramid è il default', () => {
-  assert.ok(Array.isArray(SHAPES), 'SHAPES non è un array');
+// ---------------------------------------------------------------------------
+// V5 LEVELGEN: le 13 tracce devono avere STRUTTURE diverse (colonne/passo/file),
+// non solo la stessa griglia 21 colonne. E ognuna deve restare risolvibile.
+// ---------------------------------------------------------------------------
+test('LEVELGEN: le tracce hanno geometrie strutturalmente diverse', () => {
+  const sigs = new Set();
+  for (const g of GIRONI) {
+    const cl = createClimb(g);
+    // firma: numero colonne + passo + file + larghezza fascia di base
+    const step = cl.cols.length > 1 ? Math.abs(cl.cols[1] - cl.cols[0]) : 0;
+    sigs.add(cl.cols.length + ':' + step.toFixed(1) + ':' + cl.nRows);
+    for (let r = 0; r < cl.nRows; r++) assert.ok(cl.holds[r].some(Boolean), `${g.id}: fila ${r} vuota`);
+  }
+  assert.ok(sigs.size >= 4, 'le tracce condividono la stessa geometria (firme=' + sigs.size + ')');
+});
+
+test('LEVELGEN: layout di default = griglia storica (21 colonne, passo 11)', () => {
+  const cl = createClimb({ id: '01', bodies: GIRONI[0].bodies });
+  assert.equal(cl.cols.length, 21, 'default cols');
+  assert.equal(Math.round(Math.abs(cl.cols[1] - cl.cols[0])), 11, 'default colStep');
+  assert.equal(cl.layout.cols, 21);
+});
+
+test('SHAPES: espone le forme supportate e pyramid è il default', () => {  assert.ok(Array.isArray(SHAPES), 'SHAPES non è un array');
   for (const s of ['pyramid', 'gaps', 'spiral', 'overhang'])
     assert.ok(SHAPES.includes(s), 'shape mancante: ' + s);
   const cl = createClimb({ id: 'x', bodies: GIRONI[0].bodies });
@@ -367,9 +389,9 @@ test('il bot risolve TUTTI i gironi con la loro shape', () => {
   }
 });
 
-test('almeno 3 shape distinte tra i 13 gironi', () => {
-  const shapes = GIRONI.map(g => (g.climb && g.climb.shape) || 'pyramid');
-  assert.ok(new Set(shapes).size >= 3, 'meno di 3 shape distinte: ' + JSON.stringify(shapes));
+test('almeno 3 LAYOUT distinti tra i 13 gironi (varieta strutturale)', () => {
+  const layouts = GIRONI.map(g => (g.climb && g.climb.layout) || 'pyramid');
+  assert.ok(new Set(layouts).size >= 3, 'meno di 3 layout distinti: ' + JSON.stringify(layouts));
 });
 
 test('girone 01 resta pyramid-monotono (base >= cima)', () => {
