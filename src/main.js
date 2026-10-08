@@ -59,6 +59,26 @@ const GRADE = {
   '13-outro':          { vignette: +0.05, grain: +0.02 },            // dissolvenza
 };
 
+// TINT — velo atmosferico PER TRACCIA: identità visiva forte e immediata. Un
+// colore della rampa + alpha + eventuale banda verticale. Resta nella palette
+// rosso/nero (nessun blu/verde) ma cambia DAVVERO la lettura cromatica del brano:
+// tracce fredde/scure, calde/accese, fumose, notturne. Deterministico.
+const TINT = {
+  '01-intro':          { color: C.redDeep,  alpha: 0.10 },   // notte tranquilla
+  '02-vento':          { color: C.red,      alpha: 0.07 },   // vento luminoso
+  '03-tuoni':          { color: C.black,    alpha: 0.22 },   // temporale: cupo
+  '04-baghdad':        { color: C.redDark,  alpha: 0.20 },   // polvere
+  '05-hosonno':        { color: C.black,    alpha: 0.30 },   // sonno: buio ovattato
+  '06-primoposto':     { color: C.redBright,alpha: 0.06 },   // riflettori: acceso
+  '07-tictac':         { color: C.redDeep,  alpha: 0.16 },   // meccanico: freddo
+  '08-tuttofinto':     { color: C.redMid,   alpha: 0.14 },   // finto: sfasato
+  '09-edera':          { color: C.redDark,  alpha: 0.22 },   // edera: organico scuro
+  '10-scendi':         { color: C.redDeep,  alpha: 0.20 },   // discesa notturna
+  '11-lafinedelmondo': { color: C.black,    alpha: 0.18 },   // apocalisse
+  '12-maranatha':      { color: C.redHot,   alpha: 0.05 },   // rivelazione: caldo
+  '13-outro':          { color: C.redDeep,  alpha: 0.24 },   // dissolvenza finale
+};
+
 function resize() {
   const s = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
   SCALE = Math.max(1, Math.floor(s));
@@ -327,6 +347,17 @@ function drawWorld(lv, camY) {
   if (!SKIP.has('player')) drawPlayer(ctx, lv.climb, camY, time, action);
   if (!SKIP.has('fx')) drawFx(ctx, lv.pfx, camY, time);
   if (!SKIP.has('themefront')) drawThemeFront(ctx, lv.girone.audioId, camY, time, VIEW_W, VIEW_H, lv.pfx);
+  // TINT per-traccia: velo atmosferico che dà l'identità cromatica del brano.
+  if (!SKIP.has('tint')) {
+    const tn = TINT[lv.girone.audioId];
+    if (tn && tn.alpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = tn.alpha;
+      ctx.fillStyle = tn.color;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.restore();
+    }
+  }
   // NB: la lirica PIXEL è disegnata FUORI dalla transform della camera (in main),
   // così non viene mai spinta fuori schermo da shake/zoom.
   // T9: acqua che sale (girone 11) — copre la scena sotto il livello raggiunto.
